@@ -34,8 +34,18 @@ export interface AccountInfo {
   keystore: "plain" | "encrypted" | "synthetic" | "unknown";
 }
 
+export interface DockerStatus {
+  installed: boolean;
+  running: boolean;
+  clientVersion: string | null;
+  serverVersion: string | null;
+  error: string | null;
+}
+
 interface EnvState {
   node: NodeStatus | null;
+  docker: DockerStatus | null;
+  setDocker(d: DockerStatus | null): void;
   nodeBusy: string | null;
   accounts: AccountInfo[];
   accountsBusy: boolean;
@@ -52,6 +62,8 @@ interface EnvState {
 
 export const useEnv = create<EnvState>((set) => ({
   node: null,
+  docker: null,
+  setDocker: (docker) => set({ docker }),
   nodeBusy: null,
   accounts: [],
   accountsBusy: false,

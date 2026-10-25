@@ -2,14 +2,10 @@ import { CheckCircle2, Coins, FileJson, Play, RadioTower, RefreshCw, Send, Signa
 import { useCallback, useEffect, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { Account, PlanOutcome, RunPlugin, SendOutcome, SignOutcome, TxStatus } from "@/plugins/run";
-import { useIde, type ExecutionTarget } from "@/store/ide";
+import { ENVIRONMENTS, useIde, type ExecutionTarget } from "@/store/ide";
 import { ContractGUI } from "./ContractGUI";
 
-const TARGETS: Array<{ id: ExecutionTarget; label: string; hint: string }> = [
-  { id: "simulator", label: "Simulator (in-memory, synthetic)", hint: "Remix's JavaScript VM equivalent. Synthetic accounts alice…erin with 1000 KAS each." },
-  { id: "localnet", label: "Localnet (Docker rusty-kaspad, simnet)", hint: "Real node with local mining. Needs Docker and `hardkas localnet start`." },
-  { id: "rpc", label: "RPC (testnet-10)", hint: "Remote Kaspa node from hardkas.config.ts. Mainnet is blocked by policy." }
-];
+const TARGETS = ENVIRONMENTS.map((e) => ({ id: e.id, label: `${e.label} · ${e.networkId}`, hint: e.description }));
 
 export function RunPanel() {
   const engine = useEngine();
