@@ -5,6 +5,7 @@ import { IconRail } from "./IconRail";
 import { MainArea } from "./MainArea";
 import { SidePanel } from "./SidePanel";
 import { BottomPanel } from "./BottomPanel";
+import { CommandPalette } from "./CommandPalette";
 import { StatusBar } from "./StatusBar";
 
 interface Props {
@@ -47,6 +48,7 @@ export function Workbench({ onHome }: Props) {
         </PanelGroup>
       </div>
       <StatusBar />
+      <CommandPalette />
     </div>
   );
 }

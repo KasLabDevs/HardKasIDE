@@ -13,7 +13,12 @@ export interface OpenFile {
   content: string;
   savedContent: string;
   language: string;
+  /** "view" tabs render a main-panel plugin view instead of the editor; path is "view:<pluginName>". */
+  kind?: "file" | "view";
+  title?: string;
 }
+
+export const VIEW_PREFIX = "view:";
 
 export type JournalKind = "log" | "info" | "warn" | "error" | "command" | "json";
 
@@ -44,6 +49,8 @@ interface IdeState {
   markSaved(path: string): void;
   closeFile(path: string): void;
   setActiveFile(path: string | null): void;
+  /** Opens (or focuses) a main-panel plugin view as a tab. */
+  openView(pluginName: string, title: string): void;
   setActiveSidePlugin(name: string): void;
   setTarget(target: ExecutionTarget): void;
   log(kind: JournalKind, text: string, data?: unknown): void;
@@ -86,6 +93,15 @@ export const useIde = create<IdeState>((set) => ({
       return { openFiles: remaining, activeFile };
     }),
   setActiveFile: (activeFile) => set({ activeFile }),
+  openView: (pluginName, title) =>
+    set((s) => {
+      const path = VIEW_PREFIX + pluginName;
+      const exists = s.openFiles.some((f) => f.path === path);
+      return {
+        openFiles: exists ? s.openFiles : [...s.openFiles, { path, content: "", savedContent: "", language: "view", kind: "view", title }],
+        activeFile: path
+      };
+    }),
   setActiveSidePlugin: (activeSidePlugin) => set({ activeSidePlugin }),
   setTarget: (target) => set({ target }),
   log: (kind, text, data) =>
