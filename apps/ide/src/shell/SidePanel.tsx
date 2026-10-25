@@ -1,7 +1,6 @@
 import { useEngine, useEngineVersion } from "@/engine/context";
 import { useIde } from "@/store/ide";
 import { DockControls } from "./DockControls";
-import { HardKasMark } from "./Logo";
 
 /**
  * Left column. Mounts every left-docked side-panel plugin view once and hides the
@@ -18,7 +17,6 @@ export function SidePanel() {
   return (
     <aside className="h-full bg-bg-panel border-r border-border flex flex-col min-w-0">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border select-none" title={workspace?.root ?? ""}>
-        <HardKasMark size={18} />
         <span className="text-xs font-semibold tracking-tight">
           <span className="text-fg">Hard</span>
           <span className="text-accent">Kas</span> <span className="text-fg-muted font-normal">IDE</span>
