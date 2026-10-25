@@ -141,19 +141,27 @@ interface SearchHit {
   links?: { npm?: string; homepage?: string };
 }
 
-/** Marketplace-style search: npm packages tagged `hardkas-plugin`, plus the bundled examples. */
+interface RegistryHit {
+  name: string;
+  displayName: string;
+  description?: string;
+  version?: string;
+  author?: string;
+  tags?: string[];
+  manifestUrl: string;
+  homepage?: string;
+}
+
+/** Marketplace-style search: the HardKas plugin registry (curated list) plus npm packages tagged `hardkas-plugin`. */
 function SearchTab({ manager, busy, run }: { manager: PluginManagerPlugin; busy: boolean; run: (label: string, fn: () => Promise<unknown>) => Promise<void> }) {
   const engine = useEngine();
+  useEngineVersion();
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const [registry, setRegistry] = useState<RegistryHit[]>([]);
   const [searching, setSearching] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [examples, setExamples] = useState<Array<{ name: string; manifestUrl: string }>>([]);
   const installed = usePlugins((s) => s.installed);
-
-  useEffect(() => {
-    api.plugins.examples().then(setExamples).catch(() => setExamples([]));
-  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -161,50 +169,75 @@ function SearchTab({ manager, busy, run }: { manager: PluginManagerPlugin; busy:
       setErr(null);
       api.plugins
         .search(q)
-        .then(setHits)
+        .then((r) => {
+          setHits(r.results);
+          setRegistry(r.registry);
+        })
         .catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)))
         .finally(() => setSearching(false));
-    }, 350);
+    }, 300);
     return () => clearTimeout(t);
   }, [q]);
 
   const isInstalled = (pkg: string) => installed.some((m) => m.source?.kind === "npm" && m.source.ref.replace(/(?!^)@.*$/, "") === pkg);
+  const total = registry.length + (hits?.length ?? 0);
 
   return (
     <div className="p-3 space-y-3">
       <div className="relative">
         <Search size={12} className="absolute left-2 top-2 text-fg-muted" />
-        <input className="input pl-6" placeholder="Search plugins on npm (keyword hardkas-plugin)…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+        <input className="input pl-6" placeholder="Search plugins (registry + npm keyword hardkas-plugin)…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
       </div>
-      {examples.length > 0 && (
+      <div className="text-[10px] text-fg-muted">{searching ? "searching…" : `${total} result${total === 1 ? "" : "s"}${q ? ` for "${q}"` : ""}`}</div>
+
+      {registry.length > 0 && (
         <div>
-          <div className="label">Bundled</div>
-          {examples.map((e) => {
-            const name = `${e.name}-plugin`;
-            const done = engine.has(name) || installed.some((m) => m.source?.kind === "url" && m.source.ref.includes(`/examples/${e.name}/`));
+          <div className="label">HardKas registry</div>
+          {registry.map((e) => {
+            const done = engine.has(e.name);
             return (
-              <div key={e.name} className="rounded border border-border bg-bg-elev p-2 mb-1.5 flex items-center gap-2">
-                <Puzzle size={14} className="text-accent" />
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-fg">{e.name}</div>
-                  <div className="text-[10px] text-fg-muted">example shipped with the IDE · examples/plugins/{e.name}</div>
+              <div key={e.name} className="rounded border border-border bg-bg-elev p-2 mb-1.5">
+                <div className="flex items-center gap-2">
+                  <Puzzle size={14} className="text-accent" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-fg truncate">{e.displayName}</span>
+                      {e.version && <span className="text-[10px] text-fg-muted">v{e.version}</span>}
+                    </div>
+                    <div className="text-[10px] text-fg-muted">{e.description}</div>
+                  </div>
+                  <button className="btn-primary" disabled={busy || done} onClick={() => void run(`installed ${e.displayName}`, () => manager.installFromUrl(new URL(e.manifestUrl, location.origin).toString()))}>
+                    {done ? "Installed" : "Install"}
+                  </button>
                 </div>
-                <button className="btn-primary" disabled={busy || done} onClick={() => void run(`installed ${e.name}`, () => manager.installFromUrl(new URL(e.manifestUrl, location.origin).toString()))}>
-                  {done ? "Installed" : "Install"}
-                </button>
+                <div className="text-[10px] text-fg-muted mt-1 flex gap-2 flex-wrap">
+                  {e.author && <span>by {e.author}</span>}
+                  {e.tags?.map((t) => (
+                    <span key={t} className="px-1 rounded bg-bg-hover">
+                      {t}
+                    </span>
+                  ))}
+                  {e.homepage && (
+                    <a href={e.homepage} target="_blank" rel="noreferrer" className="hover:text-accent">
+                      homepage ↗
+                    </a>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
       )}
+
       <div>
         <div className="label flex items-center gap-2">
-          npm <span className="normal-case tracking-normal text-fg-muted">{searching ? "searching…" : hits ? `${hits.length} result${hits.length === 1 ? "" : "s"}` : ""}</span>
+          npm <span className="normal-case tracking-normal text-fg-muted">{hits ? `${hits.length}` : ""}</span>
         </div>
         {err && <div className="text-error">{err}</div>}
         {hits && hits.length === 0 && !searching && (
           <div className="text-fg-muted">
-            Nothing on npm tagged <code>hardkas-plugin</code>{q ? ` matching "${q}"` : ""} yet. Publish one: add <code>"keywords": ["hardkas-plugin"]</code> and a <code>"hardkasPlugin"</code> manifest to its package.json.
+            {registry.length === 0 && q ? `No plugin matches "${q}". ` : ""}
+            Nothing on npm tagged <code>hardkas-plugin</code>{q ? ` for "${q}"` : ""} yet: the marketplace is new. To list a plugin here, publish it to npm with <code>"keywords": ["hardkas-plugin"]</code> and a <code>"hardkasPlugin"</code> manifest in its package.json, or add it to <code>registry/plugins.json</code>.
           </div>
         )}
         {hits?.map((h) => (

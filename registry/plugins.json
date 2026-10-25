@@ -1,0 +1,16 @@
+{
+  "schema": "hardkas-ide.pluginRegistry.v1",
+  "updatedAt": "2026-10-25",
+  "plugins": [
+    {
+      "name": "hello-plugin",
+      "displayName": "Hello plugin",
+      "description": "Example external plugin: reads the current file, compiles .sil files and logs to the console through the engine.",
+      "version": "0.1.0",
+      "author": "HardKas IDE",
+      "tags": ["example", "starter", "tutorial"],
+      "manifestUrl": "/api/plugins/examples/hello/hardkas-plugin.json",
+      "homepage": "https://github.com/KasLabDevs/harkasIDE/tree/main/examples/plugins/hello"
+    }
+  ]
+}

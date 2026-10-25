@@ -124,6 +124,43 @@ export async function searchNpmPlugins(query: string): Promise<SearchHit[]> {
   }));
 }
 
+export interface RegistryEntry {
+  name: string;
+  displayName: string;
+  description?: string;
+  version?: string;
+  author?: string;
+  tags?: string[];
+  manifestUrl: string;
+  homepage?: string;
+}
+
+/**
+ * Curated plugin registry: the repo's registry/plugins.json, optionally merged with a
+ * remote registry (HARDKAS_PLUGIN_REGISTRY, e.g. a raw GitHub URL) so a community
+ * list can exist without npm.
+ */
+export async function loadRegistry(): Promise<RegistryEntry[]> {
+  const entries: RegistryEntry[] = [];
+  const local = path.resolve(examplesDir(), "..", "..", "registry", "plugins.json");
+  try {
+    const j = JSON.parse(await fs.readFile(local, "utf8")) as { plugins?: RegistryEntry[] };
+    entries.push(...(j.plugins ?? []));
+  } catch {
+    // no local registry
+  }
+  const remote = process.env.HARDKAS_PLUGIN_REGISTRY;
+  if (remote) {
+    try {
+      const j = JSON.parse(await fetchText(remote)) as { plugins?: RegistryEntry[] };
+      for (const e of j.plugins ?? []) if (!entries.some((x) => x.name === e.name)) entries.push(e);
+    } catch {
+      // remote registry unreachable: keep local
+    }
+  }
+  return entries;
+}
+
 export async function listExamples(): Promise<Array<{ name: string; manifestUrl: string }>> {
   const dir = examplesDir();
   try {
