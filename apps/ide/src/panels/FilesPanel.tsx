@@ -77,7 +77,8 @@ export function FilesPanel() {
       )}
       <div className="py-1">
         {tree.length === 0 && <div className="px-3 py-2 text-fg-muted">Empty workspace.</div>}
-        {tree.map((node) => (
+        {/* The project's own files first; dot-folders such as .hardkas (HardKas runtime state) go last, collapsed. */}
+        {sortProjectFirst(tree).map((node) => (
           <Node key={node.path} node={node} depth={0} onMenu={(e, n) => setMenu({ x: e.clientX, y: e.clientY, node: n })} />
         ))}
       </div>
@@ -86,10 +87,23 @@ export function FilesPanel() {
   );
 }
 
+const isInternal = (n: TreeNode) => n.name.startsWith(".");
+
+function sortProjectFirst(nodes: TreeNode[]): TreeNode[] {
+  return [...nodes].sort((a, b) => {
+    const ia = isInternal(a) ? 1 : 0;
+    const ib = isInternal(b) ? 1 : 0;
+    if (ia !== ib) return ia - ib;
+    if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
 function Node({ node, depth, onMenu }: { node: TreeNode; depth: number; onMenu: (e: React.MouseEvent, n: TreeNode) => void }) {
   const engine = useEngine();
   const activeFile = useIde((s) => s.activeFile);
-  const [open, setOpen] = useState(depth < 1);
+  const internal = isInternal(node);
+  const [open, setOpen] = useState(depth < 1 && !internal);
   const isDir = node.type === "dir";
   const isActive = node.path === activeFile;
 
@@ -108,15 +122,16 @@ function Node({ node, depth, onMenu }: { node: TreeNode; depth: number; onMenu: 
           e.preventDefault();
           onMenu(e, node);
         }}
-        className={clsx("group flex items-center gap-1 pr-2 py-0.5 cursor-pointer hover:bg-bg-hover", isActive && "bg-bg-hover text-accent")}
+        className={clsx("group flex items-center gap-1 pr-2 py-0.5 cursor-pointer hover:bg-bg-hover", isActive && "bg-bg-hover text-accent", internal && "opacity-60")}
         style={{ paddingLeft: 8 + depth * 12 }}
-        title={node.path}
+        title={internal && depth === 0 ? `${node.path} (HardKas runtime state: artifacts, accounts, node data)` : node.path}
       >
         <span className="w-3 text-fg-muted">{isDir ? open ? <ChevronDown size={12} /> : <ChevronRight size={12} /> : null}</span>
-        <Icon size={14} className={clsx(isDir ? "text-warn" : node.name.endsWith(".sil") ? "text-accent" : "text-fg-muted")} />
+        <Icon size={14} className={clsx(isDir ? (internal ? "text-fg-muted" : "text-warn") : node.name.endsWith(".sil") ? "text-accent" : "text-fg-muted")} />
         <span className="truncate flex-1">{node.name}</span>
+        {internal && depth === 0 && isDir && <span className="text-[10px] text-fg-muted">state</span>}
       </div>
-      {isDir && open && node.children?.map((child) => <Node key={child.path} node={child} depth={depth + 1} onMenu={onMenu} />)}
+      {isDir && open && sortProjectFirst(node.children ?? []).map((child) => <Node key={child.path} node={child} depth={depth + 1} onMenu={onMenu} />)}
     </div>
   );
 }

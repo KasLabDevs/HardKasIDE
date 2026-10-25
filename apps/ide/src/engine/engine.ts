@@ -27,6 +27,14 @@ export interface PluginProfile {
   events?: string[];
   /** Order in the icon rail; lower first. */
   order?: number;
+  /** Built into the IDE, or installed by the user (iframe). */
+  kind?: "builtin" | "external";
+  /** Cannot be deactivated (the IDE would not work without it). */
+  required?: boolean;
+  version?: string;
+  author?: string;
+  /** For external plugins: "plugin.method" calls they are allowed to make without asking. */
+  permissions?: string[];
 }
 
 type Listener = (...args: unknown[]) => void;
@@ -84,10 +92,28 @@ export class Engine {
   async deactivate(name: string): Promise<void> {
     const plugin = this.plugins.get(name);
     if (!plugin || !this.active.has(name)) return;
+    if (plugin.profile.required) throw new Error(`${name} is required and cannot be deactivated`);
     this.active.delete(name);
     await plugin.onDeactivation?.();
     this.emit("engine", "pluginDeactivated", name);
     this.notify();
+  }
+
+  /** Removes a plugin entirely (external plugins on uninstall). */
+  async unregister(name: string): Promise<void> {
+    await this.deactivate(name);
+    this.plugins.delete(name);
+    for (const key of [...this.listeners.keys()]) if (key.startsWith(`${name}:`)) this.listeners.delete(key);
+    this.notify();
+  }
+
+  has(name: string): boolean {
+    return this.plugins.has(name);
+  }
+
+  /** Names of the active plugins (persisted by the plugin manager). */
+  activeNames(): string[] {
+    return [...this.active];
   }
 
   get<T extends Plugin = Plugin>(name: string): T {
@@ -118,7 +144,12 @@ export class Engine {
       throw new Error(`${name} does not expose method "${method}"`);
     }
     const fn = (plugin as unknown as Record<string, unknown>)[method];
-    if (typeof fn !== "function") throw new Error(`${name}.${method} is not a function`);
+    if (typeof fn !== "function") {
+      // External (iframe) plugins expose methods over postMessage.
+      const invoke = (plugin as unknown as { invoke?: (m: string, ...a: unknown[]) => Promise<unknown> }).invoke;
+      if (plugin.profile.kind === "external" && typeof invoke === "function") return invoke.call(plugin, method, ...args) as Promise<T>;
+      throw new Error(`${name}.${method} is not a function`);
+    }
     return (fn as (...a: unknown[]) => T | Promise<T>).apply(plugin, args);
   }
 

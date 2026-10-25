@@ -9,6 +9,7 @@ import * as wsfs from "./fs.js";
 import { FsError } from "./fs.js";
 import { createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe } from "./runner.js";
 import { closeTerminal, defaultShell, listTerminals, openTerminal } from "./terminal.js";
+import { examplesDir, fetchText, installNpmPlugin, listExamples, pluginsRoot, readStatic } from "./plugins.js";
 import { closeWorkspace, describeWorkspace, getRoot, listRecents, openWorkspace, readDevServerToken } from "./workspace.js";
 
 /**
@@ -239,6 +240,37 @@ app.get(
     };
   })
 );
+
+// ---------------------------------------------------------------- external plugins
+
+app.get("/api/plugins/fetch", async (c) => {
+  const url = c.req.query("url");
+  if (!url) return c.json({ ok: false, code: "BAD_REQUEST", message: "url is required" }, 400);
+  return c.json({ ok: true, text: await fetchText(url) });
+});
+
+app.post("/api/plugins/npm", async (c) => {
+  const body = (await c.req.json()) as { package?: string };
+  if (!body.package) return c.json({ ok: false, code: "BAD_REQUEST", message: "package is required" }, 400);
+  const res = await installNpmPlugin(body.package);
+  return c.json({ ok: true, ...res });
+});
+
+app.get("/api/plugins/examples", async (c) => c.json({ ok: true, examples: await listExamples() }));
+
+app.get("/api/plugins/examples/*", async (c) => {
+  const rel = c.req.path.replace(/^\/api\/plugins\/examples\//, "");
+  const file = await readStatic(examplesDir(), rel);
+  if (!file) return c.text("not found", 404);
+  return new Response(file.body, { headers: { "content-type": file.type, "cache-control": "no-cache" } });
+});
+
+app.get("/api/plugins/static/*", async (c) => {
+  const rel = c.req.path.replace(/^\/api\/plugins\/static\//, "");
+  const file = await readStatic(path.join(pluginsRoot(), "node_modules"), rel);
+  if (!file) return c.text("not found", 404);
+  return new Response(file.body, { headers: { "content-type": file.type, "cache-control": "no-cache" } });
+});
 
 // ---------------------------------------------------------------- dev-server proxy
 

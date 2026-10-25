@@ -8,6 +8,8 @@ import { EditorPlugin } from "@/plugins/editor";
 import { EnvironmentPlugin } from "@/plugins/environment";
 import { FileManagerPlugin } from "@/plugins/fileManager";
 import { LineagePlugin } from "@/plugins/lineage";
+import { PluginManagerPlugin, REQUIRED_PLUGINS } from "@/plugins/pluginManager";
+import { usePlugins } from "@/store/plugins";
 import { SilverPlugin } from "@/plugins/silver";
 import { TestsPlugin } from "@/plugins/tests";
 import { ArtifactsPlugin, FilesPlugin, RunPlugin, SettingsPlugin } from "@/plugins/sidePlugins";
@@ -33,10 +35,22 @@ function createEngine(): Engine {
   engine.register(new LineagePlugin());
   engine.register(new TestsPlugin());
   engine.register(new SettingsPlugin());
+  engine.register(new PluginManagerPlugin());
+  for (const p of engine.list()) {
+    p.profile.kind = p.profile.kind ?? "builtin";
+    if (REQUIRED_PLUGINS.includes(p.profile.name)) p.profile.required = true;
+  }
   return engine;
 }
 
-const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "environment", "artifacts", "lineage", "tests", "settings"];
+const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "environment", "artifacts", "lineage", "tests", "settings", "pluginManager"];
+
+/** Built-ins the user switched off stay off (the plugin manager persists the active set). */
+function activationList(): string[] {
+  const saved = usePlugins.getState().savedActive;
+  if (!saved) return ACTIVATION_ORDER;
+  return ACTIVATION_ORDER.filter((n) => REQUIRED_PLUGINS.includes(n) || saved.includes(n));
+}
 
 export default function App() {
   const engine = useMemo(createEngine, []);
@@ -62,7 +76,7 @@ export default function App() {
     if (!workspace?.root) return;
     let cancelled = false;
     (async () => {
-      await engine.activate(ACTIVATION_ORDER);
+      await engine.activate(activationList());
       if (cancelled) return;
       const console_ = engine.get<ConsolePlugin>("console");
       console_.info(`Workspace: ${workspace.root}`);
@@ -77,7 +91,10 @@ export default function App() {
   const goHome = async () => {
     await api.workspace.close().catch(() => undefined);
     useIde.setState({ workspace: null, tree: [], openFiles: [], activeFile: null, journal: [] });
-    for (const name of [...ACTIVATION_ORDER].reverse()) await engine.deactivate(name);
+    for (const name of [...engine.activeNames()].reverse()) {
+      if (engine.get(name).profile.required) continue;
+      await engine.deactivate(name);
+    }
   };
 
   const onOpened = (ws: WorkspaceInfo) => setWorkspace(ws);
