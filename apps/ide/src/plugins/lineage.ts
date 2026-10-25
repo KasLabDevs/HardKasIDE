@@ -102,7 +102,9 @@ export class LineagePlugin extends Plugin {
     store.setReplay(artifactId, { status: "running" });
     try {
       const res = await api.dev<Record<string, unknown>>(`/artifacts/${encodeURIComponent(artifactId)}/replay`, { method: "POST", body: "{}" });
-      const status = String((res.status as string | undefined) ?? (res.result as { status?: string } | undefined)?.status ?? (res.passed ? "passed" : "unknown"));
+      // dev-server shape: { ok, data: { status: passed|diverged|missing_dependency|unsupported, lineage, determinism, contamination, artifactsScanned } }
+      const data = (res.data ?? res) as { status?: string; passed?: boolean };
+      const status = String(data.status ?? (data.passed ? "passed" : "unknown"));
       store.setReplay(artifactId, { status, detail: res });
       console_.logJson(`replay ${artifactId.slice(0, 12)}… → ${status}`, res);
     } catch (e) {
