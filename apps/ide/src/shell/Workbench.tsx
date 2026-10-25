@@ -1,5 +1,6 @@
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useIde } from "@/store/ide";
+import { EnvBar } from "./EnvBar";
 import { IconRail } from "./IconRail";
 import { MainArea } from "./MainArea";
 import { SidePanel } from "./SidePanel";
@@ -24,19 +25,24 @@ export function Workbench({ onHome }: Props) {
           </Panel>
           <PanelResizeHandle className="w-px bg-border hover:bg-accent transition-colors" />
           <Panel minSize={30}>
-            <PanelGroup direction="vertical">
-              <Panel minSize={20}>
-                <MainArea />
-              </Panel>
-              {terminalOpen && (
-                <>
-                  <PanelResizeHandle className="h-px bg-border hover:bg-accent transition-colors" />
-                  <Panel defaultSize={30} minSize={10}>
-                    <Terminal />
+            <div className="h-full flex flex-col min-w-0">
+              <EnvBar />
+              <div className="flex-1 min-h-0">
+                <PanelGroup direction="vertical">
+                  <Panel minSize={20}>
+                    <MainArea />
                   </Panel>
-                </>
-              )}
-            </PanelGroup>
+                  {terminalOpen && (
+                    <>
+                      <PanelResizeHandle className="h-px bg-border hover:bg-accent transition-colors" />
+                      <Panel defaultSize={30} minSize={10}>
+                        <Terminal />
+                      </Panel>
+                    </>
+                  )}
+                </PanelGroup>
+              </div>
+            </div>
           </Panel>
         </PanelGroup>
       </div>
