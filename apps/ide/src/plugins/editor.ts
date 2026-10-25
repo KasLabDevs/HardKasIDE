@@ -37,6 +37,11 @@ export class EditorPlugin extends Plugin {
     this.emit("editorMounted");
   }
 
+  /** The Monaco namespace once the editor has mounted (null before). */
+  getMonaco(): typeof Monaco | null {
+    return this.monaco;
+  }
+
   /** Debounced like Remix (500 ms): drives auto-save and auto-compile. */
   notifyChange(path: string): void {
     if (this.changeTimer) clearTimeout(this.changeTimer);

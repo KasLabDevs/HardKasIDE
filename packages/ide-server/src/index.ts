@@ -10,6 +10,7 @@ import { FsError } from "./fs.js";
 import { createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe } from "./runner.js";
 import { closeTerminal, defaultShell, listTerminals, openTerminal } from "./terminal.js";
 import { examplesDir, fetchText, installNpmPlugin, listExamples, loadRegistry, pluginsRoot, readStatic, searchNpmPlugins } from "./plugins.js";
+import { installVsx, readIndex, readVsxFile, searchVsx, setVsxEnabled, uninstallVsx } from "./vsx.js";
 import { closeWorkspace, describeWorkspace, getRoot, listRecents, openWorkspace, readDevServerToken } from "./workspace.js";
 
 /**
@@ -280,6 +281,38 @@ app.get("/api/plugins/examples/*", async (c) => {
 app.get("/api/plugins/static/*", async (c) => {
   const rel = c.req.path.replace(/^\/api\/plugins\/static\//, "");
   const file = await readStatic(path.join(pluginsRoot(), "node_modules"), rel);
+  if (!file) return c.text("not found", 404);
+  return new Response(file.body, { headers: { "content-type": file.type, "cache-control": "no-cache" } });
+});
+
+// ---------------------------------------------------------------- VS Code extensions (Open VSX)
+
+app.get("/api/vsx/search", async (c) => c.json({ ok: true, ...(await searchVsx(c.req.query("q") ?? "", Number(c.req.query("size") ?? 24) || 24)) }));
+
+app.get("/api/vsx/installed", async (c) => c.json({ ok: true, installed: await readIndex() }));
+
+app.post("/api/vsx/install", async (c) => {
+  const body = (await c.req.json()) as { namespace?: string; name?: string; version?: string };
+  if (!body.namespace || !body.name) return c.json({ ok: false, code: "BAD_REQUEST", message: "namespace and name are required" }, 400);
+  return c.json({ ok: true, extension: await installVsx(body.namespace, body.name, body.version) });
+});
+
+app.post("/api/vsx/enable", async (c) => {
+  const body = (await c.req.json()) as { id?: string; enabled?: boolean };
+  if (!body.id) return c.json({ ok: false, code: "BAD_REQUEST", message: "id is required" }, 400);
+  await setVsxEnabled(body.id, body.enabled !== false);
+  return c.json({ ok: true });
+});
+
+app.delete("/api/vsx/:id", async (c) => {
+  await uninstallVsx(c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+app.get("/api/vsx/file/:id/*", async (c) => {
+  const id = c.req.param("id");
+  const rel = c.req.path.replace(new RegExp(`^/api/vsx/file/${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`), "");
+  const file = await readVsxFile(id, decodeURIComponent(rel));
   if (!file) return c.text("not found", 404);
   return new Response(file.body, { headers: { "content-type": file.type, "cache-control": "no-cache" } });
 });

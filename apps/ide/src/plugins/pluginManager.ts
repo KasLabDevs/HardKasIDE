@@ -7,7 +7,7 @@ import { IframePlugin, type PluginManifest } from "./iframePlugin";
 import { clearGrants } from "./permissions";
 
 /** The set of built-ins the IDE cannot run without. */
-export const REQUIRED_PLUGINS = ["console", "fileManager", "editor", "files", "pluginManager"];
+export const REQUIRED_PLUGINS = ["console", "fileManager", "editor", "files", "pluginManager", "vsx"];
 
 /**
  * Plugin manager (Remix's plugin manager + VS Code's extensions view, scaled down):

@@ -8,8 +8,9 @@ import type { PluginManifest } from "@/plugins/iframePlugin";
 import { grantsOf } from "@/plugins/permissions";
 import type { PluginManagerPlugin } from "@/plugins/pluginManager";
 import { usePlugins } from "@/store/plugins";
+import { VsxTab } from "./VsxTab";
 
-type Tab = "installed" | "search" | "install";
+type Tab = "installed" | "search" | "vscode" | "install";
 
 /** Extensions view: built-in and external plugins with on/off, plus three ways to install. */
 export function PluginManagerPanel() {
@@ -41,9 +42,9 @@ export function PluginManagerPanel() {
   return (
     <div className="text-xs">
       <div className="flex border-b border-border text-[11px] uppercase tracking-wider">
-        {(["installed", "search", "install"] as Tab[]).map((t) => (
+        {(["installed", "search", "vscode", "install"] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={clsx("flex-1 py-1.5", tab === t ? "text-fg border-b-2 border-accent" : "text-fg-muted hover:text-fg")}>
-            {t === "installed" ? `Installed · ${plugins.length}` : t === "search" ? "Search" : "Install"}
+            {t === "installed" ? `Installed · ${plugins.length}` : t === "search" ? "Search" : t === "vscode" ? "VS Code" : "Install"}
           </button>
         ))}
       </div>
@@ -67,6 +68,7 @@ export function PluginManagerPanel() {
       )}
 
       {tab === "search" && <SearchTab manager={manager} busy={busy} run={run} />}
+      {tab === "vscode" && <VsxTab />}
       {tab === "install" && <InstallForms manager={manager} busy={busy} run={run} />}
 
       {msg && <div className="px-3 py-2 text-[11px] text-accent border-t border-border">{msg}</div>}

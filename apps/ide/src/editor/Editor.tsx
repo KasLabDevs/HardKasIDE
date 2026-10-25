@@ -4,6 +4,8 @@ import { useCallback, useRef } from "react";
 import { useEngine } from "@/engine/context";
 import type { EditorPlugin } from "@/plugins/editor";
 import { useIde } from "@/store/ide";
+import { useVsx } from "@/store/vsx";
+import { monacoThemeName } from "@/plugins/vsx";
 import { SILVERSCRIPT_ID, silverscriptCompletions, silverscriptConfiguration, silverscriptMonarch } from "./silverscript";
 import { buildMonacoTheme, THEME_NAME } from "./theme";
 
@@ -18,7 +20,9 @@ export function Editor() {
   const activeFile = useIde((s) => s.activeFile);
   const file = useIde((s) => s.openFiles.find((f) => f.path === s.activeFile));
   const updateContent = useIde((s) => s.updateContent);
+  const activeVsxTheme = useVsx((s) => s.activeTheme);
   const monacoRef = useRef<typeof Monaco | null>(null);
+  const themeName = activeVsxTheme ? monacoThemeName(activeVsxTheme) : THEME_NAME;
 
   const beforeMount: BeforeMount = useCallback((monaco) => {
     monacoRef.current = monaco;
@@ -129,7 +133,7 @@ export function Editor() {
       path={file.path}
       language={file.language}
       value={file.content}
-      theme={THEME_NAME}
+      theme={themeName}
       beforeMount={beforeMount}
       onMount={onMount}
       onChange={(value) => {
