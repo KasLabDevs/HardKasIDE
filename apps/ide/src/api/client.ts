@@ -139,7 +139,12 @@ export const api = {
     /** Installs an npm package under .hardkas/ide/plugins and returns its hardkasPlugin manifest. */
     npm: (pkg: string) =>
       request<{ manifest: Record<string, unknown>; package: string; version: string }>("/api/plugins/npm", { method: "POST", body: JSON.stringify({ package: pkg }) }),
-    examples: () => request<{ examples: Array<{ name: string; manifestUrl: string }> }>("/api/plugins/examples").then((r) => r.examples)
+    examples: () => request<{ examples: Array<{ name: string; manifestUrl: string }> }>("/api/plugins/examples").then((r) => r.examples),
+    /** npm packages tagged hardkas-plugin matching the query. */
+    search: (q: string) =>
+      request<{ results: Array<{ name: string; version: string; description: string; author?: string; date?: string; links?: { npm?: string; homepage?: string } }> }>(
+        `/api/plugins/search?q=${encodeURIComponent(q)}`
+      ).then((r) => r.results)
   },
   /** Raw call to the HardKas dev-server through the proxy, e.g. dev("/accounts"). */
   dev: <T = unknown>(path: string, init?: RequestInit) => request<T>(`/api/dev${path}`, init)

@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Download, Globe, Package, Puzzle, ShieldCheck, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
+import { Download, Globe, Package, Puzzle, Search, ShieldCheck, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import { useEngine, useEngineVersion } from "@/engine/context";
@@ -9,7 +9,7 @@ import { grantsOf } from "@/plugins/permissions";
 import type { PluginManagerPlugin } from "@/plugins/pluginManager";
 import { usePlugins } from "@/store/plugins";
 
-type Tab = "installed" | "install";
+type Tab = "installed" | "search" | "install";
 
 /** Extensions view: built-in and external plugins with on/off, plus three ways to install. */
 export function PluginManagerPanel() {
@@ -41,9 +41,9 @@ export function PluginManagerPanel() {
   return (
     <div className="text-xs">
       <div className="flex border-b border-border text-[11px] uppercase tracking-wider">
-        {(["installed", "install"] as Tab[]).map((t) => (
+        {(["installed", "search", "install"] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={clsx("flex-1 py-1.5", tab === t ? "text-fg border-b-2 border-accent" : "text-fg-muted hover:text-fg")}>
-            {t === "installed" ? `Installed · ${plugins.length}` : "Install"}
+            {t === "installed" ? `Installed · ${plugins.length}` : t === "search" ? "Search" : "Install"}
           </button>
         ))}
       </div>
@@ -66,6 +66,7 @@ export function PluginManagerPanel() {
         </div>
       )}
 
+      {tab === "search" && <SearchTab manager={manager} busy={busy} run={run} />}
       {tab === "install" && <InstallForms manager={manager} busy={busy} run={run} />}
 
       {msg && <div className="px-3 py-2 text-[11px] text-accent border-t border-border">{msg}</div>}
@@ -127,6 +128,112 @@ function PluginRow({ plugin, manifest, onToggle, onUninstall }: { plugin: Plugin
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+interface SearchHit {
+  name: string;
+  version: string;
+  description: string;
+  author?: string;
+  date?: string;
+  links?: { npm?: string; homepage?: string };
+}
+
+/** Marketplace-style search: npm packages tagged `hardkas-plugin`, plus the bundled examples. */
+function SearchTab({ manager, busy, run }: { manager: PluginManagerPlugin; busy: boolean; run: (label: string, fn: () => Promise<unknown>) => Promise<void> }) {
+  const engine = useEngine();
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [examples, setExamples] = useState<Array<{ name: string; manifestUrl: string }>>([]);
+  const installed = usePlugins((s) => s.installed);
+
+  useEffect(() => {
+    api.plugins.examples().then(setExamples).catch(() => setExamples([]));
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearching(true);
+      setErr(null);
+      api.plugins
+        .search(q)
+        .then(setHits)
+        .catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)))
+        .finally(() => setSearching(false));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const isInstalled = (pkg: string) => installed.some((m) => m.source?.kind === "npm" && m.source.ref.replace(/(?!^)@.*$/, "") === pkg);
+
+  return (
+    <div className="p-3 space-y-3">
+      <div className="relative">
+        <Search size={12} className="absolute left-2 top-2 text-fg-muted" />
+        <input className="input pl-6" placeholder="Search plugins on npm (keyword hardkas-plugin)…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+      </div>
+      {examples.length > 0 && (
+        <div>
+          <div className="label">Bundled</div>
+          {examples.map((e) => {
+            const name = `${e.name}-plugin`;
+            const done = engine.has(name) || installed.some((m) => m.source?.kind === "url" && m.source.ref.includes(`/examples/${e.name}/`));
+            return (
+              <div key={e.name} className="rounded border border-border bg-bg-elev p-2 mb-1.5 flex items-center gap-2">
+                <Puzzle size={14} className="text-accent" />
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-fg">{e.name}</div>
+                  <div className="text-[10px] text-fg-muted">example shipped with the IDE · examples/plugins/{e.name}</div>
+                </div>
+                <button className="btn-primary" disabled={busy || done} onClick={() => void run(`installed ${e.name}`, () => manager.installFromUrl(new URL(e.manifestUrl, location.origin).toString()))}>
+                  {done ? "Installed" : "Install"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div>
+        <div className="label flex items-center gap-2">
+          npm <span className="normal-case tracking-normal text-fg-muted">{searching ? "searching…" : hits ? `${hits.length} result${hits.length === 1 ? "" : "s"}` : ""}</span>
+        </div>
+        {err && <div className="text-error">{err}</div>}
+        {hits && hits.length === 0 && !searching && (
+          <div className="text-fg-muted">
+            Nothing on npm tagged <code>hardkas-plugin</code>{q ? ` matching "${q}"` : ""} yet. Publish one: add <code>"keywords": ["hardkas-plugin"]</code> and a <code>"hardkasPlugin"</code> manifest to its package.json.
+          </div>
+        )}
+        {hits?.map((h) => (
+          <div key={h.name} className="rounded border border-border bg-bg-elev p-2 mb-1.5">
+            <div className="flex items-center gap-2">
+              <Package size={14} className="text-info" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-fg truncate">{h.name}</span>
+                  <span className="text-[10px] text-fg-muted">v{h.version}</span>
+                </div>
+                <div className="text-[10px] text-fg-muted truncate">{h.description || "no description"}</div>
+              </div>
+              <button className="btn-primary" disabled={busy || isInstalled(h.name)} onClick={() => void run(`installed ${h.name}`, () => manager.installFromNpm(h.name))}>
+                {isInstalled(h.name) ? "Installed" : "Install"}
+              </button>
+            </div>
+            <div className="text-[10px] text-fg-muted mt-1 flex gap-2">
+              {h.author && <span>by {h.author}</span>}
+              {h.date && <span>{new Date(h.date).toLocaleDateString()}</span>}
+              {h.links?.npm && (
+                <a href={h.links.npm} target="_blank" rel="noreferrer" className="hover:text-accent">
+                  npm ↗
+                </a>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

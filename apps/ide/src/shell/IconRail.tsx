@@ -13,7 +13,8 @@ export function IconRail({ onHome }: Props) {
   useEngineVersion();
   const active = useIde((s) => s.activeSidePlugin);
   const setActive = useIde((s) => s.setActiveSidePlugin);
-  const plugins = engine.listByLocation("sidePanel");
+  const docks = useIde((s) => s.docks);
+  const plugins = engine.listByLocation("sidePanel").filter((p) => (docks[p.profile.name] ?? "left") === "left");
   const mainViews = engine.listByLocation("mainPanel");
   const openView = useIde((s) => s.openView);
   const activeFile = useIde((s) => s.activeFile);

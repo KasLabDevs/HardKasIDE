@@ -5,8 +5,9 @@ import { CommandPalette } from "./CommandPalette";
 import { EnvBar } from "./EnvBar";
 import { IconRail } from "./IconRail";
 import { MainArea } from "./MainArea";
-import { Outline } from "./Outline";
+import { RightDock } from "./RightDock";
 import { SidePanel } from "./SidePanel";
+import { useEngine, useEngineVersion } from "@/engine/context";
 import { StatusBar } from "./StatusBar";
 
 interface Props {
@@ -17,6 +18,11 @@ interface Props {
 export function Workbench({ onHome }: Props) {
   const terminalOpen = useIde((s) => s.terminalOpen);
   const outlineOpen = useIde((s) => s.outlineOpen);
+  const docks = useIde((s) => s.docks);
+  const engine = useEngine();
+  useEngineVersion();
+  const rightDocked = engine.listByLocation("sidePanel").some((p) => docks[p.profile.name] === "right");
+  const showRight = outlineOpen || rightDocked;
 
   return (
     <div className="h-full flex flex-col">
@@ -47,11 +53,11 @@ export function Workbench({ onHome }: Props) {
               </div>
             </div>
           </Panel>
-          {outlineOpen && (
+          {showRight && (
             <>
               <PanelResizeHandle className="w-px bg-border hover:bg-accent transition-colors" />
-              <Panel defaultSize={18} minSize={12} maxSize={35}>
-                <Outline />
+              <Panel defaultSize={20} minSize={12} maxSize={40}>
+                <RightDock />
               </Panel>
             </>
           )}

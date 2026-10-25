@@ -96,6 +96,34 @@ export async function readStatic(baseDir: string, relative: string): Promise<{ b
   }
 }
 
+export interface SearchHit {
+  name: string;
+  version: string;
+  description: string;
+  author?: string;
+  date?: string;
+  links?: { npm?: string; homepage?: string; repository?: string };
+  score?: number;
+}
+
+/** Searches npm for packages tagged `hardkas-plugin` (plus free text). */
+export async function searchNpmPlugins(query: string): Promise<SearchHit[]> {
+  const text = `keywords:hardkas-plugin ${query}`.trim();
+  const url = `https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(text)}&size=25`;
+  const res = await fetch(url, { headers: { accept: "application/json" } });
+  if (!res.ok) throw new Error(`npm search failed: ${res.status}`);
+  const json = (await res.json()) as { objects?: Array<{ package: { name: string; version: string; description?: string; author?: { name?: string }; publisher?: { username?: string }; date?: string; links?: SearchHit["links"] }; score?: { final?: number } }> };
+  return (json.objects ?? []).map((o) => ({
+    name: o.package.name,
+    version: o.package.version,
+    description: o.package.description ?? "",
+    author: o.package.author?.name ?? o.package.publisher?.username,
+    date: o.package.date,
+    links: o.package.links,
+    score: o.score?.final
+  }));
+}
+
 export async function listExamples(): Promise<Array<{ name: string; manifestUrl: string }>> {
   const dir = examplesDir();
   try {

@@ -9,7 +9,7 @@ import * as wsfs from "./fs.js";
 import { FsError } from "./fs.js";
 import { createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe } from "./runner.js";
 import { closeTerminal, defaultShell, listTerminals, openTerminal } from "./terminal.js";
-import { examplesDir, fetchText, installNpmPlugin, listExamples, pluginsRoot, readStatic } from "./plugins.js";
+import { examplesDir, fetchText, installNpmPlugin, listExamples, pluginsRoot, readStatic, searchNpmPlugins } from "./plugins.js";
 import { closeWorkspace, describeWorkspace, getRoot, listRecents, openWorkspace, readDevServerToken } from "./workspace.js";
 
 /**
@@ -257,6 +257,8 @@ app.post("/api/plugins/npm", async (c) => {
 });
 
 app.get("/api/plugins/examples", async (c) => c.json({ ok: true, examples: await listExamples() }));
+
+app.get("/api/plugins/search", async (c) => c.json({ ok: true, results: await searchNpmPlugins(c.req.query("q") ?? "") }));
 
 app.get("/api/plugins/examples/*", async (c) => {
   const rel = c.req.path.replace(/^\/api\/plugins\/examples\//, "");
