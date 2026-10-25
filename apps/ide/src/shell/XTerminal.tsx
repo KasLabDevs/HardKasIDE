@@ -32,7 +32,7 @@ export function XTerminal({ id, visible, onExit }: Props) {
     const term = new XTerm({
       cursorBlink: true,
       fontFamily: v("--font-mono", "monospace"),
-      fontSize: 12,
+      fontSize: 13,
       lineHeight: 1.2,
       scrollback: 5000,
       allowProposedApi: true,
