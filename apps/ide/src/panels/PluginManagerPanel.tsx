@@ -89,7 +89,7 @@ function PluginRow({ plugin, manifest, onToggle, onUninstall }: { plugin: Plugin
           <div className="flex items-center gap-1.5">
             <span className={clsx("font-semibold truncate", active ? "text-fg" : "text-fg-muted")}>{plugin.profile.displayName}</span>
             {plugin.profile.version && <span className="text-[10px] text-fg-muted">v{plugin.profile.version}</span>}
-            {plugin.profile.required && <span className="text-[10px] text-fg-muted">· required</span>}
+            {plugin.profile.kind === "external" && plugin.profile.required && <span className="text-[10px] text-fg-muted">· required</span>}
           </div>
           {plugin.profile.description && <div className="text-[10px] text-fg-muted truncate">{plugin.profile.description}</div>}
         </button>
@@ -98,9 +98,15 @@ function PluginRow({ plugin, manifest, onToggle, onUninstall }: { plugin: Plugin
             <Trash2 size={13} />
           </button>
         )}
-        <button onClick={onToggle} disabled={plugin.profile.required} className={clsx(plugin.profile.required ? "text-fg-muted/40" : active ? "text-accent" : "text-fg-muted hover:text-fg")} title={active ? "Deactivate" : "Activate"}>
-          {active ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-        </button>
+        {plugin.profile.kind === "external" ? (
+          <button onClick={onToggle} disabled={plugin.profile.required} className={clsx(plugin.profile.required ? "text-fg-muted/40" : active ? "text-accent" : "text-fg-muted hover:text-fg")} title={active ? "Deactivate" : "Activate"}>
+            {active ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+          </button>
+        ) : (
+          <span className="text-[10px] text-fg-muted whitespace-nowrap" title="Built-in plugins are always active">
+            built in
+          </span>
+        )}
       </div>
       {open && (
         <div className="px-2 pb-2 text-[10px] text-fg-muted space-y-1">

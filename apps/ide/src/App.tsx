@@ -38,20 +38,20 @@ function createEngine(): Engine {
   engine.register(new SettingsPlugin());
   engine.register(new PluginManagerPlugin());
   engine.register(new VsxPlugin());
+  // Built-in plugins are always on; only external (installed) plugins can be switched off.
   for (const p of engine.list()) {
     p.profile.kind = p.profile.kind ?? "builtin";
-    if (REQUIRED_PLUGINS.includes(p.profile.name)) p.profile.required = true;
+    if (p.profile.kind === "builtin" || REQUIRED_PLUGINS.includes(p.profile.name)) p.profile.required = true;
   }
   return engine;
 }
 
 const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "environment", "artifacts", "lineage", "tests", "settings", "pluginManager", "vsx"];
 
-/** Built-ins the user switched off stay off (the plugin manager persists the active set). */
+/** Every built-in activates on boot; the persisted active set only governs external plugins. */
 function activationList(): string[] {
-  const saved = usePlugins.getState().savedActive;
-  if (!saved) return ACTIVATION_ORDER;
-  return ACTIVATION_ORDER.filter((n) => REQUIRED_PLUGINS.includes(n) || saved.includes(n));
+  void usePlugins.getState().savedActive;
+  return ACTIVATION_ORDER;
 }
 
 export default function App() {
