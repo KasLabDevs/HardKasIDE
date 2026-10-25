@@ -1,9 +1,9 @@
 import { CheckCircle2, Coins, FileJson, Play, RadioTower, RefreshCw, Send, Signature, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useEngine } from "@/engine/context";
-import type { CompilationResult } from "@/plugins/compiler";
 import type { Account, PlanOutcome, RunPlugin, SendOutcome, SignOutcome, TxStatus } from "@/plugins/run";
 import { useIde, type ExecutionTarget } from "@/store/ide";
+import { ContractGUI } from "./ContractGUI";
 
 const TARGETS: Array<{ id: ExecutionTarget; label: string; hint: string }> = [
   { id: "simulator", label: "Simulator (in-memory, synthetic)", hint: "Remix's JavaScript VM equivalent. Synthetic accounts alice…erin with 1000 KAS each." },
@@ -27,7 +27,6 @@ export function RunPanel() {
   const [txStatus, setTxStatus] = useState<TxStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [compiled, setCompiled] = useState<CompilationResult | null>(null);
 
   const run = engine.get<RunPlugin>("deployRun");
 
@@ -46,8 +45,6 @@ export function RunPanel() {
   useEffect(() => {
     if (workspace?.hasConfig) void loadAccounts();
   }, [workspace?.root, workspace?.hasConfig, loadAccounts]);
-
-  useEffect(() => engine.on("silverCompiler", "compilationFinished", (r) => setCompiled(r as CompilationResult)), [engine]);
 
   const guard = async (label: string, fn: () => Promise<void>) => {
     setBusy(label);
@@ -213,24 +210,9 @@ export function RunPanel() {
         )}
       </div>
 
-      <div className="space-y-2">
-        <div className="label">Compiled contracts</div>
-        {!compiled || compiled.contracts.length === 0 ? (
-          <div className="text-fg-muted">Compile a .sil file to list its contracts and entry points here.</div>
-        ) : (
-          compiled.contracts.map((c) => (
-            <div key={c.name} className="rounded border border-border bg-bg-elev p-2 space-y-1">
-              <div className="font-semibold">{c.name}</div>
-              {c.address && <div className="font-mono text-[10px] text-fg-muted break-all">{c.address}</div>}
-              {Array.isArray(c.entries) &&
-                c.entries.map((entry, i) => (
-                  <button key={i} className="btn-ghost w-full justify-start font-mono" disabled title="Entry calls via hardkas silver deploy/spend arrive in phase 3">
-                    {entryName(entry)}
-                  </button>
-                ))}
-            </div>
-          ))
-        )}
+      <div className="space-y-2 border-t border-border pt-3">
+        <div className="label">SilverScript contracts</div>
+        <ContractGUI />
       </div>
     </div>
   );
@@ -270,8 +252,3 @@ function kas(sompi: string): string {
   return Number.isFinite(n) ? (n / 1e8).toString() : sompi;
 }
 
-function entryName(entry: unknown): string {
-  if (typeof entry === "string") return entry;
-  if (entry && typeof entry === "object" && "name" in entry) return String((entry as { name: unknown }).name);
-  return JSON.stringify(entry);
-}

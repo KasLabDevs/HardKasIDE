@@ -8,6 +8,7 @@ import { EditorPlugin } from "@/plugins/editor";
 import { EnvironmentPlugin } from "@/plugins/environment";
 import { FileManagerPlugin } from "@/plugins/fileManager";
 import { LineagePlugin } from "@/plugins/lineage";
+import { SilverPlugin } from "@/plugins/silver";
 import { ArtifactsPlugin, FilesPlugin, RunPlugin, SettingsPlugin } from "@/plugins/sidePlugins";
 import { ConsolePlugin } from "@/plugins/console";
 import { Workbench } from "@/shell/Workbench";
@@ -25,6 +26,7 @@ function createEngine(): Engine {
   engine.register(new FilesPlugin());
   engine.register(new EnvironmentPlugin());
   engine.register(new CompilerPlugin());
+  engine.register(new SilverPlugin());
   engine.register(new RunPlugin());
   engine.register(new ArtifactsPlugin());
   engine.register(new LineagePlugin());
@@ -32,7 +34,7 @@ function createEngine(): Engine {
   return engine;
 }
 
-const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "deployRun", "environment", "artifacts", "lineage", "settings"];
+const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "environment", "artifacts", "lineage", "settings"];
 
 export default function App() {
   const engine = useMemo(createEngine, []);

@@ -49,6 +49,39 @@ export function Editor() {
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
         void engine.call("fileManager", "saveCurrentFile");
       });
+
+      // Right-click actions for SilverScript files (like Remix's "Compile" entry in the editor menu).
+      const isSil = editor.createContextKey<boolean>("hardkasSilverScript", editor.getModel()?.getLanguageId() === "silverscript");
+      editor.onDidChangeModel(() => isSil.set(editor.getModel()?.getLanguageId() === "silverscript"));
+      const compileCurrent = async (thenDeploy: boolean) => {
+        const result = await engine.call<{ ok: boolean } | null>("silverCompiler", "compileCurrent");
+        if (thenDeploy && result?.ok) useIde.getState().setActiveSidePlugin("deployRun");
+      };
+      editor.addAction({
+        id: "hardkas.silver.compile",
+        label: "Compile SilverScript",
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
+        precondition: "hardkasSilverScript",
+        contextMenuGroupId: "0_hardkas",
+        contextMenuOrder: 1,
+        run: () => void compileCurrent(false)
+      });
+      editor.addAction({
+        id: "hardkas.silver.compileDeploy",
+        label: "Compile & Deploy…",
+        precondition: "hardkasSilverScript",
+        contextMenuGroupId: "0_hardkas",
+        contextMenuOrder: 2,
+        run: () => void compileCurrent(true)
+      });
+      editor.addAction({
+        id: "hardkas.silver.openCompiler",
+        label: "Open Compiler panel",
+        precondition: "hardkasSilverScript",
+        contextMenuGroupId: "0_hardkas",
+        contextMenuOrder: 3,
+        run: () => useIde.getState().setActiveSidePlugin("silverCompiler")
+      });
     },
     [engine]
   );
