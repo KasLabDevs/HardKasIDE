@@ -14,3 +14,5 @@ reference/
 # HardKas runtime state of the demo workspace
 examples/demo-workspace/.hardkas/
 
+examples/demo-workspace/events.jsonl
+
