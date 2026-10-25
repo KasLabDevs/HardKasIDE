@@ -1,0 +1,16 @@
+﻿node_modules/
+dist/
+.turbo/
+coverage/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Reference clones (Remix IDE etc.) are study material, not part of this repo
+reference/
+
+# HardKas runtime state of the demo workspace
+examples/demo-workspace/.hardkas/
+

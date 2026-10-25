@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+/* HardKas IDE theme tokens. Monaco reads these at runtime to build its theme (see editor/theme.ts). */
+:root {
+  --bg: #0b0f14;
+  --bg-elev: #111821;
+  --bg-panel: #0e141b;
+  --bg-hover: #182230;
+  --border: #1f2a37;
+  --fg: #d7e0ea;
+  --fg-muted: #8696a7;
+  --accent: #49eacb; /* Kaspa teal */
+  --accent-fg: #06201c;
+  --warn: #f5b942;
+  --error: #ff6b6b;
+  --ok: #4ade80;
+  --info: #7cc4ff;
+  --font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-elev: var(--bg-elev);
+  --color-bg-panel: var(--bg-panel);
+  --color-bg-hover: var(--bg-hover);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-warn: var(--warn);
+  --color-error: var(--error);
+  --color-ok: var(--ok);
+  --color-info: var(--info);
+  --font-mono: var(--font-mono);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.btn-primary,
+.btn-ghost {
+  @apply inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+}
+.btn-primary {
+  @apply bg-accent text-accent-fg hover:brightness-110;
+}
+.btn-ghost {
+  @apply bg-transparent text-fg hover:bg-bg-hover border border-border;
+}
+.input {
+  @apply w-full rounded border border-border bg-bg px-2 py-1.5 text-xs text-fg outline-none focus:border-accent;
+}
+.label {
+  @apply block text-[11px] uppercase tracking-wide text-fg-muted mb-1;
+}
+.panel-title {
+  @apply px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border;
+}

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ide-server",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@hardkas-ide/server", "run", "dev"],
+      "port": 7421
+    },
+    {
+      "name": "ide",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@hardkas-ide/ide", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}
