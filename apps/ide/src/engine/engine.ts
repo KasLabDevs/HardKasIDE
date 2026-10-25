@@ -89,10 +89,11 @@ export class Engine {
     this.notify();
   }
 
-  async deactivate(name: string): Promise<void> {
+  /** `force` bypasses the required check: used when the whole workspace closes. */
+  async deactivate(name: string, force = false): Promise<void> {
     const plugin = this.plugins.get(name);
     if (!plugin || !this.active.has(name)) return;
-    if (plugin.profile.required) throw new Error(`${name} is required and cannot be deactivated`);
+    if (plugin.profile.required && !force) throw new Error(`${name} is required and cannot be deactivated`);
     this.active.delete(name);
     await plugin.onDeactivation?.();
     this.emit("engine", "pluginDeactivated", name);
@@ -101,7 +102,7 @@ export class Engine {
 
   /** Removes a plugin entirely (external plugins on uninstall). */
   async unregister(name: string): Promise<void> {
-    await this.deactivate(name);
+    await this.deactivate(name, true);
     this.plugins.delete(name);
     for (const key of [...this.listeners.keys()]) if (key.startsWith(`${name}:`)) this.listeners.delete(key);
     this.notify();

@@ -92,10 +92,15 @@ export default function App() {
 
   const goHome = async () => {
     await api.workspace.close().catch(() => undefined);
-    useIde.setState({ workspace: null, tree: [], openFiles: [], activeFile: null, journal: [] });
+    useIde.setState({ workspace: null, tree: [], openFiles: [], activeFile: null, journal: [], activeSidePlugin: "files" });
+    // Closing the workspace: every plugin goes down (even required ones) so the next
+    // workspace starts from a clean activation and reloads its tree, accounts, artifacts…
     for (const name of [...engine.activeNames()].reverse()) {
-      if (engine.get(name).profile.required) continue;
-      await engine.deactivate(name);
+      try {
+        await engine.deactivate(name, true);
+      } catch (e) {
+        console.warn(`[ide] deactivate ${name} failed`, e);
+      }
     }
   };
 
