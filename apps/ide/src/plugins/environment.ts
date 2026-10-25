@@ -4,7 +4,7 @@ import { Plugin } from "@/engine/engine";
 import { ServersPanel } from "@/panels/ServersPanel";
 import { useEnv, type AccountInfo, type NodeStatus } from "@/store/env";
 import { useIde, type ExecutionTarget } from "@/store/ide";
-import type { TerminalPlugin } from "./terminal";
+import type { ConsolePlugin } from "./console";
 
 /**
  * Environment service, in the spirit of Eclipse's "Servers" view: the node you
@@ -59,8 +59,8 @@ export class EnvironmentPlugin extends Plugin {
     this.timer = null;
   }
 
-  private terminal(): TerminalPlugin {
-    return this.engine.get<TerminalPlugin>("terminal");
+  private console(): ConsolePlugin {
+    return this.engine.get<ConsolePlugin>("console");
   }
 
   async refresh(): Promise<void> {
@@ -71,7 +71,7 @@ export class EnvironmentPlugin extends Plugin {
   async refreshNode(quiet = false): Promise<NodeStatus | null> {
     const env = useEnv.getState();
     try {
-      const run = await this.terminal().runHardkas(["localnet", "status", "--json"], { quiet });
+      const run = await this.console().runHardkas(["localnet", "status", "--json"], { quiet });
       const raw = run.result as Record<string, unknown> | null;
       if (!raw) throw new Error("localnet status returned no JSON");
       const node = parseNodeStatus(raw);
@@ -97,8 +97,8 @@ export class EnvironmentPlugin extends Plugin {
     const env = useEnv.getState();
     env.setNodeBusy("restart");
     try {
-      await this.terminal().runHardkas(["localnet", "stop", "--toccata", "--json"]);
-      await this.terminal().runHardkas(["localnet", "start", "--toccata", "--json"]);
+      await this.console().runHardkas(["localnet", "stop", "--toccata", "--json"]);
+      await this.console().runHardkas(["localnet", "start", "--toccata", "--json"]);
     } finally {
       env.setNodeBusy(null);
       await this.refreshNode(true);
@@ -109,7 +109,7 @@ export class EnvironmentPlugin extends Plugin {
     const env = useEnv.getState();
     env.setNodeBusy(label);
     try {
-      await this.terminal().runHardkas(args);
+      await this.console().runHardkas(args);
     } finally {
       env.setNodeBusy(null);
       await this.refreshNode(true);
@@ -122,7 +122,7 @@ export class EnvironmentPlugin extends Plugin {
     env.setAccountsBusy(true);
     try {
       const network = networkForTarget(useIde.getState().target);
-      const run = await this.terminal().runHardkas(["accounts", "list", "--json"], { quiet: true });
+      const run = await this.console().runHardkas(["accounts", "list", "--json"], { quiet: true });
       const list = Array.isArray(run.result) ? (run.result as Array<{ name: string; kind: string; address: string }>) : [];
       const plainKeys = await this.readPlainKeys();
       const accounts: AccountInfo[] = list.map((a) => ({
@@ -140,7 +140,7 @@ export class EnvironmentPlugin extends Plugin {
       // Balances one by one (the CLI has no batch call); keep the UI responsive.
       for (const a of accounts) {
         try {
-          const b = await this.terminal().runHardkas(["accounts", "balance", a.name, "--network", network, "--json"], { quiet: true });
+          const b = await this.console().runHardkas(["accounts", "balance", a.name, "--network", network, "--json"], { quiet: true });
           const res = (b.result as { result?: { balanceSompi?: string; utxoCount?: number; address?: string } } | null)?.result;
           // `accounts list` always reports the synthetic address; `accounts balance` reports the one used on this network.
           env.patchAccount(a.name, {
@@ -162,16 +162,16 @@ export class EnvironmentPlugin extends Plugin {
 
   async createAccount(name: string): Promise<void> {
     if (!/^[a-z][a-z0-9_-]{0,31}$/i.test(name)) throw new Error("Account name: letters, digits, dash or underscore, starting with a letter");
-    await this.terminal().runHardkas(["localnet", "account", "create", name, "--json"]);
+    await this.console().runHardkas(["localnet", "account", "create", name, "--json"]);
     await this.refreshAccounts();
   }
 
   async fund(name: string, amountKas: string): Promise<void> {
     const target = useIde.getState().target;
     if (target === "localnet") {
-      await this.terminal().runHardkas(["localnet", "fund", name, "--amount", amountKas, "--profile", "toccata-v2", "--json"]);
+      await this.console().runHardkas(["localnet", "fund", name, "--amount", amountKas, "--profile", "toccata-v2", "--json"]);
     } else {
-      await this.terminal().runHardkas(["localnet", "fund", name, "--amount", amountKas, "--json"]);
+      await this.console().runHardkas(["localnet", "fund", name, "--amount", amountKas, "--json"]);
     }
     await this.refreshAccounts();
   }
@@ -186,7 +186,7 @@ export class EnvironmentPlugin extends Plugin {
     const key = keys.get(name);
     if (!key) return false;
     await navigator.clipboard.writeText(key);
-    this.terminal().info(`Private key of ${name} copied to the clipboard (simnet dev account). It was not displayed.`);
+    this.console().info(`Private key of ${name} copied to the clipboard (simnet dev account). It was not displayed.`);
     return true;
   }
 

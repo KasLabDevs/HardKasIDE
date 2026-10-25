@@ -20,7 +20,7 @@ export function StatusBar() {
       {activeFile && <span className="truncate">{activeFile}</span>}
       <span className="ml-auto truncate">{status}</span>
       <button onClick={() => setTerminalOpen(!terminalOpen)} className="flex items-center gap-1 hover:text-fg" title="Toggle terminal">
-        <TerminalSquare size={12} /> {terminalOpen ? "hide" : "show"} terminal
+        <TerminalSquare size={12} /> {terminalOpen ? "hide" : "show"} console / terminal
       </button>
       <span>HardKas IDE 0.1 · CLI 0.12.0-rc.29</span>
     </footer>

@@ -14,11 +14,11 @@ export interface RunResult {
   job: JobSummary;
 }
 
-export class TerminalPlugin extends Plugin {
+export class ConsolePlugin extends Plugin {
   constructor() {
     super({
-      name: "terminal",
-      displayName: "Terminal",
+      name: "console",
+      displayName: "Console",
       location: "none",
       methods: ["log", "info", "warn", "error", "logJson", "clear", "run", "runHardkas"],
       events: ["jobStarted", "jobFinished"]

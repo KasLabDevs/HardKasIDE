@@ -3,7 +3,7 @@ import { api } from "@/api/client";
 import { Plugin } from "@/engine/engine";
 import { RunPanel } from "@/panels/RunPanel";
 import type { ExecutionTarget } from "@/store/ide";
-import type { TerminalPlugin } from "./terminal";
+import type { ConsolePlugin } from "./console";
 
 /**
  * Deploy & Run: the HardKas transaction lifecycle driven through the CLI.
@@ -111,8 +111,8 @@ export class RunPlugin extends Plugin {
     });
   }
 
-  private terminal(): TerminalPlugin {
-    return this.engine.get<TerminalPlugin>("terminal");
+  private console(): ConsolePlugin {
+    return this.engine.get<ConsolePlugin>("console");
   }
 
   /** `--target` for config targets; the rpc option maps to a public test network. */
@@ -121,12 +121,12 @@ export class RunPlugin extends Plugin {
   }
 
   async accounts(): Promise<Account[]> {
-    const run = await this.terminal().runHardkas(["accounts", "list", "--json"], { quiet: true });
+    const run = await this.console().runHardkas(["accounts", "list", "--json"], { quiet: true });
     return Array.isArray(run.result) ? (run.result as Account[]) : [];
   }
 
   async plan(input: { from: string; to: string; amount: string; target: ExecutionTarget }): Promise<PlanOutcome> {
-    const run = await this.terminal().runHardkas(["tx", "plan", "--from", input.from, "--to", input.to, "--amount", input.amount, ...this.targetArgs(input.target), "--json"]);
+    const run = await this.console().runHardkas(["tx", "plan", "--from", input.from, "--to", input.to, "--amount", input.amount, ...this.targetArgs(input.target), "--json"]);
     const raw = run.result as Record<string, unknown> | null;
     if (run.status !== "succeeded" || !raw || typeof raw.planId !== "string") {
       throw new Error(errorMessage(raw, "tx plan failed"));
@@ -154,7 +154,7 @@ export class RunPlugin extends Plugin {
   }
 
   async sign(planPath: string, account: string, target: ExecutionTarget): Promise<SignOutcome> {
-    const run = await this.terminal().runHardkas(["tx", "sign", planPath, "--account", account, ...this.targetArgs(target), "--json"]);
+    const run = await this.console().runHardkas(["tx", "sign", planPath, "--account", account, ...this.targetArgs(target), "--json"]);
     const raw = run.result as Record<string, unknown> | null;
     if (run.status !== "succeeded" || !raw || typeof raw.contentHash !== "string") {
       throw new Error(errorMessage(raw, "tx sign failed"));
@@ -171,7 +171,7 @@ export class RunPlugin extends Plugin {
   }
 
   async send(signedPath: string, target: ExecutionTarget): Promise<SendOutcome> {
-    const run = await this.terminal().runHardkas(["tx", "send", signedPath, ...this.targetArgs(target), "--json"]);
+    const run = await this.console().runHardkas(["tx", "send", signedPath, ...this.targetArgs(target), "--json"]);
     const raw = run.result as Record<string, unknown> | null;
     if (run.status !== "succeeded" || !raw || raw.ok === false) {
       throw new Error(errorMessage(raw, "tx send failed"));
@@ -192,7 +192,7 @@ export class RunPlugin extends Plugin {
 
   /** `tx status <txId> --network <net>`: asks the node (or simulator) how the tx is doing. */
   async txStatus(txId: string, network: string): Promise<TxStatus> {
-    const run = await this.terminal().runHardkas(["tx", "status", txId, "--network", network, "--json"]);
+    const run = await this.console().runHardkas(["tx", "status", txId, "--network", network, "--json"]);
     const raw = run.result as Record<string, unknown> | null;
     if (run.status !== "succeeded" || !raw || raw.ok === false) throw new Error(errorMessage(raw, "tx status failed"));
     return {
@@ -206,11 +206,11 @@ export class RunPlugin extends Plugin {
   }
 
   async localnetStatus() {
-    return this.terminal().runHardkas(["localnet", "status", "--json"], { quiet: true });
+    return this.console().runHardkas(["localnet", "status", "--json"], { quiet: true });
   }
 
   async localnetFund(account: string, amount: string) {
-    return this.terminal().runHardkas(["localnet", "fund", account, "--amount", amount, "--json"]);
+    return this.console().runHardkas(["localnet", "fund", account, "--amount", amount, "--json"]);
   }
 }
 

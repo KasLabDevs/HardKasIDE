@@ -2,7 +2,9 @@
 
 A single-purpose IDE for [HardKas](https://github.com/KasLabDevs/HardKas) projects on Kaspa.
 
-- **Workbench** shaped like Remix IDE: icon rail, file explorer, Monaco editor, Compile, Deploy & Run, artifacts, terminal.
+- **Workbench** shaped like Remix IDE: icon rail, file explorer, Monaco editor, Compile, Deploy & Run, artifacts.
+- **Servers view** shaped like Eclipse: the rusty-kaspad node (start / stop / restart / status) and the accounts with balances.
+- **Bottom panel** shaped like VS Code: a **Console** (journal of every `hardkas` command the IDE runs, with a `hardkas ›` prompt) and real **Terminal** tabs (PowerShell or your shell, opened in the project folder, over a PTY).
 - **Project flow** shaped like Visual Studio: a Home screen with New project (from HardKas CLI templates), Open folder and Recents.
 - Projects are real folders on disk with `hardkas.config.ts` and `.hardkas/`, driven through `hardkas <cmd> --json`.
 
