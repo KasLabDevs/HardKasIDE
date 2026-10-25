@@ -147,6 +147,8 @@ export const api = {
         results: Array<{ name: string; version: string; description: string; author?: string; date?: string; links?: { npm?: string; homepage?: string } }>;
       }>(`/api/plugins/search?q=${encodeURIComponent(q)}`)
   },
+  system: () =>
+    request<{ docker: { installed: boolean; running: boolean; clientVersion: string | null; serverVersion: string | null; error: string | null }; node: string; platform: string }>("/api/system"),
   vsx: {
     search: (q: string, size = 24) => request<{ total: number; hits: import("@/store/vsx").VsxSearchHit[] }>(`/api/vsx/search?q=${encodeURIComponent(q)}&size=${size}`),
     installed: () => request<{ installed: import("@/store/vsx").InstalledVsx[] }>("/api/vsx/installed").then((r) => r.installed),

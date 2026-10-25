@@ -353,6 +353,31 @@ app.all("/api/dev/*", async (c) => {
   return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
 });
 
+// ---------------------------------------------------------------- system checks (Docker, Node)
+
+app.get("/api/system", async (c) => {
+  const { execFile } = await import("node:child_process");
+  const run = (cmd: string, args: string[]) =>
+    new Promise<{ ok: boolean; out: string; err: string }>((resolve) => {
+      execFile(cmd, args, { timeout: 8000, windowsHide: true }, (error, stdout, stderr) => resolve({ ok: !error, out: String(stdout).trim(), err: String(stderr || (error ? error.message : "")).trim() }));
+    });
+  const client = await run("docker", ["version", "--format", "{{.Client.Version}}"]);
+  const server = client.ok ? await run("docker", ["version", "--format", "{{.Server.Version}}"]) : { ok: false, out: "", err: client.err };
+  const installed = client.ok || !/not found|not recognized|ENOENT|no se reconoce/i.test(client.err);
+  return c.json({
+    ok: true,
+    docker: {
+      installed,
+      running: server.ok && server.out.length > 0,
+      clientVersion: client.ok ? client.out : null,
+      serverVersion: server.ok ? server.out : null,
+      error: server.ok ? null : server.err.split("\n")[0]?.slice(0, 200) || null
+    },
+    node: process.version,
+    platform: process.platform
+  });
+});
+
 app.get("/", (c) =>
   c.json({ name: "hardkas-ide-server", port: PORT, devServer: DEV_SERVER, workspace: getRoot(), hint: "Open the IDE at http://localhost:5173" })
 );

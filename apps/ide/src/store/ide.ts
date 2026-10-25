@@ -8,6 +8,55 @@ import type { TreeNode, WorkspaceInfo } from "@/api/client";
 
 export type ExecutionTarget = "simulator" | "localnet" | "rpc";
 
+/**
+ * The three places a transaction can go. One definition, used by every panel,
+ * so the names match everywhere (HardKas itself says `--target simulator|localnet`
+ * and `--network simulated|simnet|testnet-10`; both are shown).
+ */
+export interface EnvironmentDef {
+  id: ExecutionTarget;
+  label: string; // human name
+  short: string; // for tight spaces
+  networkId: string; // HardKas network name
+  description: string;
+  needsDocker: boolean;
+  needsNode: boolean;
+}
+
+export const ENVIRONMENTS: EnvironmentDef[] = [
+  {
+    id: "simulator",
+    label: "Simulator (in-memory)",
+    short: "Simulator",
+    networkId: "simulated",
+    description: "No node, no Docker: HardKas simulates Kaspa in memory with synthetic accounts (alice…erin, 1000 KAS each). Fast and deterministic; the default for development.",
+    needsDocker: false,
+    needsNode: false
+  },
+  {
+    id: "localnet",
+    label: "Local node (Docker, simnet)",
+    short: "Local node",
+    networkId: "simnet",
+    description: "A real rusty-kaspad running in Docker on the private simnet network, with a CPU miner to fund accounts. Needs Docker Desktop installed and running.",
+    needsDocker: true,
+    needsNode: true
+  },
+  {
+    id: "rpc",
+    label: "Public testnet (RPC)",
+    short: "Testnet",
+    networkId: "testnet-10",
+    description: "A remote Kaspa testnet-10 node from hardkas.config.ts. Real network, test coins. Mainnet is blocked by HardKas policy.",
+    needsDocker: false,
+    needsNode: false
+  }
+];
+
+export function envOf(target: ExecutionTarget): EnvironmentDef {
+  return ENVIRONMENTS.find((e) => e.id === target) ?? ENVIRONMENTS[0];
+}
+
 export interface OpenFile {
   path: string;
   content: string;

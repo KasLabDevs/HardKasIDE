@@ -36,7 +36,7 @@ export function ContractGUI() {
   return (
     <div className="space-y-3">
       {target !== "localnet" && (
-        <div className="text-warn">Contracts deploy and spend on the canonical localnet (rusty-kaspad, simnet). Switch the target to localnet so balances match.</div>
+        <div className="text-warn">Contracts deploy and spend on the Local node (Docker rusty-kaspad, simnet). Switch the environment to Local node so balances match.</div>
       )}
 
       {/* ---------------------------------------------------- compiled → deploy */}

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { EnvironmentPlugin } from "@/plugins/environment";
 import { formatKas, useEnv, type AccountInfo } from "@/store/env";
-import { useIde } from "@/store/ide";
+import { ENVIRONMENTS, envOf, useIde } from "@/store/ide";
 import { WalletCard } from "./WalletCard";
 
 /** Eclipse "Servers"-style view: the node (start/stop/restart) and the accounts with balances. */
@@ -12,7 +12,9 @@ export function ServersPanel() {
   const engine = useEngine();
   const env = engine.get<EnvironmentPlugin>("environment");
   const node = useEnv((s) => s.node);
+  const docker = useEnv((s) => s.docker);
   const nodeBusy = useEnv((s) => s.nodeBusy);
+  const setTarget = useIde((s) => s.setTarget);
   const accounts = useEnv((s) => s.accounts);
   const accountsBusy = useEnv((s) => s.accountsBusy);
   const error = useEnv((s) => s.error);
@@ -43,20 +45,65 @@ export function ServersPanel() {
   };
 
   const dot = node ? (node.rpcReady ? "bg-ok" : node.running ? "bg-warn" : "bg-error") : "bg-fg-muted";
+  const current = envOf(target);
+  const dockerMissing = docker !== null && (!docker.installed || !docker.running);
 
   return (
     <div className="text-xs">
+      {/* ------------------------------------------------------- environment */}
+      <section className="border-b border-border">
+        <div className="px-3 py-1.5 label mb-0">Environment</div>
+        <div className="px-3 pb-3 space-y-2">
+          <select className="input" value={target} onChange={(e) => setTarget(e.target.value as typeof target)}>
+            {ENVIRONMENTS.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.label} · network {e.networkId}
+              </option>
+            ))}
+          </select>
+          <div className="text-fg-muted">{current.description}</div>
+          <div className="text-[10px] text-fg-muted">
+            HardKas names: <code>--target {current.id}</code> · <code>--network {current.networkId}</code>
+          </div>
+        </div>
+      </section>
+
       {/* ------------------------------------------------------------ node */}
       <section className="border-b border-border">
         <div className="flex items-center justify-between px-3 py-1.5">
           <span className="label mb-0 flex items-center gap-2">
-            <span className={clsx("w-2 h-2 rounded-full", dot)} /> Node
+            <span className={clsx("w-2 h-2 rounded-full", dot)} /> Local node (Docker)
           </span>
           <button onClick={() => void env.refreshNode()} className="text-fg-muted hover:text-fg" title="Refresh node status">
             <RefreshCw size={13} className={nodeBusy ? "animate-spin" : ""} />
           </button>
         </div>
         <div className="px-3 pb-3 space-y-2">
+          {dockerMissing && (
+            <div className="rounded border border-warn/50 bg-warn/10 p-2 space-y-1">
+              <div className="text-warn font-semibold">{docker?.installed ? "Docker is installed but not running" : "Docker is not installed"}</div>
+              <div className="text-fg-muted">
+                The local node is rusty-kaspad inside a Docker container.{" "}
+                {docker?.installed ? "Start Docker Desktop and refresh." : (
+                  <>
+                    Install{" "}
+                    <a className="text-accent hover:underline" href="https://www.docker.com/products/docker-desktop/" target="_blank" rel="noreferrer">
+                      Docker Desktop
+                    </a>{" "}
+                    and refresh.
+                  </>
+                )}{" "}
+                Until then, use the Simulator: it needs nothing.
+              </div>
+              {docker?.error && <div className="text-[10px] text-fg-muted font-mono break-all">{docker.error}</div>}
+              {target === "localnet" && (
+                <button className="btn-ghost w-full justify-center" onClick={() => setTarget("simulator")}>
+                  Switch to Simulator
+                </button>
+              )}
+            </div>
+          )}
+          {docker?.running && <div className="text-[10px] text-fg-muted">Docker {docker.serverVersion} running</div>}
           <div className="rounded border border-border bg-bg-elev p-2 space-y-1">
             <div className="flex items-center justify-between">
               <span className="font-semibold text-fg">rusty-kaspad · {node?.network ?? "simnet"}</span>
@@ -76,7 +123,7 @@ export function ServersPanel() {
             {node?.status && <Row k="status" v={node.status} />}
           </div>
           <div className="grid grid-cols-3 gap-1">
-            <button className="btn-ghost justify-center" disabled={nodeBusy !== null || node?.running === true} onClick={() => void env.startNode()} title="hardkas localnet start --toccata">
+            <button className="btn-ghost justify-center" disabled={nodeBusy !== null || node?.running === true || dockerMissing} onClick={() => void env.startNode()} title={dockerMissing ? "Docker is required" : "hardkas localnet start --toccata"}>
               <Play size={12} /> {nodeBusy === "start" ? "…" : "Start"}
             </button>
             <button className="btn-ghost justify-center" disabled={nodeBusy !== null || node?.running === false} onClick={() => void env.stopNode()} title="hardkas localnet stop">
@@ -87,7 +134,11 @@ export function ServersPanel() {
             </button>
           </div>
           <div className="text-fg-muted">
-            Target <span className="text-accent">{target}</span>: {target === "localnet" ? "transactions go to this node." : target === "simulator" ? "transactions stay in the in-memory simulator; the node is idle." : "transactions go to the remote RPC in hardkas.config.ts."}
+            {target === "localnet"
+              ? "Transactions go to this node."
+              : target === "simulator"
+                ? "Transactions stay in the in-memory Simulator; this node is only used when the environment is Local node."
+                : "Transactions go to the remote testnet node in hardkas.config.ts; this local node is idle."}
           </div>
           {error && <div className="text-error break-words">{error}</div>}
         </div>
