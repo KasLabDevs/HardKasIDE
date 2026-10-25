@@ -22,6 +22,8 @@ export interface CompilationResult {
   file: string;
   ok: boolean;
   contracts: SilverContract[];
+  /** Absolute path of the compile record written by the CLI (.hardkas/artifacts/silver/silverCompile-*.json). */
+  recordPath?: string;
   raw: unknown;
   errorText?: string;
 }
@@ -113,7 +115,14 @@ export class CompilerPlugin extends Plugin {
     const ok = run.status === "succeeded" && (raw === null || raw.ok !== false);
 
     const contracts = extractContracts(raw);
-    const result: CompilationResult = { file, ok, contracts, raw, errorText: ok ? undefined : messageOf(raw, run) };
+    const result: CompilationResult = {
+      file,
+      ok,
+      contracts,
+      recordPath: typeof raw?.recordPath === "string" ? raw.recordPath : undefined,
+      raw,
+      errorText: ok ? undefined : messageOf(raw, run)
+    };
     this.lastResult = result;
 
     if (ok) {

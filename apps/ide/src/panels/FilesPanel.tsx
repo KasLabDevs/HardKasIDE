@@ -1,9 +1,17 @@
 import clsx from "clsx";
-import { ChevronDown, ChevronRight, File, FileCode2, FilePlus2, Folder, FolderOpen, FolderPlus, RefreshCw, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, ChevronRight, Copy, File, FileCode2, FilePlus2, Folder, FolderOpen, FolderPlus, Hammer, PackageOpen, Pencil, RefreshCw, Rocket, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { TreeNode } from "@/api/client";
 import { useEngine } from "@/engine/context";
+import type { CompilerPlugin } from "@/plugins/compiler";
+import type { SilverPlugin } from "@/plugins/silver";
 import { useIde } from "@/store/ide";
+
+interface MenuState {
+  x: number;
+  y: number;
+  node: TreeNode;
+}
 
 export function FilesPanel() {
   const engine = useEngine();
@@ -11,6 +19,7 @@ export function FilesPanel() {
   const workspace = useIde((s) => s.workspace);
   const [creating, setCreating] = useState<"file" | "dir" | null>(null);
   const [newName, setNewName] = useState("");
+  const [menu, setMenu] = useState<MenuState | null>(null);
 
   const refresh = () => void engine.call("fileManager", "refresh");
 
@@ -22,6 +31,18 @@ export function FilesPanel() {
     if (creating === "dir") await engine.call("fileManager", "mkdir", name);
     else await engine.call("fileManager", "createFile", name, name.endsWith(".sil") ? "pragma silverscript ^0.1.0;\n\ncontract Hello(pubkey owner) {\n  entry spend(sig s) {\n    require(checkSig(s, owner));\n  }\n}\n" : "");
   };
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
 
   return (
     <div className="text-xs select-none">
@@ -57,14 +78,15 @@ export function FilesPanel() {
       <div className="py-1">
         {tree.length === 0 && <div className="px-3 py-2 text-fg-muted">Empty workspace.</div>}
         {tree.map((node) => (
-          <Node key={node.path} node={node} depth={0} />
+          <Node key={node.path} node={node} depth={0} onMenu={(e, n) => setMenu({ x: e.clientX, y: e.clientY, node: n })} />
         ))}
       </div>
+      {menu && <ContextMenu menu={menu} onClose={() => setMenu(null)} />}
     </div>
   );
 }
 
-function Node({ node, depth }: { node: TreeNode; depth: number }) {
+function Node({ node, depth, onMenu }: { node: TreeNode; depth: number; onMenu: (e: React.MouseEvent, n: TreeNode) => void }) {
   const engine = useEngine();
   const activeFile = useIde((s) => s.activeFile);
   const [open, setOpen] = useState(depth < 1);
@@ -75,10 +97,6 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
     if (isDir) setOpen((o) => !o);
     else void engine.call("fileManager", "open", node.path);
   };
-  const onDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm(`Delete ${node.path}?`)) void engine.call("fileManager", "remove", node.path);
-  };
 
   const Icon = isDir ? (open ? FolderOpen : Folder) : node.name.endsWith(".sil") || node.name.endsWith(".ts") ? FileCode2 : File;
 
@@ -86,6 +104,10 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
     <div>
       <div
         onClick={onClick}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onMenu(e, node);
+        }}
         className={clsx("group flex items-center gap-1 pr-2 py-0.5 cursor-pointer hover:bg-bg-hover", isActive && "bg-bg-hover text-accent")}
         style={{ paddingLeft: 8 + depth * 12 }}
         title={node.path}
@@ -93,11 +115,81 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
         <span className="w-3 text-fg-muted">{isDir ? open ? <ChevronDown size={12} /> : <ChevronRight size={12} /> : null}</span>
         <Icon size={14} className={clsx(isDir ? "text-warn" : node.name.endsWith(".sil") ? "text-accent" : "text-fg-muted")} />
         <span className="truncate flex-1">{node.name}</span>
-        <button onClick={onDelete} className="opacity-0 group-hover:opacity-100 text-fg-muted hover:text-error" title="Delete">
-          <Trash2 size={12} />
-        </button>
       </div>
-      {isDir && open && node.children?.map((child) => <Node key={child.path} node={child} depth={depth + 1} />)}
+      {isDir && open && node.children?.map((child) => <Node key={child.path} node={child} depth={depth + 1} onMenu={onMenu} />)}
     </div>
+  );
+}
+
+/** Right-click menu. Like Remix, entries depend on the file extension (.sil gets the SilverScript actions). */
+function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }) {
+  const engine = useEngine();
+  const n = menu.node;
+  const isSil = n.type === "file" && n.name.endsWith(".sil");
+  const isDeploy = n.type === "file" && /silverDeploy-.*\.json$/.test(n.name);
+  const fm = (method: string, ...args: unknown[]) => void engine.call("fileManager", method, ...args);
+
+  const compile = async (thenDeploy: boolean) => {
+    await engine.call("fileManager", "open", n.path);
+    const result = await engine.get<CompilerPlugin>("silverCompiler").compile(n.path);
+    if (thenDeploy && result.ok) useIde.getState().setActiveSidePlugin("deployRun");
+  };
+
+  const items: Array<{ label: string; icon: React.ReactNode; run: () => void; danger?: boolean } | "sep"> = [];
+  if (n.type === "file") items.push({ label: "Open", icon: <File size={13} />, run: () => fm("open", n.path) });
+  if (isSil) {
+    items.push({ label: "Compile SilverScript", icon: <Hammer size={13} />, run: () => void compile(false) });
+    items.push({ label: "Compile & Deploy…", icon: <Rocket size={13} />, run: () => void compile(true) });
+  }
+  if (isDeploy) {
+    items.push({
+      label: "Load as deployed contract",
+      icon: <PackageOpen size={13} />,
+      run: () => {
+        void engine.get<SilverPlugin>("silverContracts").loadDeployRecord(n.path);
+        useIde.getState().setActiveSidePlugin("deployRun");
+      }
+    });
+  }
+  if (items.length > 0) items.push("sep");
+  items.push({ label: "Copy path", icon: <Copy size={13} />, run: () => void navigator.clipboard.writeText(n.path) });
+  items.push({
+    label: "Rename…",
+    icon: <Pencil size={13} />,
+    run: () => {
+      const to = prompt(`Rename ${n.path} to:`, n.path);
+      if (to && to !== n.path) fm("rename", n.path, to);
+    }
+  });
+  items.push({
+    label: "Delete",
+    icon: <Trash2 size={13} />,
+    danger: true,
+    run: () => {
+      if (confirm(`Delete ${n.path}?`)) fm("remove", n.path);
+    }
+  });
+
+  const x = Math.min(menu.x, window.innerWidth - 230);
+  const y = Math.min(menu.y, window.innerHeight - 40 * items.length);
+  return (
+    <ul className="fixed z-50 w-56 rounded border border-border bg-bg-elev shadow-2xl py-1 text-xs" style={{ left: x, top: y }} onClick={(e) => e.stopPropagation()}>
+      {items.map((it, i) =>
+        it === "sep" ? (
+          <li key={i} className="my-1 border-t border-border" />
+        ) : (
+          <li
+            key={i}
+            onClick={() => {
+              onClose();
+              it.run();
+            }}
+            className={clsx("px-3 py-1.5 flex items-center gap-2 cursor-pointer hover:bg-bg-hover", it.danger ? "text-error" : "text-fg")}
+          >
+            {it.icon} {it.label}
+          </li>
+        )
+      )}
+    </ul>
   );
 }

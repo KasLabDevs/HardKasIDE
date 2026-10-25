@@ -1,8 +1,10 @@
-import { Hammer } from "lucide-react";
+import { Hammer, KeyRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { CompilationResult, CompilerPlugin } from "@/plugins/compiler";
+import { useEnv } from "@/store/env";
 import { useIde } from "@/store/ide";
+import { bytesToHex, pubkeyFromAddress } from "@/utils/kaspaAddress";
 
 const ARGS_PLACEHOLDER = `[
   { "kind": "bytes", "value": [ ...32 bytes of a pubkey... ] },
@@ -18,6 +20,30 @@ export function CompilePanel() {
   const [auto, setAuto] = useState(false);
   const [args, setArgs] = useState("");
   const [argsError, setArgsError] = useState<string | null>(null);
+  const accounts = useEnv((s) => s.accounts);
+  const [pubkeyAccount, setPubkeyAccount] = useState("alice");
+
+  /** Appends `{kind:"bytes", value:[…]}` with the account's x-only pubkey (decoded from its P2PK address). */
+  const insertPubkey = () => {
+    const acct = accounts.find((a) => a.name === pubkeyAccount);
+    const pk = acct ? pubkeyFromAddress(acct.address) : null;
+    if (!pk) {
+      setArgsError(`${pubkeyAccount}: no P2PK address on this network (switch the target to localnet and refresh accounts)`);
+      return;
+    }
+    setArgsError(null);
+    let list: unknown[] = [];
+    try {
+      list = args.trim() ? (JSON.parse(args) as unknown[]) : [];
+      if (!Array.isArray(list)) list = [];
+    } catch {
+      list = [];
+    }
+    list.push({ kind: "bytes", value: pk });
+    setArgs(JSON.stringify(list, null, 2));
+    engine.get<CompilerPlugin>("silverCompiler");
+    void engine.call("console", "info", `pubkey of ${pubkeyAccount}: ${bytesToHex(pk)} (x-only, from ${acct?.address})`);
+  };
 
   useEffect(() => {
     const offs = [
@@ -93,8 +119,20 @@ export function CompilePanel() {
           spellCheck={false}
           disabled={!isSil}
         />
+        <div className="flex gap-1 mt-1">
+          <select className="input" value={pubkeyAccount} onChange={(e) => setPubkeyAccount(e.target.value)} disabled={!isSil}>
+            {(accounts.length ? accounts : [{ name: "alice" }]).map((a) => (
+              <option key={a.name} value={a.name}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+          <button className="btn-ghost shrink-0" disabled={!isSil} onClick={insertPubkey} title="Append this account's x-only public key as a pubkey constructor argument">
+            <KeyRound size={12} /> add pubkey
+          </button>
+        </div>
         <div className="text-fg-muted mt-1">
-          JSON list of <code>{"{kind, value}"}</code>, one per constructor parameter, in order. Saved next to the contract as{" "}
+          JSON list of <code>{"{kind, value}"}</code>, one per constructor parameter, in order. A <code>pubkey</code> parameter takes an account's key: pick it above. Saved next to the contract as{" "}
           <code>{activeFile && isSil ? engine.get<CompilerPlugin>("silverCompiler").argsFileFor(activeFile).split("/").pop() : "<name>.constructor-args.json"}</code>.
         </div>
         {argsError && <div className="text-error mt-1">{argsError}</div>}
