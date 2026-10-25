@@ -9,7 +9,7 @@ import * as wsfs from "./fs.js";
 import { FsError } from "./fs.js";
 import { createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe } from "./runner.js";
 import { closeTerminal, defaultShell, listTerminals, openTerminal } from "./terminal.js";
-import { examplesDir, fetchText, installNpmPlugin, listExamples, pluginsRoot, readStatic, searchNpmPlugins } from "./plugins.js";
+import { examplesDir, fetchText, installNpmPlugin, listExamples, loadRegistry, pluginsRoot, readStatic, searchNpmPlugins } from "./plugins.js";
 import { closeWorkspace, describeWorkspace, getRoot, listRecents, openWorkspace, readDevServerToken } from "./workspace.js";
 
 /**
@@ -258,7 +258,17 @@ app.post("/api/plugins/npm", async (c) => {
 
 app.get("/api/plugins/examples", async (c) => c.json({ ok: true, examples: await listExamples() }));
 
-app.get("/api/plugins/search", async (c) => c.json({ ok: true, results: await searchNpmPlugins(c.req.query("q") ?? "") }));
+app.get("/api/plugins/search", async (c) => {
+  const q = (c.req.query("q") ?? "").trim().toLowerCase();
+  const words = q.split(/\s+/).filter(Boolean);
+  const [registry, npm] = await Promise.all([
+    loadRegistry(),
+    searchNpmPlugins(q).catch(() => [])
+  ]);
+  const matches = (text: string) => words.every((w) => text.toLowerCase().includes(w));
+  const fromRegistry = registry.filter((e) => matches(`${e.name} ${e.displayName} ${e.description ?? ""} ${(e.tags ?? []).join(" ")}`));
+  return c.json({ ok: true, registry: fromRegistry, results: npm });
+});
 
 app.get("/api/plugins/examples/*", async (c) => {
   const rel = c.req.path.replace(/^\/api\/plugins\/examples\//, "");
