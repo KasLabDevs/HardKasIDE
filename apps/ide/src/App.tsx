@@ -12,6 +12,7 @@ import { PluginManagerPlugin, REQUIRED_PLUGINS } from "@/plugins/pluginManager";
 import { usePlugins } from "@/store/plugins";
 import { SilverPlugin } from "@/plugins/silver";
 import { TestsPlugin } from "@/plugins/tests";
+import { VsxPlugin } from "@/plugins/vsx";
 import { ArtifactsPlugin, FilesPlugin, RunPlugin, SettingsPlugin } from "@/plugins/sidePlugins";
 import { ConsolePlugin } from "@/plugins/console";
 import { Workbench } from "@/shell/Workbench";
@@ -36,6 +37,7 @@ function createEngine(): Engine {
   engine.register(new TestsPlugin());
   engine.register(new SettingsPlugin());
   engine.register(new PluginManagerPlugin());
+  engine.register(new VsxPlugin());
   for (const p of engine.list()) {
     p.profile.kind = p.profile.kind ?? "builtin";
     if (REQUIRED_PLUGINS.includes(p.profile.name)) p.profile.required = true;
@@ -43,7 +45,7 @@ function createEngine(): Engine {
   return engine;
 }
 
-const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "environment", "artifacts", "lineage", "tests", "settings", "pluginManager"];
+const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "environment", "artifacts", "lineage", "tests", "settings", "pluginManager", "vsx"];
 
 /** Built-ins the user switched off stay off (the plugin manager persists the active set). */
 function activationList(): string[] {

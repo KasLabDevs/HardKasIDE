@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { PanelLeft, PanelRight, SquareStack } from "lucide-react";
+import { PanelBottom, PanelLeft, PanelRight, SquareStack } from "lucide-react";
 import { useIde, type Dock } from "@/store/ide";
 
 /** Eclipse-style "move this view": left column, right column (under Outline) or a tab in the editor area. */
@@ -9,6 +9,7 @@ export function DockControls({ pluginName, displayName }: { pluginName: string; 
   const openView = useIde((s) => s.openView);
   const options: Array<{ id: Dock; icon: React.ReactNode; title: string }> = [
     { id: "left", icon: <PanelLeft size={12} />, title: "Dock left" },
+    { id: "leftBottom", icon: <PanelBottom size={12} />, title: "Dock below the Explorer" },
     { id: "right", icon: <PanelRight size={12} />, title: "Dock right (under Outline)" },
     { id: "main", icon: <SquareStack size={12} />, title: "Open as a tab" }
   ];

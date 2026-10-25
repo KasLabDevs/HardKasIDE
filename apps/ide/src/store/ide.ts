@@ -21,7 +21,7 @@ export interface OpenFile {
 export const VIEW_PREFIX = "view:";
 
 /** Where a side-panel plugin is docked (Eclipse-style movable views). */
-export type Dock = "left" | "right" | "main";
+export type Dock = "left" | "leftBottom" | "right" | "main";
 const DOCKS_KEY = "hardkas-ide.docks";
 function loadDocks(): Record<string, Dock> {
   try {
@@ -98,6 +98,7 @@ export const useIde = create<IdeState>((set) => ({
       }
       // A plugin moved to the right/main should not stay selected on the left.
       const activeSidePlugin = s.activeSidePlugin === pluginName && dock !== "left" ? "files" : s.activeSidePlugin;
+      if (dock === "leftBottom" && pluginName === "files") return s; // the Explorer anchors the left column
       return { docks, activeSidePlugin, outlineOpen: dock === "right" ? true : s.outlineOpen };
     }),
 
@@ -143,8 +144,13 @@ export const useIde = create<IdeState>((set) => ({
   setStatus: (statusMessage) => set({ statusMessage })
 }));
 
+/** Extra extension → language ids contributed by installed VS Code extensions (set by the vsx plugin). */
+export const extraLanguages: Record<string, string> = {};
+
 export function languageForPath(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  const extra = extraLanguages["." + ext];
+  if (extra) return extra;
   switch (ext) {
     case "sil":
       return "silverscript";

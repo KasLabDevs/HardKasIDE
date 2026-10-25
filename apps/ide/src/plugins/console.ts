@@ -52,7 +52,8 @@ export class ConsolePlugin extends Plugin {
   async run(args: string[], options?: { cwd?: string; command?: string; quiet?: boolean }): Promise<RunResult> {
     const state = useIde.getState();
     const label = `${options?.command ?? "hardkas"} ${args.join(" ")}`;
-    state.log("command", label);
+    const quiet = Boolean(options?.quiet); // background polling: no echo, no result block
+    if (!quiet) state.log("command", label);
     state.setStatus(`Running: ${label}`);
     const job = await api.jobs.run(args, { cwd: options?.cwd, command: options?.command });
     this.emit("jobStarted", job);
@@ -69,12 +70,14 @@ export class ConsolePlugin extends Plugin {
       }
     });
     const result: RunResult = { ...done, job: { ...job, status: done.status, exitCode: done.exitCode, result: done.result } };
-    if (done.result !== null && done.result !== undefined) {
-      state.log("json", `${label} → ${done.status}`, done.result);
-    } else if (args.includes("--json") && stdoutBuffer.trim()) {
-      state.log("log", stdoutBuffer.trimEnd());
+    if (!quiet) {
+      if (done.result !== null && done.result !== undefined) {
+        state.log("json", `${label} → ${done.status}`, done.result);
+      } else if (args.includes("--json") && stdoutBuffer.trim()) {
+        state.log("log", stdoutBuffer.trimEnd());
+      }
     }
-    if (done.status === "failed") {
+    if (done.status === "failed" && !quiet) {
       state.log("error", `exit code ${done.exitCode}`);
     }
     state.setStatus(done.status === "succeeded" ? `Done: ${label}` : `Failed: ${label}`);

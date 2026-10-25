@@ -147,6 +147,16 @@ export const api = {
         results: Array<{ name: string; version: string; description: string; author?: string; date?: string; links?: { npm?: string; homepage?: string } }>;
       }>(`/api/plugins/search?q=${encodeURIComponent(q)}`)
   },
+  vsx: {
+    search: (q: string, size = 24) => request<{ total: number; hits: import("@/store/vsx").VsxSearchHit[] }>(`/api/vsx/search?q=${encodeURIComponent(q)}&size=${size}`),
+    installed: () => request<{ installed: import("@/store/vsx").InstalledVsx[] }>("/api/vsx/installed").then((r) => r.installed),
+    install: (namespace: string, name: string, version?: string) =>
+      request<{ extension: import("@/store/vsx").InstalledVsx }>("/api/vsx/install", { method: "POST", body: JSON.stringify({ namespace, name, version }) }).then((r) => r.extension),
+    setEnabled: (id: string, enabled: boolean) => request<{ ok: true }>("/api/vsx/enable", { method: "POST", body: JSON.stringify({ id, enabled }) }),
+    uninstall: (id: string) => request<{ ok: true }>(`/api/vsx/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    /** URL of a file inside an installed extension (theme json, grammar, snippets). */
+    fileUrl: (id: string, relative: string) => `/api/vsx/file/${encodeURIComponent(id)}/${relative.split("/").map(encodeURIComponent).join("/")}`
+  },
   /** Raw call to the HardKas dev-server through the proxy, e.g. dev("/accounts"). */
   dev: <T = unknown>(path: string, init?: RequestInit) => request<T>(`/api/dev${path}`, init)
 };
