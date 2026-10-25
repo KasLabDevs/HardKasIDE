@@ -14,7 +14,8 @@ export function MainArea() {
   const setActiveFile = useIde((s) => s.setActiveFile);
 
   const active = openFiles.find((f) => f.path === activeFile);
-  const activeView = active?.kind === "view" ? engine.get(active.path.slice(VIEW_PREFIX.length)) : null;
+  const viewName = active?.kind === "view" ? active.path.slice(VIEW_PREFIX.length) : null;
+  const activeView = viewName && engine.has(viewName) ? engine.get(viewName) : null;
   const View = activeView?.view;
 
   return (

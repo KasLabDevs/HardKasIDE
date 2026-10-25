@@ -20,6 +20,17 @@ export interface OpenFile {
 
 export const VIEW_PREFIX = "view:";
 
+/** Where a side-panel plugin is docked (Eclipse-style movable views). */
+export type Dock = "left" | "right" | "main";
+const DOCKS_KEY = "hardkas-ide.docks";
+function loadDocks(): Record<string, Dock> {
+  try {
+    return JSON.parse(localStorage.getItem(DOCKS_KEY) ?? "{}") as Record<string, Dock>;
+  } catch {
+    return {};
+  }
+}
+
 export type JournalKind = "log" | "info" | "warn" | "error" | "command" | "json";
 
 export interface JournalBlock {
@@ -42,6 +53,8 @@ interface IdeState {
   terminalOpen: boolean;
   outlineOpen: boolean;
   statusMessage: string;
+  docks: Record<string, Dock>;
+  setDock(pluginName: string, dock: Dock): void;
 
   setWorkspace(ws: WorkspaceInfo | null): void;
   setTree(tree: TreeNode[]): void;
@@ -74,6 +87,19 @@ export const useIde = create<IdeState>((set) => ({
   terminalOpen: true,
   outlineOpen: true,
   statusMessage: "",
+  docks: loadDocks(),
+  setDock: (pluginName, dock) =>
+    set((s) => {
+      const docks = { ...s.docks, [pluginName]: dock };
+      try {
+        localStorage.setItem(DOCKS_KEY, JSON.stringify(docks));
+      } catch {
+        // ignore
+      }
+      // A plugin moved to the right/main should not stay selected on the left.
+      const activeSidePlugin = s.activeSidePlugin === pluginName && dock !== "left" ? "files" : s.activeSidePlugin;
+      return { docks, activeSidePlugin, outlineOpen: dock === "right" ? true : s.outlineOpen };
+    }),
 
   setWorkspace: (workspace) => set({ workspace }),
   setTree: (tree) => set({ tree }),
