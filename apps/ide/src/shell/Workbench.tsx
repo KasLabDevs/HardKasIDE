@@ -1,20 +1,22 @@
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useIde } from "@/store/ide";
+import { BottomPanel } from "./BottomPanel";
+import { CommandPalette } from "./CommandPalette";
 import { EnvBar } from "./EnvBar";
 import { IconRail } from "./IconRail";
 import { MainArea } from "./MainArea";
+import { Outline } from "./Outline";
 import { SidePanel } from "./SidePanel";
-import { BottomPanel } from "./BottomPanel";
-import { CommandPalette } from "./CommandPalette";
 import { StatusBar } from "./StatusBar";
 
 interface Props {
   onHome: () => void;
 }
 
-/** The Remix-shaped screen: icon rail | side panel | editor over terminal, status bar below. */
+/** The Remix-shaped screen: icon rail | side panel | editor over console/terminal | outline, status bar below. */
 export function Workbench({ onHome }: Props) {
   const terminalOpen = useIde((s) => s.terminalOpen);
+  const outlineOpen = useIde((s) => s.outlineOpen);
 
   return (
     <div className="h-full flex flex-col">
@@ -45,6 +47,14 @@ export function Workbench({ onHome }: Props) {
               </div>
             </div>
           </Panel>
+          {outlineOpen && (
+            <>
+              <PanelResizeHandle className="w-px bg-border hover:bg-accent transition-colors" />
+              <Panel defaultSize={18} minSize={12} maxSize={35}>
+                <Outline />
+              </Panel>
+            </>
+          )}
         </PanelGroup>
       </div>
       <StatusBar />

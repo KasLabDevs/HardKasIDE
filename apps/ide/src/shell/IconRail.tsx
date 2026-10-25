@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Home } from "lucide-react";
+import { Home, ListTree, TerminalSquare } from "lucide-react";
 import { useEngine, useEngineVersion } from "@/engine/context";
 import { useIde } from "@/store/ide";
 import { HardKasMark } from "./Logo";
@@ -17,6 +17,10 @@ export function IconRail({ onHome }: Props) {
   const mainViews = engine.listByLocation("mainPanel");
   const openView = useIde((s) => s.openView);
   const activeFile = useIde((s) => s.activeFile);
+  const outlineOpen = useIde((s) => s.outlineOpen);
+  const setOutlineOpen = useIde((s) => s.setOutlineOpen);
+  const terminalOpen = useIde((s) => s.terminalOpen);
+  const setTerminalOpen = useIde((s) => s.setTerminalOpen);
 
   return (
     <nav className="w-12 shrink-0 bg-bg-panel border-r border-border flex flex-col items-center py-2 gap-1 select-none">
@@ -64,6 +68,23 @@ export function IconRail({ onHome }: Props) {
           </button>
         );
       })}
+      {/* layout toggles, pinned to the bottom like VS Code's panel buttons */}
+      <div className="mt-auto flex flex-col items-center gap-1 pt-2 border-t border-border w-full">
+        <button
+          title={outlineOpen ? "Hide Outline" : "Show Outline"}
+          onClick={() => setOutlineOpen(!outlineOpen)}
+          className={clsx("w-10 h-10 grid place-items-center rounded transition-colors", outlineOpen ? "text-accent" : "text-fg-muted hover:text-fg hover:bg-bg-hover")}
+        >
+          <ListTree size={18} />
+        </button>
+        <button
+          title={terminalOpen ? "Hide console / terminal" : "Show console / terminal"}
+          onClick={() => setTerminalOpen(!terminalOpen)}
+          className={clsx("w-10 h-10 grid place-items-center rounded transition-colors", terminalOpen ? "text-accent" : "text-fg-muted hover:text-fg hover:bg-bg-hover")}
+        >
+          <TerminalSquare size={18} />
+        </button>
+      </div>
     </nav>
   );
 }

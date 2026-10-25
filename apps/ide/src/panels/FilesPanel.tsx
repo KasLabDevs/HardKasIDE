@@ -141,6 +141,9 @@ function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }
     items.push({ label: "Compile SilverScript", icon: <Hammer size={13} />, run: () => void compile(false) });
     items.push({ label: "Compile & Deploy…", icon: <Rocket size={13} />, run: () => void compile(true) });
   }
+  if (n.type === "file" && /\.(test|spec)\.[cm]?[jt]sx?$/.test(n.name)) {
+    items.push({ label: "Run tests in this file", icon: <Hammer size={13} />, run: () => void engine.call("tests", "runFile", n.path) });
+  }
   if (isDeploy) {
     items.push({
       label: "Load as deployed contract",

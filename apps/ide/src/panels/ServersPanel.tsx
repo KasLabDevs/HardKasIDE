@@ -5,6 +5,7 @@ import { useEngine } from "@/engine/context";
 import type { EnvironmentPlugin } from "@/plugins/environment";
 import { formatKas, useEnv, type AccountInfo } from "@/store/env";
 import { useIde } from "@/store/ide";
+import { WalletCard } from "./WalletCard";
 
 /** Eclipse "Servers"-style view: the node (start/stop/restart) and the accounts with balances. */
 export function ServersPanel() {
@@ -91,6 +92,8 @@ export function ServersPanel() {
           {error && <div className="text-error break-words">{error}</div>}
         </div>
       </section>
+
+      <WalletCard />
 
       {/* -------------------------------------------------------- accounts */}
       <section>

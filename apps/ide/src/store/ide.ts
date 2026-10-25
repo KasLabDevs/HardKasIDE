@@ -40,6 +40,7 @@ interface IdeState {
   target: ExecutionTarget;
   journal: JournalBlock[];
   terminalOpen: boolean;
+  outlineOpen: boolean;
   statusMessage: string;
 
   setWorkspace(ws: WorkspaceInfo | null): void;
@@ -56,6 +57,7 @@ interface IdeState {
   log(kind: JournalKind, text: string, data?: unknown): void;
   clearJournal(): void;
   setTerminalOpen(open: boolean): void;
+  setOutlineOpen(open: boolean): void;
   setStatus(message: string): void;
 }
 
@@ -70,6 +72,7 @@ export const useIde = create<IdeState>((set) => ({
   target: "simulator",
   journal: [],
   terminalOpen: true,
+  outlineOpen: true,
   statusMessage: "",
 
   setWorkspace: (workspace) => set({ workspace }),
@@ -110,6 +113,7 @@ export const useIde = create<IdeState>((set) => ({
     })),
   clearJournal: () => set({ journal: [] }),
   setTerminalOpen: (terminalOpen) => set({ terminalOpen }),
+  setOutlineOpen: (outlineOpen) => set({ outlineOpen }),
   setStatus: (statusMessage) => set({ statusMessage })
 }));
 

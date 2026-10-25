@@ -9,6 +9,10 @@ import { buildMonacoTheme, THEME_NAME } from "./theme";
 
 let languagesRegistered = false;
 
+function isTestPath(path: string | undefined): boolean {
+  return !!path && /\.(test|spec)\.[cm]?[jt]sx?$/.test(path);
+}
+
 export function Editor() {
   const engine = useEngine();
   const activeFile = useIde((s) => s.activeFile);
@@ -74,6 +78,28 @@ export function Editor() {
         contextMenuOrder: 2,
         run: () => void compileCurrent(true)
       });
+      // Test files: right-click → run this file's tests (Eclipse "Run As → JUnit Test").
+      const isTest = editor.createContextKey<boolean>("hardkasTestFile", isTestPath(editor.getModel()?.uri.path));
+      editor.onDidChangeModel(() => isTest.set(isTestPath(editor.getModel()?.uri.path)));
+      editor.addAction({
+        id: "hardkas.tests.runFile",
+        label: "Run tests in this file",
+        precondition: "hardkasTestFile",
+        contextMenuGroupId: "0_hardkas",
+        contextMenuOrder: 1,
+        run: () => {
+          const current = useIde.getState().activeFile;
+          if (current) void engine.call("tests", "runFile", current);
+        }
+      });
+      editor.addAction({
+        id: "hardkas.tests.runAll",
+        label: "Run all tests",
+        precondition: "hardkasTestFile",
+        contextMenuGroupId: "0_hardkas",
+        contextMenuOrder: 2,
+        run: () => void engine.call("tests", "run")
+      });
       editor.addAction({
         id: "hardkas.silver.openCompiler",
         label: "Open Compiler panel",
@@ -112,7 +138,7 @@ export function Editor() {
       }}
       options={{
         fontFamily: getComputedStyle(document.documentElement).getPropertyValue("--font-mono") || "monospace",
-        fontSize: 13,
+        fontSize: 14,
         minimap: { enabled: false },
         automaticLayout: true,
         scrollBeyondLastLine: false,
