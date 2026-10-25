@@ -95,6 +95,9 @@ export const api = {
   fs: {
     tree: () => request<{ root: string; tree: TreeNode[] }>("/api/fs/tree"),
     read: (path: string) => request<{ content: string }>(`/api/fs/file?path=${encodeURIComponent(path)}`).then((r) => r.content),
+    /** Files under `dir` whose name ends with `suffix`, newest first. */
+    find: (dir: string, suffix: string) =>
+      request<{ files: string[] }>(`/api/fs/find?dir=${encodeURIComponent(dir)}&suffix=${encodeURIComponent(suffix)}`).then((r) => r.files),
     write: (path: string, content: string) => request<{ ok: true }>("/api/fs/file", { method: "PUT", body: JSON.stringify({ path, content }) }),
     mkdir: (path: string) => request<{ ok: true }>("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ path }) }),
     rename: (from: string, to: string) => request<{ ok: true }>("/api/fs/rename", { method: "POST", body: JSON.stringify({ from, to }) }),
