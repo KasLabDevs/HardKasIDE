@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { Home } from "lucide-react";
 import { useEngine, useEngineVersion } from "@/engine/context";
 import { useIde } from "@/store/ide";
+import { HardKasMark } from "./Logo";
 
 interface Props {
   onHome: () => void;
@@ -16,6 +17,9 @@ export function IconRail({ onHome }: Props) {
 
   return (
     <nav className="w-12 shrink-0 bg-bg-panel border-r border-border flex flex-col items-center py-2 gap-1 select-none">
+      <div className="w-10 h-10 grid place-items-center" title="HardKas IDE">
+        <HardKasMark size={26} />
+      </div>
       <button title="Home" onClick={onHome} className="w-10 h-10 grid place-items-center rounded text-fg-muted hover:text-fg hover:bg-bg-hover">
         <Home size={18} />
       </button>

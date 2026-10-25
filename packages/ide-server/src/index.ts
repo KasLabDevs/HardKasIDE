@@ -20,7 +20,8 @@ import { closeWorkspace, describeWorkspace, getRoot, listRecents, openWorkspace,
  */
 
 const PORT = Number(process.env.HARDKAS_IDE_PORT ?? 7421);
-const DEV_SERVER = process.env.HARDKAS_DEV_SERVER ?? "http://127.0.0.1:7420";
+// `hardkas dev` binds to "localhost", which on modern Node resolves to ::1 only, so use the name, not 127.0.0.1.
+const DEV_SERVER = process.env.HARDKAS_DEV_SERVER ?? "http://localhost:7420";
 
 const app = new Hono();
 
@@ -75,6 +76,13 @@ app.get("/api/fs/file", async (c) => {
   const p = c.req.query("path");
   if (!p) return c.json({ ok: false, code: "BAD_REQUEST", message: "path is required" }, 400);
   return c.json({ ok: true, path: p, content: await wsfs.readFile(p) });
+});
+
+app.get("/api/fs/find", async (c) => {
+  const dir = c.req.query("dir") ?? "";
+  const suffix = c.req.query("suffix");
+  if (!suffix) return c.json({ ok: false, code: "BAD_REQUEST", message: "suffix is required" }, 400);
+  return c.json({ ok: true, files: await wsfs.findBySuffix(dir, suffix) });
 });
 
 app.put("/api/fs/file", async (c) => {

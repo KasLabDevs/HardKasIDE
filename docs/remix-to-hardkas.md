@@ -66,7 +66,8 @@ Por qué un `ide-server` propio y no pegar directo al dev-server:
 
 1. **API de ficheros del workspace** (list/read/write/rename/delete + watch de `.sil` y `.ts`). Hoy el watcher solo mira `.hardkas/`. El `ide-server` lo cubre mientras tanto.
 2. **Compile/run con salida estructurada**: `POST /api/silver/compile` con diagnósticos línea/columna; `hardkas run`/`test` con logs en streaming. Hoy silverc solo devuelve stderr.
-3. **Selección de target por petición**: el dev-server siempre usa `execution.default`. Falta `--target` en `hardkas dev` y endpoints reales de localnet (`/api/localnet/status` es un mock).
+3. **Selección de target por petición en el dev-server**: siempre usa `execution.default` y `/api/localnet/status` es un mock. La CLI sí lo resuelve: `tx plan|sign|send --target <nombre>` funciona, y es lo que usa el IDE. Verificado el 2026-10-25: Plan → Sign → Send desde el IDE contra el simulador y contra rusty-kaspad v2.1.0 en simnet (localnet Toccata), con `tx status` devolviendo `CONFIRMED`.
+   - Convenciones que el IDE asume: `tx sign`/`tx send` solo aceptan rutas de fichero; el plan se guarda como `.hardkas/artifacts/<ts>-<planId>.plan.json`; el resto como `<kind>-<contentHash>.json`. En simulador `tx send` devuelve `data.receipt` = `hardkas.txReceipt`; en nodo real = `hardkas.txSubmission.v1` (sin `status`, con `submitResult.accepted` y `fee.feeSompi`).
 4. **Cliente de navegador publicado y coherente**: `@hardkas/react` y `@hardkas/client` están obsoletos; `sdk/client.ts` apunta a :3000 y no manda token. Además: bug en `GET /api/tx/receipt/:id` (filtra por `TxReceipt.v1`, el schema real es `hardkas.txReceipt`); `dev-server start --port` está definido pero no registrado.
 5. **Tooling de lenguaje SilverScript**: grammar, `silverc --ast-only` como endpoint para outline/diagnósticos, binarios para macOS/ARM.
 

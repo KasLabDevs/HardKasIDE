@@ -59,6 +59,39 @@ export async function readTree(relative = ""): Promise<TreeNode[]> {
   return nodes;
 }
 
+/**
+ * Finds files under `dir` whose name ends with `suffix`, newest first.
+ * Used to locate CLI-written artifacts whose names carry a timestamp
+ * (e.g. `.hardkas/artifacts/<ts>-plan-<planId>.plan.json`).
+ */
+export async function findBySuffix(dir: string, suffix: string, limit = 20): Promise<string[]> {
+  const base = resolveInRoot(dir);
+  const hits: Array<{ path: string; mtime: number }> = [];
+  async function walk(current: string, depth: number): Promise<void> {
+    if (depth > 6) return;
+    let entries;
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const abs = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!IGNORED_DIRS.has(entry.name)) await walk(abs, depth + 1);
+      } else if (entry.name.endsWith(suffix)) {
+        const stat = await fs.stat(abs);
+        hits.push({ path: toRelative(abs), mtime: stat.mtimeMs });
+      }
+    }
+  }
+  await walk(base, 0);
+  return hits
+    .sort((a, b) => b.mtime - a.mtime)
+    .slice(0, limit)
+    .map((h) => h.path);
+}
+
 export async function readFile(relative: string): Promise<string> {
   return fs.readFile(resolveInRoot(relative), "utf8");
 }

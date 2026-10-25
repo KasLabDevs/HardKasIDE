@@ -1,6 +1,7 @@
-import { Clock, FolderOpen, FolderPlus, Hexagon } from "lucide-react";
+import { Clock, FolderOpen, FolderPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, IdeApiError, type RecentEntry, type WorkspaceInfo } from "@/api/client";
+import { HardKasMark, HardKasWordmark } from "@/shell/Logo";
 import { NewProjectDialog } from "./NewProjectDialog";
 
 interface Props {
@@ -42,11 +43,14 @@ export function HomeScreen({ onOpened }: Props) {
   return (
     <div className="h-full overflow-auto bg-bg">
       <div className="max-w-5xl mx-auto px-8 py-12">
-        <header className="flex items-center gap-3 mb-10">
-          <Hexagon className="text-accent" size={36} />
+        <header className="flex items-center gap-4 mb-10">
+          <HardKasMark size={56} />
           <div>
-            <h1 className="text-2xl font-semibold text-fg">HardKas IDE</h1>
-            <p className="text-fg-muted text-sm">Plan, sign, simulate, inspect and replay Kaspa transaction workflows. Nothing touches a real network until you say so.</p>
+            <h1 className="text-3xl font-bold tracking-tight leading-none">
+              <HardKasWordmark /> <span className="text-fg-muted font-normal text-xl">IDE</span>
+            </h1>
+            <div className="text-[11px] uppercase tracking-[0.3em] text-fg-muted mt-1">Kaspa developer toolkit</div>
+            <p className="text-fg-muted text-sm mt-2">Plan, sign, simulate, inspect and replay Kaspa transaction workflows. Nothing touches a real network until you say so.</p>
           </div>
         </header>
 
