@@ -3,7 +3,7 @@ import { FileJson, RefreshCw, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api, IdeApiError } from "@/api/client";
 import { useEngine } from "@/engine/context";
-import type { TerminalPlugin } from "@/plugins/terminal";
+import type { ConsolePlugin } from "@/plugins/console";
 import { useIde } from "@/store/ide";
 
 interface ArtifactRow {
@@ -59,7 +59,7 @@ export function ArtifactsPanel() {
   }, [engine, load]);
 
   const replay = async (id: string) => {
-    const terminal = engine.get<TerminalPlugin>("terminal");
+    const terminal = engine.get<ConsolePlugin>("console");
     try {
       const res = await api.dev("/artifacts/" + encodeURIComponent(id) + "/replay", { method: "POST", body: "{}" });
       terminal.logJson(`replay ${id.slice(0, 12)}…`, res);
@@ -98,7 +98,7 @@ export function ArtifactsPanel() {
         <div className="p-3 space-y-2">
           <div className="text-warn">{error}</div>
           <div className="text-fg-muted">Start the HardKas dev-server in the project folder, then refresh:</div>
-          <button className="btn-ghost w-full justify-center" onClick={() => void engine.get<TerminalPlugin>("terminal").runHardkas(["dev", "--headless"])}>
+          <button className="btn-ghost w-full justify-center" onClick={() => void engine.get<ConsolePlugin>("console").runHardkas(["dev", "--headless"])}>
             Run hardkas dev --headless
           </button>
         </div>

@@ -4,8 +4,8 @@ import { EnvBar } from "./EnvBar";
 import { IconRail } from "./IconRail";
 import { MainArea } from "./MainArea";
 import { SidePanel } from "./SidePanel";
+import { BottomPanel } from "./BottomPanel";
 import { StatusBar } from "./StatusBar";
-import { Terminal } from "./Terminal";
 
 interface Props {
   onHome: () => void;
@@ -36,7 +36,7 @@ export function Workbench({ onHome }: Props) {
                     <>
                       <PanelResizeHandle className="h-px bg-border hover:bg-accent transition-colors" />
                       <Panel defaultSize={30} minSize={10}>
-                        <Terminal />
+                        <BottomPanel />
                       </Panel>
                     </>
                   )}

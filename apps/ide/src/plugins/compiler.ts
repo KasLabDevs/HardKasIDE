@@ -3,7 +3,7 @@ import { Plugin } from "@/engine/engine";
 import { CompilePanel } from "@/panels/CompilePanel";
 import { useIde } from "@/store/ide";
 import type { EditorDiagnostic } from "./editor";
-import type { TerminalPlugin } from "./terminal";
+import type { ConsolePlugin } from "./console";
 
 /**
  * SilverScript compiler plugin. Runs `hardkas silver compile <file> --json` and
@@ -92,7 +92,7 @@ export class CompilerPlugin extends Plugin {
   }
 
   async compile(file: string, options?: { args?: string }): Promise<CompilationResult> {
-    const terminal = this.engine.get<TerminalPlugin>("terminal");
+    const terminal = this.engine.get<ConsolePlugin>("console");
     this.emit("statusChanged", { key: "compiling", title: "Compiling…", type: "info" });
     await this.call("editor", "clearErrorMarkers", "silverc");
 

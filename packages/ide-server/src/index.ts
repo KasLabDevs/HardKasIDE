@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
@@ -7,6 +8,7 @@ import path from "node:path";
 import * as wsfs from "./fs.js";
 import { FsError } from "./fs.js";
 import { createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe } from "./runner.js";
+import { closeTerminal, defaultShell, listTerminals, openTerminal } from "./terminal.js";
 import { closeWorkspace, describeWorkspace, getRoot, listRecents, openWorkspace, readDevServerToken } from "./workspace.js";
 
 /**
@@ -24,6 +26,7 @@ const PORT = Number(process.env.HARDKAS_IDE_PORT ?? 7421);
 const DEV_SERVER = process.env.HARDKAS_DEV_SERVER ?? "http://localhost:7420";
 
 const app = new Hono();
+const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
 app.use(
   "/api/*",
@@ -185,6 +188,58 @@ app.post("/api/project/create", async (c) => {
   return c.json({ ok: true, job: summarize(job), dest });
 });
 
+// ---------------------------------------------------------------- real terminals (PTY over WebSocket)
+
+app.get("/api/terminal", (c) => c.json({ ok: true, shell: defaultShell().file, terminals: listTerminals() }));
+
+app.get(
+  "/api/terminal/ws",
+  upgradeWebSocket((c) => {
+    const cols = Number(c.req.query("cols") ?? 100) || 100;
+    const rows = Number(c.req.query("rows") ?? 30) || 30;
+    const cwd = c.req.query("cwd") || undefined;
+    let session: ReturnType<typeof openTerminal> | null = null;
+    return {
+      onOpen(_event, ws) {
+        try {
+          session = openTerminal({ cwd, cols, rows });
+        } catch (error) {
+          ws.send(`\r\n[ide-server] could not start a shell: ${error instanceof Error ? error.message : String(error)}\r\n`);
+          ws.close();
+          return;
+        }
+        ws.send(`\x1b[2m[hardkas-ide] ${session.shell} in ${session.cwd}\x1b[0m\r\n`);
+        session.pty.onData((data) => ws.send(data));
+        session.pty.onExit(({ exitCode }) => {
+          ws.send(`\r\n\x1b[2m[process exited with code ${exitCode}]\x1b[0m\r\n`);
+          ws.close();
+        });
+      },
+      onMessage(event) {
+        if (!session) return;
+        const text = typeof event.data === "string" ? event.data : "";
+        let msg: { type?: string; data?: string; cols?: number; rows?: number };
+        try {
+          msg = JSON.parse(text) as typeof msg;
+        } catch {
+          session.pty.write(text);
+          return;
+        }
+        if (msg.type === "input" && typeof msg.data === "string") session.pty.write(msg.data);
+        else if (msg.type === "resize" && msg.cols && msg.rows) session.pty.resize(msg.cols, msg.rows);
+      },
+      onClose() {
+        if (session) closeTerminal(session.id);
+        session = null;
+      },
+      onError() {
+        if (session) closeTerminal(session.id);
+        session = null;
+      }
+    };
+  })
+);
+
 // ---------------------------------------------------------------- dev-server proxy
 
 app.all("/api/dev/*", async (c) => {
@@ -237,9 +292,10 @@ async function main() {
   } else {
     console.error("[ide-server] no workspace open; pick one from the IDE Home screen");
   }
-  serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" }, (info) => {
-    console.error(`[ide-server] listening on http://127.0.0.1:${info.port}  (dev-server proxy -> ${DEV_SERVER})`);
+  const server = serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" }, (info) => {
+    console.error(`[ide-server] listening on http://127.0.0.1:${info.port}  (dev-server proxy -> ${DEV_SERVER}, shell: ${defaultShell().file})`);
   });
+  injectWebSocket(server);
 }
 
 void main();

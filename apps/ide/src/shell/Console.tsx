@@ -1,15 +1,16 @@
 import clsx from "clsx";
-import { ChevronDown, ChevronRight, Eraser, TerminalSquare } from "lucide-react";
+import { ChevronDown, ChevronRight, Eraser } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
-import type { TerminalPlugin } from "@/plugins/terminal";
+import type { ConsolePlugin } from "@/plugins/console";
 import { useIde, type JournalBlock } from "@/store/ide";
 
 /**
- * Terminal: a journal of blocks (log / info / warn / error / command / json) and
- * an input that runs `hardkas <what you type>`.
+ * HardKas console: a journal of blocks (log / info / warn / error / command / json)
+ * for everything the IDE runs through the HardKas CLI, plus an input that runs
+ * `hardkas <what you type>`. For an arbitrary shell, use the Terminal tab.
  */
-export function Terminal() {
+export function Console() {
   const engine = useEngine();
   const journal = useIde((s) => s.journal);
   const clear = useIde((s) => s.clearJournal);
@@ -29,26 +30,22 @@ export function Terminal() {
     setHistoryIndex(-1);
     setInput("");
     const args = tokenize(line.replace(/^hardkas\s+/, ""));
-    const terminal = engine.get<TerminalPlugin>("terminal");
+    const console_ = engine.get<ConsolePlugin>("console");
     if (args[0] === "clear") {
-      terminal.clear();
+      console_.clear();
       return;
     }
-    void terminal.runHardkas(args).catch((error: unknown) => terminal.error(String(error)));
+    void console_.runHardkas(args).catch((error: unknown) => console_.error(String(error)));
   };
 
   return (
-    <div className="h-full flex flex-col bg-bg border-t border-border font-mono text-xs">
-      <div className="h-8 shrink-0 flex items-center justify-between px-3 border-b border-border bg-bg-panel">
-        <span className="flex items-center gap-2 text-fg-muted uppercase tracking-wider text-[11px] font-semibold">
-          <TerminalSquare size={14} /> Terminal
-        </span>
-        <button onClick={clear} className="text-fg-muted hover:text-fg" title="Clear">
-          <Eraser size={14} />
-        </button>
-      </div>
+    <div className="h-full flex flex-col bg-bg font-mono text-xs">
       <div className="flex-1 min-h-0 overflow-auto px-3 py-2 space-y-1">
-        {journal.length === 0 && <div className="text-fg-muted">Type a hardkas command below, e.g. <span className="text-fg">status --json</span> or <span className="text-fg">accounts list --json</span>.</div>}
+        {journal.length === 0 && (
+          <div className="text-fg-muted">
+            HardKas console. Type a hardkas command below, e.g. <span className="text-fg">status --json</span> or <span className="text-fg">accounts list --json</span>. For a real shell, open the Terminal tab.
+          </div>
+        )}
         {journal.map((block) => (
           <Block key={block.id} block={block} />
         ))}
@@ -78,6 +75,9 @@ export function Terminal() {
           className="flex-1 bg-transparent outline-none text-fg placeholder:text-fg-muted/60"
           spellCheck={false}
         />
+        <button onClick={clear} className="text-fg-muted hover:text-fg" title="Clear console">
+          <Eraser size={14} />
+        </button>
       </div>
     </div>
   );

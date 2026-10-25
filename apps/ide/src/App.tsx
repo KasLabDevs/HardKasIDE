@@ -8,7 +8,7 @@ import { EditorPlugin } from "@/plugins/editor";
 import { EnvironmentPlugin } from "@/plugins/environment";
 import { FileManagerPlugin } from "@/plugins/fileManager";
 import { ArtifactsPlugin, FilesPlugin, RunPlugin, SettingsPlugin } from "@/plugins/sidePlugins";
-import { TerminalPlugin } from "@/plugins/terminal";
+import { ConsolePlugin } from "@/plugins/console";
 import { Workbench } from "@/shell/Workbench";
 import { useIde } from "@/store/ide";
 
@@ -18,7 +18,7 @@ import { useIde } from "@/store/ide";
  */
 function createEngine(): Engine {
   const engine = new Engine();
-  engine.register(new TerminalPlugin());
+  engine.register(new ConsolePlugin());
   engine.register(new FileManagerPlugin());
   engine.register(new EditorPlugin());
   engine.register(new FilesPlugin());
@@ -30,7 +30,7 @@ function createEngine(): Engine {
   return engine;
 }
 
-const ACTIVATION_ORDER = ["terminal", "fileManager", "editor", "files", "silverCompiler", "deployRun", "environment", "artifacts", "settings"];
+const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "deployRun", "environment", "artifacts", "settings"];
 
 export default function App() {
   const engine = useMemo(createEngine, []);
@@ -58,10 +58,10 @@ export default function App() {
     (async () => {
       await engine.activate(ACTIVATION_ORDER);
       if (cancelled) return;
-      const terminal = engine.get<TerminalPlugin>("terminal");
-      terminal.info(`Workspace: ${workspace.root}`);
-      if (!workspace.hasConfig) terminal.warn("No hardkas.config.ts found. Run `init --json` in the terminal to scaffold one.");
-      if (!workspace.hasDevServerToken) terminal.info("Tip: run `dev --headless` to start the HardKas dev-server for artifacts and accounts.");
+      const console_ = engine.get<ConsolePlugin>("console");
+      console_.info(`Workspace: ${workspace.root}`);
+      if (!workspace.hasConfig) console_.warn("No hardkas.config.ts found. Run `init --json` in this console to scaffold one.");
+      if (!workspace.hasDevServerToken) console_.info("Tip: run `dev --headless` to start the HardKas dev-server for artifacts and accounts.");
     })();
     return () => {
       cancelled = true;
