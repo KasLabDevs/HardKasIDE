@@ -1,5 +1,5 @@
 import { Cpu, FolderOpen, ListTree, TerminalSquare } from "lucide-react";
-import { useIde } from "@/store/ide";
+import { envOf, useIde } from "@/store/ide";
 
 export function StatusBar() {
   const workspace = useIde((s) => s.workspace);
@@ -17,7 +17,7 @@ export function StatusBar() {
         <FolderOpen size={12} /> {workspace?.name ?? "no workspace"}
       </span>
       <span className="flex items-center gap-1.5">
-        <Cpu size={12} /> target: <span className="text-accent">{target}</span>
+        <Cpu size={12} /> env: <span className="text-accent">{envOf(target).short}</span> <span className="text-fg-muted">({envOf(target).networkId})</span>
       </span>
       {activeFile && <span className="truncate">{activeFile}</span>}
       <span className="ml-auto truncate">{status}</span>

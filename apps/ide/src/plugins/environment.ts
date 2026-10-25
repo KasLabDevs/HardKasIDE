@@ -35,7 +35,7 @@ export class EnvironmentPlugin extends Plugin {
       location: "sidePanel",
       icon: Server,
       order: 15,
-      methods: ["refresh", "refreshNode", "refreshAccounts", "startNode", "stopNode", "restartNode", "createAccount", "copyPrivateKey", "fund"],
+      methods: ["refresh", "refreshNode", "refreshDocker", "refreshAccounts", "startNode", "stopNode", "restartNode", "createAccount", "copyPrivateKey", "fund"],
       events: ["nodeChanged", "accountsChanged"]
     });
   }
@@ -68,8 +68,19 @@ export class EnvironmentPlugin extends Plugin {
     useEnv.getState().touch();
   }
 
+  /** Is Docker there? Checked once per refresh; the Servers view explains what to do when it is not. */
+  async refreshDocker(): Promise<void> {
+    try {
+      const sys = await api.system();
+      useEnv.getState().setDocker(sys.docker);
+    } catch {
+      useEnv.getState().setDocker(null);
+    }
+  }
+
   async refreshNode(quiet = false): Promise<NodeStatus | null> {
     const env = useEnv.getState();
+    await this.refreshDocker();
     try {
       const run = await this.console().runHardkas(["localnet", "status", "--json"], { quiet });
       const raw = run.result as Record<string, unknown> | null;
