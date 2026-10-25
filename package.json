@@ -1,0 +1,22 @@
+{
+  "name": "hardkas-ide",
+  "private": true,
+  "version": "0.1.0",
+  "description": "HardKas IDE: a Remix-style workbench for HardKas (Kaspa) projects, with Visual Studio-style project creation.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@11.1.3",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter ./apps/ide --filter ./packages/ide-server run dev",
+    "dev:server": "pnpm --filter @hardkas-ide/server run dev",
+    "dev:ide": "pnpm --filter @hardkas-ide/ide run dev",
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

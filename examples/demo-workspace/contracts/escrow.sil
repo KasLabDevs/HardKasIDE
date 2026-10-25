@@ -1,0 +1,12 @@
+pragma silverscript ^0.1.0;
+
+// Two-party escrow: the seller can release, the buyer can refund after a timeout.
+contract Escrow(pubkey buyer, pubkey seller) {
+  entry release(sig s) {
+    require(checkSig(s, seller));
+  }
+
+  entry refund(sig s) {
+    require(checkSig(s, buyer));
+  }
+}
