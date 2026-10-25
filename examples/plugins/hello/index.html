@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hello plugin</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; padding: 12px; font: 12px system-ui, sans-serif; background: #0e141b; color: #d7e0ea; }
+      h1 { font-size: 13px; margin: 0 0 8px; color: #49eacb; }
+      button { background: #182230; color: #d7e0ea; border: 1px solid #1f2a37; border-radius: 4px; padding: 6px 8px; margin: 2px 4px 2px 0; cursor: pointer; font-size: 12px; }
+      button:hover { border-color: #49eacb; }
+      pre { background: #0b0f14; border: 1px solid #1f2a37; border-radius: 4px; padding: 8px; white-space: pre-wrap; word-break: break-all; max-height: 260px; overflow: auto; font-size: 11px; }
+      .muted { color: #8696a7; }
+    </style>
+  </head>
+  <body>
+    <h1>Hello from an external plugin</h1>
+    <p class="muted">This page runs in an iframe and talks to the IDE over postMessage with the same <code>call / on / emit</code> API as built-in plugins.</p>
+    <div>
+      <button id="file">Current file</button>
+      <button id="read">Read it</button>
+      <button id="compile">Compile it (asks permission)</button>
+      <button id="log">Log to console</button>
+    </div>
+    <pre id="out">ready…</pre>
+
+    <script>
+      // ---- tiny client SDK (copy this into your own plugin) ----------------------
+      const hardkas = (() => {
+        let seq = 0;
+        const pending = new Map();
+        const handlers = new Map(); // "plugin:event" -> [fn]
+        const methods = {};        // methods this plugin exposes
+        window.addEventListener("message", (e) => {
+          const m = e.data || {};
+          if (m.type === "hardkas:response") {
+            const p = pending.get(m.id); if (!p) return; pending.delete(m.id);
+            m.ok ? p.resolve(m.result) : p.reject(new Error(m.error));
+          } else if (m.type === "hardkas:event") {
+            (handlers.get(m.plugin + ":" + m.event) || []).forEach((fn) => fn(...(m.args || [])));
+          } else if (m.type === "hardkas:invoke") {
+            Promise.resolve().then(() => methods[m.method] ? methods[m.method](...(m.args || [])) : Promise.reject(new Error("no such method")))
+              .then((result) => parent.postMessage({ type: "hardkas:response", id: m.id, ok: true, result }, "*"))
+              .catch((err) => parent.postMessage({ type: "hardkas:response", id: m.id, ok: false, error: String(err && err.message || err) }, "*"));
+          } else if (m.type === "hardkas:ready") {
+            document.getElementById("out").textContent = "connected as " + m.name;
+          }
+        });
+        parent.postMessage({ type: "hardkas:hello" }, "*");
+        return {
+          call: (plugin, method, ...args) => new Promise((resolve, reject) => {
+            const id = "p" + (++seq); pending.set(id, { resolve, reject });
+            parent.postMessage({ type: "hardkas:call", id, plugin, method, args }, "*");
+          }),
+          on: (plugin, event, fn) => {
+            const k = plugin + ":" + event; handlers.set(k, [...(handlers.get(k) || []), fn]);
+            parent.postMessage({ type: "hardkas:on", plugin, event }, "*");
+          },
+          emit: (event, ...args) => parent.postMessage({ type: "hardkas:emit", event, args }, "*"),
+          expose: (name, fn) => { methods[name] = fn; }
+        };
+      })();
+      // ---------------------------------------------------------------------------
+
+      const out = document.getElementById("out");
+      const show = (v) => (out.textContent = typeof v === "string" ? v : JSON.stringify(v, null, 2));
+      const fail = (e) => (out.textContent = "error: " + (e && e.message || e));
+
+      hardkas.expose("greet", (who) => `hello, ${who || "world"}!`);
+      hardkas.on("fileManager", "currentFileChanged", (path) => show("current file changed → " + path));
+
+      document.getElementById("file").onclick = () => hardkas.call("fileManager", "getCurrentFile").then(show).catch(fail);
+      document.getElementById("read").onclick = () =>
+        hardkas.call("fileManager", "getCurrentFile").then((p) => (p ? hardkas.call("fileManager", "readFile", p) : "no file open")).then(show).catch(fail);
+      document.getElementById("compile").onclick = () =>
+        hardkas.call("silverCompiler", "compileCurrent").then((r) => { show(r); hardkas.emit("greeted", r && r.ok); }).catch(fail);
+      document.getElementById("log").onclick = () => hardkas.call("console", "info", "hello from hello-plugin").then(() => show("logged")).catch(fail);
+    </script>
+  </body>
+</html>

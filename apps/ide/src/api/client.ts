@@ -133,6 +133,14 @@ export const api = {
     create: (body: { template: string; name: string; parentDir: string; install?: boolean }) =>
       request<{ job: JobSummary; dest: string }>("/api/project/create", { method: "POST", body: JSON.stringify(body) })
   },
+  plugins: {
+    /** Fetches a remote text/JSON document through ide-server (no CORS issues). */
+    fetch: (url: string) => request<{ text: string }>(`/api/plugins/fetch?url=${encodeURIComponent(url)}`).then((r) => r.text),
+    /** Installs an npm package under .hardkas/ide/plugins and returns its hardkasPlugin manifest. */
+    npm: (pkg: string) =>
+      request<{ manifest: Record<string, unknown>; package: string; version: string }>("/api/plugins/npm", { method: "POST", body: JSON.stringify({ package: pkg }) }),
+    examples: () => request<{ examples: Array<{ name: string; manifestUrl: string }> }>("/api/plugins/examples").then((r) => r.examples)
+  },
   /** Raw call to the HardKas dev-server through the proxy, e.g. dev("/accounts"). */
   dev: <T = unknown>(path: string, init?: RequestInit) => request<T>(`/api/dev${path}`, init)
 };

@@ -1,0 +1,12 @@
+{
+  "name": "hello-plugin",
+  "displayName": "Hello plugin",
+  "description": "Example external plugin: lists the workspace, reads the current file and compiles .sil files through the engine.",
+  "version": "0.1.0",
+  "author": "HardKas IDE examples",
+  "url": "index.html",
+  "location": "sidePanel",
+  "methods": ["greet"],
+  "events": ["greeted"],
+  "permissions": ["fileManager.readFile", "fileManager.getCurrentFile", "console.*"]
+}
