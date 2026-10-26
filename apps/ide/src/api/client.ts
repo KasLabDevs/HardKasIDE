@@ -49,6 +49,17 @@ export interface ProjectTemplate {
   command: "init" | "create";
 }
 
+/** Assistant settings as the browser sees them: the API key itself never leaves the server. */
+export interface AssistantConfigView {
+  provider: "anthropic" | "openai";
+  baseUrl: string;
+  model: string;
+  docs: "off" | "core" | "full";
+  maxTokens: number;
+  hasKey: boolean;
+  keyHint: string;
+}
+
 export interface ApiError {
   ok: false;
   code: string;
@@ -157,6 +168,47 @@ export const api = {
         registry: Array<{ name: string; displayName: string; description?: string; version?: string; author?: string; tags?: string[]; manifestUrl: string; homepage?: string }>;
         results: Array<{ name: string; version: string; description: string; author?: string; date?: string; links?: { npm?: string; homepage?: string } }>;
       }>(`/api/plugins/search?q=${encodeURIComponent(q)}`)
+  },
+  assistant: {
+    config: () => request<{ config: AssistantConfigView; defaults: Record<"anthropic" | "openai", { baseUrl: string; model: string }> }>("/api/assistant/config"),
+    saveConfig: (patch: Partial<AssistantConfigView> & { apiKey?: string; clearKey?: boolean }) =>
+      request<{ config: AssistantConfigView }>("/api/assistant/config", { method: "PUT", body: JSON.stringify(patch) }).then((r) => r.config),
+    docs: (mode: "off" | "core" | "full") =>
+      request<{ mode: string; chars: number; approxTokens: number; fetchedAt: number | null; stale: boolean; source: string }>(`/api/assistant/docs?mode=${mode}`),
+    /** Streams a chat answer; resolves when it ends. Events: meta, delta, error, done. */
+    chat: async (
+      body: { messages: Array<{ role: "user" | "assistant"; content: string }>; context?: unknown },
+      signal: AbortSignal,
+      onEvent: (event: string, data: Record<string, unknown>) => void
+    ): Promise<void> => {
+      const res = await fetch("/api/assistant/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
+      if (!res.ok || !res.body) throw new IdeApiError("HTTP_ERROR", `Assistant request failed (${res.status})`, res.status);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.search(/\r?\n\r?\n/)) >= 0) {
+          const block = buffer.slice(0, idx);
+          buffer = buffer.slice(idx).replace(/^\r?\n\r?\n/, "");
+          let event = "message";
+          const data: string[] = [];
+          for (const line of block.split(/\r?\n/)) {
+            if (line.startsWith("event:")) event = line.slice(6).trim();
+            else if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+          }
+          if (data.length === 0) continue;
+          try {
+            onEvent(event, JSON.parse(data.join("\n")) as Record<string, unknown>);
+          } catch {
+            // ignore malformed event
+          }
+        }
+      }
+    }
   },
   system: () =>
     request<{ docker: { installed: boolean; running: boolean; clientVersion: string | null; serverVersion: string | null; error: string | null }; node: string; platform: string }>("/api/system"),
