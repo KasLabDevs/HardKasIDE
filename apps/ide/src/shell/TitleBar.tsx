@@ -1,8 +1,10 @@
 import clsx from "clsx";
-import { Check, PanelBottom, PanelLeft, PanelRight, Search, Settings, X } from "lucide-react";
+import { Check, Search, Settings, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { CompilerPlugin } from "@/plugins/compiler";
+import type { DebugPlugin } from "@/plugins/debug";
+import { useDebug } from "@/store/debug";
 import type { EnvironmentPlugin } from "@/plugins/environment";
 import type { LineagePlugin } from "@/plugins/lineage";
 import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, envOf, useIde, type ExecutionTarget } from "@/store/ide";
@@ -46,6 +48,9 @@ export function TitleBar({ onHome }: Props) {
   const target = useIde((s) => s.target);
   const zoom = useIde((s) => s.zoom);
   const [about, setAbout] = useState(false);
+  const debugState = useDebug((s) => s.state);
+  const breakpointCount = useDebug((s) => Object.values(s.breakpoints).reduce((n, l) => n + l.length, 0));
+  const debugLive = debugState === "starting" || debugState === "running" || debugState === "paused";
 
   const textFile = isTextFile(activeFile);
   const isSil = textFile && activeFile.endsWith(".sil");
@@ -136,6 +141,17 @@ export function TitleBar({ onHome }: Props) {
           item("Run tests in this file", () => activeFile && engine.call("tests", "runFile", activeFile), { disabled: !isTest }),
           item("Open Deploy & Run", reveal("deployRun", "Deploy & Run")),
           sep,
+          heading("Debug tests"),
+          item("Debug tests in this file", () => activeFile && engine.get<DebugPlugin>("debug").debugFile(activeFile), { keys: "F5", disabled: !isTest || debugLive }),
+          item("Debug all tests", () => engine.get<DebugPlugin>("debug").debugAll(), { disabled: debugLive }),
+          item("Continue", () => engine.get<DebugPlugin>("debug").resume(), { keys: "F5", disabled: debugState !== "paused" }),
+          item("Step over", () => engine.get<DebugPlugin>("debug").stepOver(), { keys: "F10", disabled: debugState !== "paused" }),
+          item("Step into", () => engine.get<DebugPlugin>("debug").stepInto(), { keys: "F11", disabled: debugState !== "paused" }),
+          item("Step out", () => engine.get<DebugPlugin>("debug").stepOut(), { keys: "Shift+F11", disabled: debugState !== "paused" }),
+          item("Stop debugging", () => engine.get<DebugPlugin>("debug").stop(), { keys: "Shift+F5", disabled: !debugLive }),
+          item("Toggle breakpoint", () => editorCommand(engine, "hardkas.debug.toggleBreakpoint"), { keys: "F9", disabled: !textFile }),
+          item("Remove all breakpoints", () => engine.get<DebugPlugin>("debug").clearBreakpoints(), { disabled: breakpointCount === 0 }),
+          sep,
           heading("Environment"),
           ...(["simulator", "localnet", "rpc"] as const).map((t) => item(envOf(t).label, setEnv(t), { checked: target === t })),
           sep,
@@ -171,11 +187,28 @@ export function TitleBar({ onHome }: Props) {
       }
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine, onHome, textFile, isSil, isTest, activeFile, anyDirty, openFiles.length, sidebarOpen, outlineOpen, terminalOpen, target, zoom]);
+  }, [engine, onHome, textFile, isSil, isTest, activeFile, anyDirty, openFiles.length, sidebarOpen, outlineOpen, terminalOpen, target, zoom, debugState, debugLive, breakpointCount]);
 
   // Global shortcuts that live in the shell (editor ones stay with Monaco, the palette owns Ctrl+P / Ctrl+Shift+P).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Debugger keys (VS Code's): F5 continue / start, Shift+F5 stop, F10 over, F11 into, Shift+F11 out.
+      if (/^F(5|10|11)$/.test(e.key) && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if ((e.target as HTMLElement | null)?.closest?.(".xterm")) return;
+        const dbg = engine.get<DebugPlugin>("debug");
+        const st = useDebug.getState().state;
+        const live = st === "starting" || st === "running" || st === "paused";
+        const active = useIde.getState().activeFile;
+        let action: Promise<unknown> | null = null;
+        if (e.key === "F5" && e.shiftKey) action = live ? dbg.stop() : null;
+        else if (e.key === "F5") action = st === "paused" ? dbg.resume() : !live && isTextFile(active) && /\.(test|spec)\.[cm]?[jt]sx?$/.test(active) ? dbg.debugFile(active) : null;
+        else if (st === "paused") action = e.key === "F10" ? dbg.stepOver() : e.shiftKey ? dbg.stepOut() : dbg.stepInto();
+        if (action) {
+          e.preventDefault();
+          void action.catch((err: unknown) => engine.call("console", "error", err instanceof Error ? err.message : String(err)));
+        }
+        return;
+      }
       const mod = e.ctrlKey || e.metaKey;
       if (!mod || e.altKey) return;
       // Inside a real terminal these chords belong to the shell (Ctrl+W deletes a word, Ctrl+B moves back…).
@@ -204,7 +237,7 @@ export function TitleBar({ onHome }: Props) {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, []);
+  }, [engine]);
 
   const projectName = workspace?.name ?? "HardKas IDE";
   useEffect(() => {
@@ -232,9 +265,6 @@ export function TitleBar({ onHome }: Props) {
         </button>
       </div>
       <div className="flex items-center gap-0.5 shrink-0">
-        <LayoutToggle on={sidebarOpen} onClick={() => ide().setSidebarOpen(!sidebarOpen)} onLabel="Hide primary side bar" offLabel="Show primary side bar" keys="Ctrl+B" icon={<PanelLeft size={15} />} />
-        <LayoutToggle on={terminalOpen} onClick={() => ide().setTerminalOpen(!terminalOpen)} onLabel="Hide console / terminal" offLabel="Show console / terminal" keys="Ctrl+J" icon={<PanelBottom size={15} />} />
-        <LayoutToggle on={outlineOpen} onClick={() => ide().setOutlineOpen(!outlineOpen)} onLabel="Hide Outline" offLabel="Show Outline" icon={<PanelRight size={15} />} />
         <button
           type="button"
           onClick={() => ide().revealPlugin("settings", "Settings")}
@@ -248,22 +278,6 @@ export function TitleBar({ onHome }: Props) {
       {isDesktopApp() && <WindowControls />}
       {about && <AboutDialog onClose={() => setAbout(false)} />}
     </header>
-  );
-}
-
-function LayoutToggle({ on, onClick, onLabel, offLabel, keys, icon }: { on: boolean; onClick: () => void; onLabel: string; offLabel: string; keys?: string; icon: React.ReactNode }) {
-  const label = on ? onLabel : offLabel;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={keys ? `${label} (${keys})` : label}
-      aria-label={label}
-      aria-pressed={on}
-      className={clsx("w-7 h-7 grid place-items-center rounded cursor-pointer transition-colors", on ? "text-accent hover:bg-bg-hover" : "text-fg-muted hover:text-fg hover:bg-bg-hover")}
-    >
-      {icon}
-    </button>
   );
 }
 
