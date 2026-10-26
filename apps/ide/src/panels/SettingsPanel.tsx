@@ -2,6 +2,7 @@ import { useIde } from "@/store/ide";
 
 export function SettingsPanel() {
   const workspace = useIde((s) => s.workspace);
+  const resetLayout = useIde((s) => s.resetLayout);
   return (
     <div className="p-3 space-y-4 text-xs">
       <div>
@@ -12,6 +13,13 @@ export function SettingsPanel() {
           <Row k=".hardkas/" v={workspace?.hasHardkasDir ? "present" : "missing"} />
           <Row k="dev-server token" v={workspace?.hasDevServerToken ? "present (hardkas dev was run)" : "missing"} />
         </dl>
+      </div>
+      <div>
+        <div className="label">Layout</div>
+        <p className="text-fg-muted mb-2">Every panel has an icon in the left rail wherever it is docked. If the layout got confusing, put everything back where it starts.</p>
+        <button type="button" className="btn-ghost" onClick={() => resetLayout()}>
+          Reset panel layout
+        </button>
       </div>
       <div>
         <div className="label">Servers</div>

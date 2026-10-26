@@ -42,6 +42,7 @@ export function CommandPalette() {
       { id: "tests", title: "Run all tests", hint: "vitest, JUnit-style results", run: () => engine.call("tests", "run") },
       { id: "tests:view", title: "Show Tests view", run: () => engine.call("tests", "open") },
       { id: "outline", title: "Toggle Outline", run: () => ide().setOutlineOpen(!ide().outlineOpen) },
+      { id: "layout:reset", title: "Layout: reset panels to their default places", hint: "undo any docking", run: () => ide().resetLayout() },
       { id: "run", title: "Open Deploy & Run", run: () => ide().setActiveSidePlugin("deployRun") },
       { id: "servers", title: "Open Servers (node & accounts)", run: () => ide().setActiveSidePlugin("environment") },
       { id: "accounts", title: "Open Accounts (keys & balances)", run: () => ide().setActiveSidePlugin("accounts") },
