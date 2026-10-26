@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { Check, Coins, Copy, Eye, EyeOff, KeyRound, Plus, RefreshCw, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
+import { copyText } from "@/utils/clipboard";
 import type { EnvironmentPlugin } from "@/plugins/environment";
 import { formatKas, useEnv, type AccountInfo } from "@/store/env";
 import { envOf, useIde } from "@/store/ide";
@@ -121,7 +122,7 @@ function AccountItem({ account, env, say }: { account: AccountInfo; env: Environ
   };
 
   const copyPublic = async () => {
-    await navigator.clipboard.writeText(account.address);
+    await copyText(account.address);
     flash("pub");
     say(`Public address of ${account.name} copied`);
   };
@@ -163,14 +164,13 @@ function AccountItem({ account, env, say }: { account: AccountInfo; env: Environ
 
   return (
     <li className="rounded border border-border bg-bg-elev p-2.5 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5 font-semibold text-fg min-w-0">
-          <UserRound size={14} className="text-accent shrink-0" />
-          <span className="truncate">{account.name}</span>
-          <span className="text-[10px] font-normal text-fg-muted shrink-0">{account.kind}</span>
-        </span>
-        <span className="font-mono text-sm text-fg tabular-nums shrink-0">{formatKas(account.balanceSompi)}</span>
+      {/* name on one line, balance on the next: the side panel is narrow */}
+      <div className="flex items-center gap-1.5 font-semibold text-fg min-w-0">
+        <UserRound size={14} className="text-accent shrink-0" />
+        <span className="truncate">{account.name}</span>
+        <span className="text-[10px] font-normal text-fg-muted shrink-0">{account.kind}</span>
       </div>
+      <div className="font-mono text-sm text-fg tabular-nums text-right">{formatKas(account.balanceSompi)}</div>
 
       <CopyField label="Public key (address)" value={account.address} onCopy={() => void copyPublic()} copied={copied === "pub"} />
 
