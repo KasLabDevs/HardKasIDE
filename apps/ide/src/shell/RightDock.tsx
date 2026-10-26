@@ -2,6 +2,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useEngine, useEngineVersion } from "@/engine/context";
 import { useIde } from "@/store/ide";
 import { DockControls } from "./DockControls";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { Outline } from "./Outline";
 
 /** Right column: the Outline on top and every plugin the user docked to the right, stacked and resizable. */
@@ -16,7 +17,9 @@ export function RightDock() {
     <PanelGroup direction="vertical">
       {outlineOpen && (
         <Panel minSize={15} defaultSize={plugins.length ? 45 : 100}>
-          <Outline />
+          <ErrorBoundary name="Outline">
+            <Outline />
+          </ErrorBoundary>
         </Panel>
       )}
       {plugins.map((p, i) => {
@@ -29,7 +32,9 @@ export function RightDock() {
                 <DockControls pluginName={p.profile.name} displayName={p.profile.displayName} />
               </header>
               <div className="flex-1 min-h-0 overflow-auto text-xs">
-                <View />
+                <ErrorBoundary name={p.profile.displayName}>
+                  <View />
+                </ErrorBoundary>
               </div>
             </section>
           </PanelGroupItem>

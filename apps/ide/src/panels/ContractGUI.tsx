@@ -47,9 +47,9 @@ export function ContractGUI() {
         ) : (
           compiled.contracts.map((c) => (
             <div key={c.name} className="rounded border border-border bg-bg-elev p-2 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-fg">{c.name}</span>
-                <span className="text-fg-muted">{c.entries.length} entr{c.entries.length === 1 ? "y" : "ies"}</span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-fg truncate">{c.name}</span>
+                <span className="text-fg-muted shrink-0 tabular-nums">{c.entries.length} entr{c.entries.length === 1 ? "y" : "ies"}</span>
               </div>
               {c.address && (
                 <div className="font-mono text-[10px] text-fg-muted break-all" title="P2SH address of this contract (locking script hash)">
@@ -59,7 +59,7 @@ export function ContractGUI() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <div className="text-fg-muted mb-0.5">Fund from</div>
-                  <select className="input" value={from} onChange={(e) => setFrom(e.target.value)}>
+                  <select aria-label="Fund contract from account" className="input" value={from} onChange={(e) => setFrom(e.target.value)}>
                     {(accounts.length ? accounts : [{ name: "alice" }]).map((a) => (
                       <option key={a.name} value={a.name}>
                         {a.name}
@@ -69,33 +69,41 @@ export function ContractGUI() {
                 </div>
                 <div>
                   <div className="text-fg-muted mb-0.5">Value (KAS)</div>
-                  <input className="input" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                  <input aria-label="Contract value in KAS" className="input tabular-nums" value={amount} onChange={(e) => setAmount(e.target.value)} />
                 </div>
               </div>
               <button
-                className="btn-primary w-full justify-center"
+                type="button"
+                className="btn-primary w-full justify-center truncate"
                 disabled={busy !== null}
                 onClick={() => void silver.deploy({ compileRecordPath: compiled.recordPath, from, amountKas: amount, contract: compiled.contracts.length > 1 ? c.name : undefined }).catch(() => undefined)}
                 title="hardkas silver deploy <record> --from --amount --wait"
               >
-                <Rocket size={13} /> {busy === "deploy" ? "Deploying…" : `Deploy ${c.name}`}
+                <Rocket size={13} className="shrink-0" /> <span className="truncate">{busy === "deploy" ? "Deploying…" : `Deploy ${c.name}`}</span>
               </button>
             </div>
           ))
         )}
         <div className="flex gap-1">
-          <input className="input font-mono" placeholder="At record: .hardkas/artifacts/silver/silverDeploy-….json" value={atPath} onChange={(e) => setAtPath(e.target.value)} />
-          <button className="btn-ghost shrink-0" disabled={!atPath} onClick={() => void silver.loadDeployRecord(atPath).catch(() => undefined)} title="Load an existing deploy record (Remix 'At Address')">
+          <input aria-label="Deploy record path" className="input font-mono" placeholder="At record: .hardkas/artifacts/silver/silverDeploy-….json" value={atPath} onChange={(e) => setAtPath(e.target.value)} />
+          <button
+            type="button"
+            className="btn-ghost shrink-0"
+            disabled={!atPath}
+            onClick={() => void silver.loadDeployRecord(atPath).catch(() => undefined)}
+            title="Load an existing deploy record (Remix 'At Address')"
+            aria-label="Load deploy record"
+          >
             <FolderOpen size={12} />
           </button>
         </div>
-        {error && <div className="text-error whitespace-pre-wrap">{error}</div>}
+        {error && <div role="alert" className="text-error whitespace-pre-wrap break-words">{error}</div>}
       </div>
 
       {/* ---------------------------------------------------- deployed instances */}
       <div className="space-y-2">
         <div className="label flex items-center justify-between">
-          <span>Deployed contracts · {visible.length}</span>
+          <span className="tabular-nums">Deployed contracts · {visible.length}</span>
           <label className="normal-case tracking-normal flex items-center gap-1 cursor-pointer">
             <input type="checkbox" checked={showSpent} onChange={(e) => setShowSpent(e.target.checked)} /> show spent
           </label>
@@ -119,22 +127,22 @@ function Instance({ deploy }: { deploy: DeployRecord }) {
 
   return (
     <div className={clsx("rounded border bg-bg-elev", deploy.spent ? "border-border opacity-70" : "border-accent/40")}>
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 px-2 py-1.5 text-left">
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        {deploy.spent ? <PackageCheck size={13} className="text-fg-muted" /> : <Lock size={13} className="text-accent" />}
-        <span className="font-semibold text-fg">{deploy.contract}</span>
-        <span className="ml-auto font-mono text-fg">{deploy.spent ? "spent" : formatKas(deploy.valueSompi)}</span>
+      <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 px-2 py-1.5 text-left cursor-pointer min-w-0">
+        {open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
+        {deploy.spent ? <PackageCheck size={13} className="text-fg-muted shrink-0" /> : <Lock size={13} className="text-accent shrink-0" />}
+        <span className="font-semibold text-fg truncate">{deploy.contract}</span>
+        <span className="ml-auto font-mono text-fg tabular-nums shrink-0">{deploy.spent ? "spent" : formatKas(deploy.valueSompi)}</span>
       </button>
       {open && (
         <div className="px-2 pb-2 space-y-2">
           <div className="font-mono text-[10px] text-fg-muted break-all" title="Contract P2SH address">
             {deploy.address}
           </div>
-          <div className="flex items-center justify-between text-[10px] text-fg-muted">
+          <div className="flex items-center justify-between gap-2 text-[10px] text-fg-muted">
             <span className="font-mono truncate" title={deploy.txId}>
               deploy tx {deploy.txId.slice(0, 16)}… · {deploy.status}
             </span>
-            <button className="flex items-center gap-1 hover:text-accent" onClick={() => void engine.call("fileManager", "open", deploy.recordPath)} title="Open deploy record">
+            <button type="button" className="flex items-center gap-1 hover:text-accent shrink-0 cursor-pointer" onClick={() => void engine.call("fileManager", "open", deploy.recordPath)} title="Open deploy record">
               <FileJson size={11} /> record
             </button>
           </div>
@@ -145,11 +153,11 @@ function Instance({ deploy }: { deploy: DeployRecord }) {
               <div className="text-fg-muted">Spends</div>
               {mySpends.map((s) => (
                 <div key={s.txId} className="rounded border border-border p-1.5 text-[10px] space-y-0.5">
-                  <div className="flex justify-between">
-                    <span className="text-ok">
+                  <div className="flex justify-between gap-2">
+                    <span className="text-ok truncate">
                       {s.contract}.{s.entry} · {s.status}
                     </span>
-                    <span className="font-mono">{formatKas(s.outputSompi)}</span>
+                    <span className="font-mono tabular-nums shrink-0">{formatKas(s.outputSompi)}</span>
                   </div>
                   <div className="font-mono text-fg-muted truncate" title={s.txId}>
                     tx {s.txId}
@@ -202,13 +210,15 @@ function EntryCall({ deploy, entry, disabled, onCall }: { deploy: DeployRecord; 
     }
   };
 
+  const sigText = `${entry.name}(${entry.params.map((p) => `${p.kind} ${p.name}`).join(", ")})`;
+
   return (
     <div className="rounded border border-border p-2 space-y-1.5">
-      <div className="flex items-center justify-between">
-        <span className="font-mono text-fg">
-          {entry.name}({entry.params.map((p) => `${p.kind} ${p.name}`).join(", ")})
+      <div className="flex items-center justify-between gap-2 min-w-0">
+        <span className="font-mono text-fg truncate" title={sigText}>
+          {sigText}
         </span>
-        {entry.dispatchTag && <span className="text-[10px] text-fg-muted">#{entry.dispatchTag}</span>}
+        {entry.dispatchTag && <span className="text-[10px] text-fg-muted shrink-0 tabular-nums">#{entry.dispatchTag}</span>}
       </div>
       {entry.params.map((p, i) => (
         <div key={p.name} className="flex items-center gap-2">
@@ -216,7 +226,7 @@ function EntryCall({ deploy, entry, disabled, onCall }: { deploy: DeployRecord; 
             {p.name} <span className="text-[10px]">({p.kind})</span>
           </span>
           {p.kind === "sig" ? (
-            <select className="input" value={values[i]} onChange={(e) => setValues((v) => v.map((x, j) => (j === i ? e.target.value : x)))}>
+            <select aria-label={`${p.name} signature account`} className="input" value={values[i]} onChange={(e) => setValues((v) => v.map((x, j) => (j === i ? e.target.value : x)))}>
               {(accounts.length ? accounts : [{ name: "alice" }]).map((a) => (
                 <option key={a.name} value={a.name}>
                   sign with {a.name}
@@ -224,20 +234,20 @@ function EntryCall({ deploy, entry, disabled, onCall }: { deploy: DeployRecord; 
               ))}
             </select>
           ) : p.kind === "bool" ? (
-            <select className="input" value={values[i]} onChange={(e) => setValues((v) => v.map((x, j) => (j === i ? e.target.value : x)))}>
+            <select aria-label={`${p.name} boolean`} className="input" value={values[i]} onChange={(e) => setValues((v) => v.map((x, j) => (j === i ? e.target.value : x)))}>
               <option value="">choose…</option>
               <option value="true">true</option>
               <option value="false">false</option>
             </select>
           ) : (
-            <input className="input font-mono" placeholder={placeholderFor(p)} value={values[i]} onChange={(e) => setValues((v) => v.map((x, j) => (j === i ? e.target.value : x)))} />
+            <input aria-label={`${p.name} (${p.kind})`} className="input font-mono" placeholder={placeholderFor(p)} value={values[i]} onChange={(e) => setValues((v) => v.map((x, j) => (j === i ? e.target.value : x)))} />
           )}
         </div>
       ))}
       <div className="flex items-center gap-2">
         <span className="w-24 shrink-0 text-fg-muted">to</span>
         {accounts.length > 0 ? (
-          <select className="input" value={to} onChange={(e) => setTo(e.target.value)}>
+          <select aria-label="Recipient account" className="input" value={to} onChange={(e) => setTo(e.target.value)}>
             {accounts.map((a) => (
               <option key={a.name} value={a.address}>
                 {a.name} · {a.address.slice(0, 18)}…
@@ -245,17 +255,23 @@ function EntryCall({ deploy, entry, disabled, onCall }: { deploy: DeployRecord; 
             ))}
           </select>
         ) : (
-          <input className="input font-mono" value={to} onChange={(e) => setTo(e.target.value)} placeholder="kaspasim:…" />
+          <input aria-label="Recipient address" className="input font-mono" value={to} onChange={(e) => setTo(e.target.value)} placeholder="kaspasim:…" />
         )}
       </div>
       <div className="flex items-center gap-2">
         <span className="w-24 shrink-0 text-fg-muted">sequence</span>
-        <input className="input font-mono" value={sequence} onChange={(e) => setSequence(e.target.value)} placeholder="optional (relative locks)" />
+        <input aria-label="Transaction sequence" className="input font-mono" value={sequence} onChange={(e) => setSequence(e.target.value)} placeholder="optional (relative locks)" />
       </div>
-      <button className="btn-ghost w-full justify-center text-warn border-warn/40" disabled={disabled || running} onClick={() => void call()} title={`hardkas silver spend ${deploy.recordPath} --entry ${entry.name}`}>
-        <Send size={12} /> {running ? "Spending…" : `${entry.name} → spend ${formatKas(deploy.valueSompi)}`}
+      <button
+        type="button"
+        className="btn-ghost w-full justify-center text-warn border-warn/40 truncate"
+        disabled={disabled || running}
+        onClick={() => void call()}
+        title={`hardkas silver spend ${deploy.recordPath} --entry ${entry.name}`}
+      >
+        <Send size={12} className="shrink-0" /> <span className="truncate tabular-nums">{running ? "Spending…" : `${entry.name} → spend ${formatKas(deploy.valueSompi)}`}</span>
       </button>
-      {err && <div className="text-error whitespace-pre-wrap">{err}</div>}
+      {err && <div role="alert" className="text-error whitespace-pre-wrap break-words">{err}</div>}
     </div>
   );
 }

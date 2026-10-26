@@ -212,9 +212,10 @@ export async function readVsxFile(id: string, relative: string): Promise<{ body:
   const list = await readIndex();
   const e = list.find((x) => x.id === id);
   if (!e) return null;
-  const base = path.join(VSX_DIR, e.dir, "extension");
+  const base = path.resolve(VSX_DIR, e.dir, "extension");
   const target = path.resolve(base, relative.replace(/^\/+/, ""));
-  if (!target.startsWith(base)) return null;
+  const rel = path.relative(base, target);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
   try {
     const body = await fs.readFile(target);
     const ext = path.extname(target).toLowerCase();

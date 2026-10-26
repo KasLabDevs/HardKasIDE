@@ -103,6 +103,17 @@ export const api = {
     rename: (from: string, to: string) => request<{ ok: true }>("/api/fs/rename", { method: "POST", body: JSON.stringify({ from, to }) }),
     remove: (path: string) => request<{ ok: true }>(`/api/fs?path=${encodeURIComponent(path)}`, { method: "DELETE" })
   },
+  devkeys: {
+    /** Aliases with a keystore in .hardkas/dev-accounts (alice…erin). */
+    list: () => request<{ names: string[] }>("/api/devkeys").then((r) => r.names),
+    /** Decrypts a simnet dev keystore (fixed HardKas dev password) and returns its raw hex private key. */
+    reveal: (name: string) =>
+      request<{ name: string; address: string; network: string; privateKey: string }>("/api/devkeys/reveal", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+        cache: "no-store"
+      })
+  },
   jobs: {
     run: (args: string[], options?: { cwd?: string; command?: string }) =>
       request<{ job: JobSummary }>("/api/run", { method: "POST", body: JSON.stringify({ args, ...options }) }).then((r) => r.job),

@@ -44,6 +44,7 @@ export function CommandPalette() {
       { id: "outline", title: "Toggle Outline", run: () => ide().setOutlineOpen(!ide().outlineOpen) },
       { id: "run", title: "Open Deploy & Run", run: () => ide().setActiveSidePlugin("deployRun") },
       { id: "servers", title: "Open Servers (node & accounts)", run: () => ide().setActiveSidePlugin("environment") },
+      { id: "accounts", title: "Open Accounts (keys & balances)", run: () => ide().setActiveSidePlugin("accounts") },
       { id: "artifacts", title: "Open Artifacts", run: () => ide().setActiveSidePlugin("artifacts") },
       { id: "files", title: "Open Explorer", run: () => ide().setActiveSidePlugin("files") },
       { id: "node:start", title: "Node: start localnet (rusty-kaspad)", hint: "hardkas localnet start --toccata", run: () => engine.get<EnvironmentPlugin>("environment").startNode() },
@@ -105,7 +106,13 @@ export function CommandPalette() {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center pt-20" onClick={() => setOpen(false)}>
-      <div className="w-full max-w-xl rounded-lg border border-border bg-bg-elev shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+        className="w-full max-w-xl rounded-lg border border-border bg-bg-elev shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center gap-2 px-3 border-b border-border">
           <Command size={14} className="text-fg-muted" />
           <input

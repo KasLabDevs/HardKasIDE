@@ -21,8 +21,8 @@ export function TestsView() {
   return (
     <div className="h-full flex flex-col min-w-0 text-xs">
       <div className="shrink-0 border-b border-border bg-bg-panel px-3 py-2 space-y-2">
-        <div className="flex items-center gap-2">
-          <button className="btn-primary" disabled={running} onClick={() => void plugin.run()} title="npx vitest run --reporter=json">
+        <div className="flex items-center gap-2 tabular-nums">
+          <button type="button" className="btn-primary" disabled={running} onClick={() => void plugin.run()} title="npx vitest run --reporter=json">
             {running ? <RotateCw size={13} className="animate-spin" /> : <Play size={13} />} {running ? "Running…" : "Run all tests"}
           </button>
           {run && (
@@ -36,11 +36,11 @@ export function TestsView() {
           )}
         </div>
         {/* the JUnit bar */}
-        <div className="h-2.5 rounded bg-bg-hover overflow-hidden">
+        <div role="progressbar" aria-valuemin={0} aria-valuemax={run?.total ?? 100} aria-valuenow={run ? run.passed + run.failed : 0} className="h-2.5 rounded bg-bg-hover overflow-hidden">
           {run && <div className={clsx("h-full transition-all", ok ? "bg-ok" : "bg-error")} style={{ width: run.total ? `${((run.passed + run.failed) / run.total) * 100}%` : "100%" }} />}
           {running && !run && <div className="h-full w-1/3 bg-info animate-pulse" />}
         </div>
-        {error && <div className="text-error whitespace-pre-wrap">{error}</div>}
+        {error && <div role="alert" className="text-error whitespace-pre-wrap break-words">{error}</div>}
       </div>
 
       <div className="flex-1 min-h-0 flex">
@@ -59,13 +59,13 @@ export function TestsView() {
           {!selectedTest && <div className="text-fg-muted">Select a test to see its details.</div>}
           {selectedTest && (
             <div className="space-y-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <StatusIcon status={selectedTest.status} />
-                <span className="font-semibold text-fg">{selectedTest.fullName}</span>
+                <span className="font-semibold text-fg break-words min-w-0">{selectedTest.fullName}</span>
               </div>
-              {selectedTest.durationMs !== null && <div className="text-fg-muted">{selectedTest.durationMs} ms</div>}
+              {selectedTest.durationMs !== null && <div className="text-fg-muted tabular-nums">{selectedTest.durationMs} ms</div>}
               {selectedTest.location && (
-                <button className="btn-ghost" onClick={() => void plugin.openTest(selectedTest.location!.file, selectedTest.location!.line)}>
+                <button type="button" className="btn-ghost" onClick={() => void plugin.openTest(selectedTest.location!.file, selectedTest.location!.line)}>
                   <FileCode2 size={12} /> {selectedTest.location.file}:{selectedTest.location.line}
                 </button>
               )}
@@ -88,7 +88,7 @@ export function TestsView() {
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "error" }) {
   return (
-    <span className="text-fg-muted">
+    <span className="text-fg-muted tabular-nums">
       {label}: <span className={clsx("font-semibold", tone === "error" ? "text-error" : "text-fg")}>{value}</span>
     </span>
   );
@@ -105,11 +105,24 @@ function FileNode({ file, selected, onSelect, onOpen }: { file: TestFile; select
   const passed = file.tests.filter((t) => t.status === "passed").length;
   return (
     <div>
-      <div className="flex items-center gap-1.5 px-2 py-1 hover:bg-bg-hover cursor-pointer" onClick={() => setOpen((o) => !o)} onDoubleClick={() => onOpen(file.file)}>
-        <span className="text-fg-muted">{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 px-2 py-1 hover:bg-bg-hover cursor-pointer outline-none"
+        onClick={() => setOpen((o) => !o)}
+        onDoubleClick={() => onOpen(file.file)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((o) => !o);
+          }
+        }}
+      >
+        <span className="text-fg-muted shrink-0">{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
         <StatusIcon status={file.status} />
         <span className="font-mono text-fg truncate">{file.file}</span>
-        <span className="ml-auto text-[10px] text-fg-muted whitespace-nowrap">
+        <span className="ml-auto text-[10px] text-fg-muted whitespace-nowrap tabular-nums">
           {passed}/{file.tests.length}
           {file.durationMs !== null ? ` · ${file.durationMs} ms` : ""}
         </span>
@@ -119,9 +132,17 @@ function FileNode({ file, selected, onSelect, onOpen }: { file: TestFile; select
         file.tests.map((t) => (
           <div
             key={t.id}
-            className={clsx("flex items-center gap-1.5 pl-8 pr-2 py-0.5 cursor-pointer", selected === t.id ? "bg-bg-hover text-fg" : "hover:bg-bg-hover")}
+            role="button"
+            tabIndex={0}
+            className={clsx("flex items-center gap-1.5 pl-8 pr-2 py-0.5 cursor-pointer outline-none", selected === t.id ? "bg-bg-hover text-fg font-medium" : "hover:bg-bg-hover")}
             onClick={() => onSelect(t)}
             onDoubleClick={() => onOpen(t.location?.file ?? file.file, t.location?.line)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(t);
+              }
+            }}
             title={t.fullName}
           >
             <StatusIcon status={t.status} />
@@ -129,7 +150,7 @@ function FileNode({ file, selected, onSelect, onOpen }: { file: TestFile; select
               {t.ancestors.length > 0 && <span className="text-fg-muted">{t.ancestors.join(" › ")} › </span>}
               {t.title}
             </span>
-            {t.durationMs !== null && <span className="ml-auto text-[10px] text-fg-muted">{t.durationMs} ms</span>}
+            {t.durationMs !== null && <span className="ml-auto text-[10px] text-fg-muted tabular-nums shrink-0">{t.durationMs} ms</span>}
           </div>
         ))}
     </div>

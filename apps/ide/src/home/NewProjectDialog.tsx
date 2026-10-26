@@ -40,6 +40,14 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [log]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && phase !== "running") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phase, onClose]);
+
   const create = async () => {
     setPhase("running");
     setError(null);
@@ -64,10 +72,16 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6" onClick={phase === "running" ? undefined : onClose}>
-      <div className="w-full max-w-3xl max-h-full overflow-auto rounded-lg border border-border bg-bg-elev shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-project-dialog-title"
+        className="w-full max-w-3xl max-h-full overflow-auto rounded-lg border border-border bg-bg-elev shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <header className="flex items-center justify-between px-5 py-3 border-b border-border">
-          <h2 className="text-sm font-semibold">Create a new HardKas project</h2>
-          <button onClick={onClose} disabled={phase === "running"} className="text-fg-muted hover:text-fg">
+          <h2 id="new-project-dialog-title" className="text-sm font-semibold">Create a new HardKas project</h2>
+          <button type="button" onClick={onClose} disabled={phase === "running"} className="text-fg-muted hover:text-fg" aria-label="Close dialog">
             <X size={16} />
           </button>
         </header>
@@ -80,9 +94,11 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
                 {templates.map((t) => (
                   <button
                     key={t.id}
+                    type="button"
+                    aria-pressed={template === t.id}
                     onClick={() => setTemplate(t.id)}
                     className={clsx(
-                      "text-left rounded border p-3 transition-colors",
+                      "text-left rounded border p-3 transition-colors cursor-pointer",
                       template === t.id ? "border-accent bg-bg-hover" : "border-border bg-bg-panel hover:bg-bg-hover"
                     )}
                   >
@@ -96,12 +112,12 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
             </div>
             <div className="md:col-span-2 space-y-3">
               <div>
-                <div className="label">Project name</div>
-                <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+                <label htmlFor="new-project-name" className="label">Project name</label>
+                <input id="new-project-name" className="input" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
               <div>
-                <div className="label">Location</div>
-                <input className="input font-mono" value={parent} onChange={(e) => setParent(e.target.value)} />
+                <label htmlFor="new-project-parent" className="label">Location</label>
+                <input id="new-project-parent" className="input font-mono" value={parent} onChange={(e) => setParent(e.target.value)} />
                 <div className="text-fg-muted mt-1 font-mono text-[11px] break-all">
                   {parent.replace(/[\\/]+$/, "")}
                   {parent ? "/" : ""}
@@ -112,8 +128,8 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
                 <input type="checkbox" checked={install} onChange={(e) => setInstall(e.target.checked)} />
                 <span>Run install after creating (slower)</span>
               </label>
-              {error && <div className="text-error">{error}</div>}
-              <button className="btn-primary w-full justify-center py-2" disabled={!name || !parent || templates.length === 0} onClick={() => void create()}>
+              {error && <div role="alert" className="text-error break-words">{error}</div>}
+              <button type="button" className="btn-primary w-full justify-center py-2" disabled={!name || !parent || templates.length === 0} onClick={() => void create()}>
                 Create
               </button>
               <p className="text-fg-muted text-[11px]">

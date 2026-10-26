@@ -57,7 +57,7 @@ export function BottomPanel() {
 
   return (
     <div className="h-full flex flex-col bg-bg border-t border-border">
-      <div className="h-8 shrink-0 flex items-stretch border-b border-border bg-bg-panel text-[11px] select-none">
+      <div role="tablist" aria-label="Bottom panel tabs" className="h-8 shrink-0 flex items-stretch border-b border-border bg-bg-panel text-[11px] select-none">
         <TabButton active={active.kind === "console"} onClick={() => setActive({ kind: "console" })} icon={<ScrollText size={13} />} label="Console" />
         <TabButton
           active={active.kind === "terminal"}
@@ -65,12 +65,18 @@ export function BottomPanel() {
           icon={<TerminalSquare size={13} />}
           label={activeTerminal ? `Terminal · ${activeTerminal.title}` : "Terminal"}
         />
-        <button onClick={addTerminal} className="px-2 text-fg-muted hover:text-fg flex items-center gap-1" title={`New terminal in ${workspace?.root ?? "the workspace"}`}>
+        <button
+          type="button"
+          onClick={addTerminal}
+          className="px-2 text-fg-muted hover:text-fg flex items-center gap-1 cursor-pointer hover:bg-bg-hover transition-colors"
+          title={`New terminal in ${workspace?.root ?? "the workspace"}`}
+          aria-label="New terminal"
+        >
           <Plus size={13} />
         </button>
-        <span className="ml-auto flex items-center gap-2 pr-2 text-fg-muted">
+        <span className="ml-auto flex items-center gap-2 pr-2 text-fg-muted tabular-nums">
           {terminals.length > 0 && <span>{terminals.length} terminal{terminals.length === 1 ? "" : "s"}</span>}
-          <button onClick={() => setTerminalOpen(false)} className="hover:text-fg" title="Hide panel">
+          <button type="button" onClick={() => setTerminalOpen(false)} className="p-1 rounded hover:text-fg hover:bg-bg-hover cursor-pointer" title="Hide panel" aria-label="Hide bottom panel">
             <X size={13} />
           </button>
         </span>
@@ -90,7 +96,7 @@ export function BottomPanel() {
           <aside className="w-44 shrink-0 border-l border-border bg-bg-panel text-[11px] overflow-auto">
             <div className="flex items-center justify-between px-2 py-1 text-fg-muted uppercase tracking-wider text-[10px]">
               <span>Terminals</span>
-              <button onClick={addTerminal} className="hover:text-fg" title="New terminal">
+              <button type="button" onClick={addTerminal} className="p-0.5 rounded hover:text-fg hover:bg-bg-hover cursor-pointer" title="New terminal" aria-label="New terminal">
                 <Plus size={12} />
               </button>
             </div>
@@ -100,14 +106,29 @@ export function BottomPanel() {
                 return (
                   <li
                     key={t.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setActive({ kind: "terminal", id: t.id })}
                     onDoubleClick={() => startRename(t)}
-                    className={clsx("group flex items-center gap-1.5 px-2 py-1 cursor-pointer", isActive ? "bg-bg-hover text-fg" : "text-fg-muted hover:text-fg hover:bg-bg-hover")}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setActive({ kind: "terminal", id: t.id });
+                      } else if (e.key === "F2") {
+                        e.preventDefault();
+                        startRename(t);
+                      }
+                    }}
+                    className={clsx(
+                      "group flex items-center gap-1.5 px-2 py-1 cursor-pointer outline-none",
+                      isActive ? "bg-bg-hover text-fg" : "text-fg-muted hover:text-fg hover:bg-bg-hover"
+                    )}
                   >
-                    <TerminalSquare size={12} className={isActive ? "text-accent" : ""} />
+                    <TerminalSquare size={12} className={clsx("shrink-0", isActive ? "text-accent" : "")} />
                     {renaming === t.id ? (
                       <input
                         autoFocus
+                        aria-label="Rename terminal"
                         className="input py-0 px-1 text-[11px]"
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
@@ -115,31 +136,36 @@ export function BottomPanel() {
                         onKeyDown={(e) => {
                           if (e.key === "Enter") commitRename();
                           if (e.key === "Escape") setRenaming(null);
+                          e.stopPropagation();
                         }}
                         onClick={(e) => e.stopPropagation()}
                       />
                     ) : (
-                      <span className="truncate flex-1">
+                      <span className="truncate flex-1 tabular-nums">
                         {i + 1}: {t.title}
                       </span>
                     )}
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         startRename(t);
                       }}
-                      className="opacity-0 group-hover:opacity-100 hover:text-fg"
-                      title="Rename"
+                      className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 hover:text-fg p-0.5 rounded cursor-pointer"
+                      title="Rename (F2)"
+                      aria-label={`Rename ${t.title}`}
                     >
                       <Pencil size={11} />
                     </button>
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         killTerminal(t.id);
                       }}
-                      className="opacity-0 group-hover:opacity-100 hover:text-error"
+                      className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 hover:text-error p-0.5 rounded cursor-pointer"
                       title="Kill terminal"
+                      aria-label={`Kill ${t.title}`}
                     >
                       <Trash2 size={11} />
                     </button>
@@ -147,7 +173,7 @@ export function BottomPanel() {
                 );
               })}
             </ul>
-            <div className="px-2 py-1 text-[10px] text-fg-muted">double-click to rename</div>
+            <div className="px-2 py-1 text-[10px] text-fg-muted">double-click or F2 to rename</div>
           </aside>
         )}
       </div>
@@ -157,14 +183,17 @@ export function BottomPanel() {
 
 function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
-    <div
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
       className={clsx(
-        "flex items-center gap-1.5 px-3 cursor-pointer border-r border-border uppercase tracking-wider font-semibold whitespace-nowrap",
+        "flex items-center gap-1.5 px-3 cursor-pointer border-r border-border uppercase tracking-wider font-semibold whitespace-nowrap outline-none focus-visible:ring-1 focus-visible:ring-accent",
         active ? "text-fg bg-bg border-b-2 border-b-accent" : "text-fg-muted hover:text-fg hover:bg-bg-hover"
       )}
     >
       {icon} {label}
-    </div>
+    </button>
   );
 }

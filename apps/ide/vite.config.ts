@@ -16,5 +16,18 @@ export default defineConfig({
     proxy: {
       "/api": { target: "http://127.0.0.1:7421", changeOrigin: false, ws: true }
     }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "react-vendor": ["react", "react-dom", "zustand"],
+          "xyflow": ["@xyflow/react"],
+          "xterm": ["@xterm/xterm", "@xterm/addon-fit"],
+          "textmate": ["vscode-textmate", "vscode-oniguruma"],
+          "icons": ["lucide-react"]
+        }
+      }
+    }
   }
 });

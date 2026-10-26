@@ -9,11 +9,10 @@ import { EnvironmentPlugin } from "@/plugins/environment";
 import { FileManagerPlugin } from "@/plugins/fileManager";
 import { LineagePlugin } from "@/plugins/lineage";
 import { PluginManagerPlugin, REQUIRED_PLUGINS } from "@/plugins/pluginManager";
-import { usePlugins } from "@/store/plugins";
 import { SilverPlugin } from "@/plugins/silver";
 import { TestsPlugin } from "@/plugins/tests";
 import { VsxPlugin } from "@/plugins/vsx";
-import { ArtifactsPlugin, FilesPlugin, RunPlugin, SettingsPlugin } from "@/plugins/sidePlugins";
+import { AccountsPlugin, ArtifactsPlugin, FilesPlugin, RunPlugin, SettingsPlugin } from "@/plugins/sidePlugins";
 import { ConsolePlugin } from "@/plugins/console";
 import { Workbench } from "@/shell/Workbench";
 import { useIde } from "@/store/ide";
@@ -29,6 +28,7 @@ function createEngine(): Engine {
   engine.register(new EditorPlugin());
   engine.register(new FilesPlugin());
   engine.register(new EnvironmentPlugin());
+  engine.register(new AccountsPlugin());
   engine.register(new CompilerPlugin());
   engine.register(new SilverPlugin());
   engine.register(new RunPlugin());
@@ -46,20 +46,26 @@ function createEngine(): Engine {
   return engine;
 }
 
-const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "environment", "artifacts", "lineage", "tests", "settings", "pluginManager", "vsx"];
-
-/** Every built-in activates on boot; the persisted active set only governs external plugins. */
-function activationList(): string[] {
-  void usePlugins.getState().savedActive;
-  return ACTIVATION_ORDER;
-}
+const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "environment", "accounts", "artifacts", "lineage", "tests", "settings", "pluginManager", "vsx"];
 
 export default function App() {
   const engine = useMemo(createEngine, []);
   const workspace = useIde((s) => s.workspace);
   const setWorkspace = useIde((s) => s.setWorkspace);
+  const hasDirtyFiles = useIde((s) => s.openFiles.some((f) => f.kind !== "view" && f.content !== f.savedContent));
   const [booted, setBooted] = useState(false);
   const [serverDown, setServerDown] = useState(false);
+
+  // Warn before closing browser tab if there are unsaved editor changes.
+  useEffect(() => {
+    if (!hasDirtyFiles) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasDirtyFiles]);
 
   // On load, ask the server whether a workspace is already open (e.g. --workspace flag).
   useEffect(() => {
@@ -78,7 +84,7 @@ export default function App() {
     if (!workspace?.root) return;
     let cancelled = false;
     (async () => {
-      await engine.activate(activationList());
+      await engine.activate(ACTIVATION_ORDER);
       if (cancelled) return;
       const console_ = engine.get<ConsolePlugin>("console");
       console_.info(`Workspace: ${workspace.root}`);
@@ -91,8 +97,20 @@ export default function App() {
   }, [engine, workspace]);
 
   const goHome = async () => {
+    const dirty = useIde.getState().openFiles.filter((f) => f.kind !== "view" && f.content !== f.savedContent);
+    if (dirty.length > 0 && !window.confirm(`You have ${dirty.length} unsaved file(s). Close workspace and discard changes?`)) {
+      return;
+    }
     await api.workspace.close().catch(() => undefined);
     useIde.setState({ workspace: null, tree: [], openFiles: [], activeFile: null, journal: [], activeSidePlugin: "files" });
+    // Deactivate pluginManager first so its listeners don't overwrite savedActive while tearing down.
+    if (engine.isActive("pluginManager")) {
+      try {
+        await engine.deactivate("pluginManager", true);
+      } catch {
+        // ignore
+      }
+    }
     // Closing the workspace: every plugin goes down (even required ones) so the next
     // workspace starts from a clean activation and reloads its tree, accounts, artifacts…
     for (const name of [...engine.activeNames()].reverse()) {
@@ -115,7 +133,7 @@ export default function App() {
           <div className="text-lg font-semibold">IDE server not reachable</div>
           <p className="text-fg-muted">The UI talks to the HardKas IDE server on port 7421 and it did not answer. Start it from the repo root:</p>
           <pre className="rounded border border-border bg-bg-panel p-3 text-xs">pnpm dev:server</pre>
-          <button className="btn-primary" onClick={() => location.reload()}>
+          <button type="button" className="btn-primary" onClick={() => location.reload()}>
             Retry
           </button>
         </div>

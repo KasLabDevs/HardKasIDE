@@ -165,7 +165,7 @@ async function loadThemeJson(url: string): Promise<VsTheme> {
 /** Maps workbench colors of a VS Code theme onto the IDE's CSS variables (opt-in). */
 export function applyThemeToIde(theme: VsTheme | null): void {
   const root = document.documentElement.style;
-  const vars = ["--bg", "--bg-elev", "--bg-panel", "--bg-hover", "--border", "--fg", "--fg-muted", "--accent"];
+  const vars = ["--bg", "--bg-elev", "--bg-panel", "--bg-hover", "--border", "--fg", "--fg-muted", "--accent", "--accent-fg", "color-scheme"];
   if (!theme) {
     for (const v of vars) root.removeProperty(v);
     return;
@@ -173,14 +173,32 @@ export function applyThemeToIde(theme: VsTheme | null): void {
   const c = theme.colors ?? {};
   const pick = (...keys: string[]) => keys.map((k) => c[k]).find((v) => typeof v === "string")?.slice(0, 7);
   const set = (v: string, val?: string) => (val ? root.setProperty(v, val) : root.removeProperty(v));
-  set("--bg", pick("editor.background"));
+  const bg = pick("editor.background");
+  const accent = pick("focusBorder", "textLink.foreground", "button.background", "activityBarBadge.background");
+  set("--bg", bg);
   set("--bg-panel", pick("sideBar.background", "activityBar.background", "editor.background"));
   set("--bg-elev", pick("editorWidget.background", "panel.background", "sideBarSectionHeader.background", "editor.background"));
   set("--bg-hover", pick("list.hoverBackground", "editor.lineHighlightBackground", "editor.selectionBackground"));
   set("--border", pick("panel.border", "sideBar.border", "editorGroup.border", "contrastBorder", "editorIndentGuide.background"));
   set("--fg", pick("editor.foreground", "foreground"));
   set("--fg-muted", pick("descriptionForeground", "sideBarTitle.foreground", "editorLineNumber.foreground"));
-  set("--accent", pick("focusBorder", "textLink.foreground", "button.background", "activityBarBadge.background"));
+  set("--accent", accent);
+  if (accent) {
+    set("--accent-fg", isLightHex(accent) ? "#06201c" : "#ffffff");
+  } else {
+    root.removeProperty("--accent-fg");
+  }
+  set("color-scheme", bg && isLightHex(bg) ? "light" : "dark");
+}
+
+function isLightHex(hex: string): boolean {
+  const h = hex6(hex);
+  if (!h) return false;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  // Perceived luminance (ITU-R BT.709)
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.55;
 }
 
 function hex6(v?: string): string | undefined {

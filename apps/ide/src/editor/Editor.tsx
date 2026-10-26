@@ -1,6 +1,6 @@
 import MonacoEditor, { type BeforeMount, type OnMount } from "@monaco-editor/react";
 import type * as Monaco from "monaco-editor";
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useEngine } from "@/engine/context";
 import type { EditorPlugin } from "@/plugins/editor";
 import { useIde } from "@/store/ide";
@@ -23,6 +23,23 @@ export function Editor() {
   const activeVsxTheme = useVsx((s) => s.activeTheme);
   const monacoRef = useRef<typeof Monaco | null>(null);
   const themeName = activeVsxTheme ? monacoThemeName(activeVsxTheme) : THEME_NAME;
+
+  const editorOptions = useMemo<Monaco.editor.IStandaloneEditorConstructionOptions>(
+    () => ({
+      fontFamily: getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim() || "monospace",
+      fontSize: 14,
+      minimap: { enabled: false },
+      automaticLayout: true,
+      scrollBeyondLastLine: false,
+      glyphMargin: true,
+      renderLineHighlight: "line",
+      tabSize: 2,
+      wordWrap: "off",
+      smoothScrolling: true,
+      padding: { top: 8 }
+    }),
+    []
+  );
 
   const beforeMount: BeforeMount = useCallback((monaco) => {
     monacoRef.current = monaco;
@@ -140,19 +157,7 @@ export function Editor() {
         updateContent(file.path, value ?? "");
         engine.get<EditorPlugin>("editor").notifyChange(file.path);
       }}
-      options={{
-        fontFamily: getComputedStyle(document.documentElement).getPropertyValue("--font-mono") || "monospace",
-        fontSize: 14,
-        minimap: { enabled: false },
-        automaticLayout: true,
-        scrollBeyondLastLine: false,
-        glyphMargin: true,
-        renderLineHighlight: "line",
-        tabSize: 2,
-        wordWrap: "off",
-        smoothScrolling: true,
-        padding: { top: 8 }
-      }}
+      options={editorOptions}
     />
   );
 }
