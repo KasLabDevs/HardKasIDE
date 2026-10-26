@@ -55,7 +55,10 @@ export function MainArea() {
               )}
               title={f.path}
             >
-              {isView && <GitBranch size={12} className="text-accent shrink-0" />}
+              {isView && (() => {
+                const ViewIcon = engine.has(f.path.slice(VIEW_PREFIX.length)) ? engine.get(f.path.slice(VIEW_PREFIX.length)).profile.icon : undefined;
+                return ViewIcon ? <ViewIcon size={12} className="text-accent shrink-0" /> : <GitBranch size={12} className="text-accent shrink-0" />;
+              })()}
               <span className="truncate">{label}</span>
               {dirty && <span className="w-2 h-2 rounded-full bg-warn shrink-0" title="Unsaved changes" aria-label="Unsaved changes" />}
               <button

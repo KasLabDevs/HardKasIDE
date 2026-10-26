@@ -1,4 +1,4 @@
-import { CheckCircle2, Coins, FileJson, Play, RadioTower, RefreshCw, Send, Signature, Zap } from "lucide-react";
+import { CheckCircle2, Coins, FileJson, History, Play, RadioTower, RefreshCw, Send, Signature, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { Account, PlanOutcome, RunPlugin, SendOutcome, SignOutcome, TxStatus } from "@/plugins/run";
@@ -121,6 +121,10 @@ export function RunPanel() {
         </select>
         <div className="text-fg-muted mt-1">{TARGETS.find((t) => t.id === target)?.hint}</div>
       </div>
+
+      <button type="button" className="btn-ghost w-full justify-center" onClick={() => void engine.call("runHistory", "open")} title="Payments, deploys and contract calls, with a tab per contract">
+        <History size={14} /> Run history
+      </button>
 
       <div className="flex gap-2">
         <button type="button" className="btn-ghost flex-1 justify-center" disabled={busy !== null} onClick={() => void guard("status", async () => void (await run.localnetStatus()))}>
