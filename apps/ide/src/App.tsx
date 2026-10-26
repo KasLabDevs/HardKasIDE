@@ -13,6 +13,7 @@ import { SilverPlugin } from "@/plugins/silver";
 import { TestsPlugin } from "@/plugins/tests";
 import { VsxPlugin } from "@/plugins/vsx";
 import { AccountsPlugin, ArtifactsPlugin, FilesPlugin, RunPlugin, SettingsPlugin } from "@/plugins/sidePlugins";
+import { AssistantPlugin } from "@/plugins/assistant";
 import { ConsolePlugin } from "@/plugins/console";
 import { Workbench } from "@/shell/Workbench";
 import { useIde } from "@/store/ide";
@@ -29,6 +30,7 @@ function createEngine(): Engine {
   engine.register(new FilesPlugin());
   engine.register(new EnvironmentPlugin());
   engine.register(new AccountsPlugin());
+  engine.register(new AssistantPlugin());
   engine.register(new CompilerPlugin());
   engine.register(new SilverPlugin());
   engine.register(new RunPlugin());
@@ -46,7 +48,7 @@ function createEngine(): Engine {
   return engine;
 }
 
-const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "environment", "accounts", "artifacts", "lineage", "tests", "settings", "pluginManager", "vsx"];
+const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "environment", "accounts", "assistant", "artifacts", "lineage", "tests", "settings", "pluginManager", "vsx"];
 
 export default function App() {
   const engine = useMemo(createEngine, []);

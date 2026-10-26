@@ -16,7 +16,7 @@ export function RightDock() {
   return (
     <PanelGroup direction="vertical">
       {outlineOpen && (
-        <Panel minSize={15} defaultSize={plugins.length ? 45 : 100}>
+        <Panel minSize={12} defaultSize={plugins.length ? 26 : 100}>
           <ErrorBoundary name="Outline">
             <Outline />
           </ErrorBoundary>
@@ -48,7 +48,7 @@ function PanelGroupItem({ first, children }: { first: boolean; children: React.R
   return (
     <>
       {!first && <PanelResizeHandle className="h-px bg-border hover:bg-accent transition-colors" />}
-      <Panel minSize={12}>{children}</Panel>
+      <Panel minSize={20} defaultSize={74}>{children}</Panel>
     </>
   );
 }
