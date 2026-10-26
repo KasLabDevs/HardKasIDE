@@ -212,7 +212,14 @@ export async function* streamChat(req: ChatRequest, signal: AbortSignal): AsyncG
     method: "POST",
     signal,
     headers,
-    body: JSON.stringify({ model: cfg.model, stream: true, max_tokens: cfg.maxTokens, messages: [{ role: "system", content: system }, ...messages] })
+    // OpenAI's newer models reject `max_tokens` and require `max_completion_tokens`; other compatible
+    // servers (OpenRouter, Ollama, LM Studio, Groq, DeepSeek…) still expect `max_tokens`.
+    body: JSON.stringify({
+      model: cfg.model,
+      stream: true,
+      ...(/^https:\/\/api\.openai\.com\//.test(cfg.baseUrl) ? { max_completion_tokens: cfg.maxTokens } : { max_tokens: cfg.maxTokens }),
+      messages: [{ role: "system", content: system }, ...messages]
+    })
   });
   if (!res.ok || !res.body) throw await upstreamError(res);
   for await (const data of sseData(res.body)) {
