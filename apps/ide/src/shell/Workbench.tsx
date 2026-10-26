@@ -17,7 +17,7 @@ interface Props {
   onHome: () => void;
 }
 
-/** The Remix-shaped screen: icon rail | side panel | editor over console/terminal | outline, status bar below. */
+/** The workbench screen: icon rail | side panel | editor over console/terminal | outline, status bar below. */
 export function Workbench({ onHome }: Props) {
   const terminalOpen = useIde((s) => s.terminalOpen);
   const outlineOpen = useIde((s) => s.outlineOpen);

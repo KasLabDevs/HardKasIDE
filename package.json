@@ -2,7 +2,7 @@
   "name": "hardkas-ide",
   "private": true,
   "version": "0.1.0",
-  "description": "HardKas IDE: a Remix-style workbench for HardKas (Kaspa) projects, with Visual Studio-style project creation.",
+  "description": "HardKas IDE: a workbench for HardKas (Kaspa) projects, with Visual Studio-style project creation.",
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@11.1.3",

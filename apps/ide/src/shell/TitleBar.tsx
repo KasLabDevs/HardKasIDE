@@ -420,7 +420,7 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <p className="text-fg-muted leading-relaxed">
-          A Remix-style workbench for Kaspa: editor, SilverScript compiler, Deploy &amp; Run, artifacts and terminals on top of the HardKas toolkit. Shaped after Remix IDE (Apache-2.0) and the Visual Studio project flow.
+          A workbench for Kaspa: editor, SilverScript compiler, Deploy &amp; Run, artifacts and terminals on top of the HardKas toolkit. Project flow shaped after Visual Studio, views after Eclipse.
         </p>
         <a className="text-accent hover:underline" href={REPO_URL} target="_blank" rel="noopener noreferrer">
           github.com/KasLabDevs/HardKasIDE

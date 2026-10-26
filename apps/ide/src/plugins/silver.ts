@@ -7,7 +7,7 @@ import type { CompilationResult } from "./compiler";
 import type { ConsolePlugin } from "./console";
 
 /**
- * SilverScript contracts on the canonical localnet (Remix's "Deploy & Run" for
+ * SilverScript contracts on the canonical localnet (the "Deploy & Run" flow for
  * contracts): deploy a compiled contract's P2SH output, list deployed instances,
  * call an entry (spend) with typed arguments and account signatures.
  *
@@ -218,7 +218,7 @@ export class SilverPlugin extends Plugin {
     }
   }
 
-  /** Loads an existing deploy record by path ("At address" in Remix terms). */
+  /** Loads an existing deploy record by path ("At address"). */
   async loadDeployRecord(recordPath: string): Promise<void> {
     await this.refreshDeployments();
     if (!useSilver.getState().deployments.some((d) => d.recordPath === recordPath)) {

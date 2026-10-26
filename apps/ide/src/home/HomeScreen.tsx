@@ -83,7 +83,7 @@ export function HomeScreen({ onOpened }: Props) {
             </div>
 
             <div className="text-[11px] text-fg-muted space-y-1">
-              <p>Workbench shaped after Remix IDE. Project flow shaped after Visual Studio.</p>
+              <p>Workbench for Kaspa and SilverScript. Project flow shaped after Visual Studio.</p>
               <p>Engine: HardKas 0.12.0-rc.29 · silverc 1.0.0 · simulator / localnet / rpc.</p>
             </div>
           </section>

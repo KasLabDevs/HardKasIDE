@@ -8,7 +8,7 @@ coverage/
 .env.*
 !.env.example
 
-# Reference clones (Remix IDE etc.) are study material, not part of this repo
+# Reference clones are study material, not part of this repo
 reference/
 
 # HardKas runtime state of the demo workspace
