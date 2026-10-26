@@ -21,13 +21,14 @@ export function Editor() {
   const file = useIde((s) => s.openFiles.find((f) => f.path === s.activeFile));
   const updateContent = useIde((s) => s.updateContent);
   const activeVsxTheme = useVsx((s) => s.activeTheme);
+  const zoom = useIde((s) => s.zoom);
   const monacoRef = useRef<typeof Monaco | null>(null);
   const themeName = activeVsxTheme ? monacoThemeName(activeVsxTheme) : THEME_NAME;
 
   const editorOptions = useMemo<Monaco.editor.IStandaloneEditorConstructionOptions>(
     () => ({
       fontFamily: getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim() || "monospace",
-      fontSize: 14,
+      fontSize: Math.round((14 * zoom) / 110),
       minimap: { enabled: false },
       automaticLayout: true,
       scrollBeyondLastLine: false,
@@ -38,7 +39,7 @@ export function Editor() {
       smoothScrolling: true,
       padding: { top: 8 }
     }),
-    []
+    [zoom]
   );
 
   const beforeMount: BeforeMount = useCallback((monaco) => {
