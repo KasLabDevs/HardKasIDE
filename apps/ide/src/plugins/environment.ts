@@ -1,6 +1,7 @@
 import { Server } from "lucide-react";
 import { api } from "@/api/client";
 import { Plugin } from "@/engine/engine";
+import { copyText } from "@/utils/clipboard";
 import { ServersPanel } from "@/panels/ServersPanel";
 import { useEnv, type AccountInfo, type NodeStatus } from "@/store/env";
 import { useIde, type ExecutionTarget } from "@/store/ide";
@@ -198,7 +199,7 @@ export class EnvironmentPlugin extends Plugin {
 
   /**
    * Funding depends on the environment:
-   *   Simulator  → `accounts fund` (HardKas' in-memory faucet; marked deprecated but the only simulator faucet)
+   *   Simulator  → `simulator fund` (HardKas' in-memory faucet)
    *   Local node → `localnet fund --profile toccata-v2` (mines real simnet blocks to the account)
    *   Testnet    → no faucet from the IDE
    */
@@ -207,7 +208,8 @@ export class EnvironmentPlugin extends Plugin {
     if (target === "localnet") {
       await this.console().runHardkas(["localnet", "fund", name, "--amount", amountKas, "--profile", "toccata-v2", "--json"]);
     } else if (target === "simulator") {
-      await this.console().runHardkas(["accounts", "fund", name, "--amount", amountKas]);
+      // `simulator fund` is the stable replacement for the deprecated `accounts fund`.
+      await this.console().runHardkas(["simulator", "fund", name, "--amount", amountKas, "--json"]);
     } else {
       throw new Error("No faucet for the public testnet from the IDE; use a testnet faucet and send to the address.");
     }
@@ -222,7 +224,7 @@ export class EnvironmentPlugin extends Plugin {
   async copyPrivateKey(name: string): Promise<boolean> {
     const key = await this.getPrivateKey(name);
     if (!key) return false;
-    await navigator.clipboard.writeText(key);
+    await copyText(key);
     this.console().info(`Private key of ${name} copied to clipboard (raw hex, KasWare compatible).`);
     return true;
   }

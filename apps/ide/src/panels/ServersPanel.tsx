@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { Check, Coins, Copy, KeyRound, Play, Plus, RefreshCw, RotateCw, Square, UserRound } from "lucide-react";
 import { useState } from "react";
 import { useEngine } from "@/engine/context";
+import { copyText } from "@/utils/clipboard";
 import type { EnvironmentPlugin } from "@/plugins/environment";
 import { formatKas, useEnv, type AccountInfo } from "@/store/env";
 import { ENVIRONMENTS, envOf, useIde } from "@/store/ide";
@@ -189,7 +190,7 @@ function AccountCard({ account, env, say }: { account: AccountInfo; env: Environ
   const [funding, setFunding] = useState(false);
   const [copiedAddr, setCopiedAddr] = useState(false);
   const copy = async (text: string, what: string) => {
-    await navigator.clipboard.writeText(text);
+    await copyText(text);
     setCopiedAddr(true);
     say(`${what} of ${account.name} copied`);
     setTimeout(() => setCopiedAddr(false), 1500);
