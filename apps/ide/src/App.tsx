@@ -17,6 +17,7 @@ import { VsxPlugin } from "@/plugins/vsx";
 import { AccountsPlugin, ArtifactsPlugin, FilesPlugin, RunPlugin, SettingsPlugin } from "@/plugins/sidePlugins";
 import { AssistantPlugin } from "@/plugins/assistant";
 import { ConsolePlugin } from "@/plugins/console";
+import { WithDesktopBar } from "@/shell/DesktopBar";
 import { Workbench } from "@/shell/Workbench";
 import { useIde } from "@/store/ide";
 
@@ -130,10 +131,17 @@ export default function App() {
 
   const onOpened = (ws: WorkspaceInfo) => setWorkspace(ws);
 
-  if (!booted) return <div className="h-full grid place-items-center text-fg-muted">Starting HardKas IDE…</div>;
+  if (!booted) {
+    return (
+      <WithDesktopBar>
+        <div className="h-full grid place-items-center text-fg-muted">Starting HardKas IDE…</div>
+      </WithDesktopBar>
+    );
+  }
 
   if (serverDown) {
     return (
+      <WithDesktopBar>
       <div className="h-full grid place-items-center p-8">
         <div className="max-w-md space-y-3 text-sm">
           <div className="text-lg font-semibold">IDE server not reachable</div>
@@ -144,12 +152,19 @@ export default function App() {
           </button>
         </div>
       </div>
+      </WithDesktopBar>
     );
   }
 
   return (
     <EngineContext.Provider value={engine}>
-      {workspace?.root ? <Workbench onHome={() => void goHome()} /> : <HomeScreen onOpened={onOpened} />}
+      {workspace?.root ? (
+        <Workbench onHome={() => void goHome()} />
+      ) : (
+        <WithDesktopBar>
+          <HomeScreen onOpened={onOpened} />
+        </WithDesktopBar>
+      )}
     </EngineContext.Provider>
   );
 }
