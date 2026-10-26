@@ -112,7 +112,7 @@ export class ExplorerPlugin extends Plugin {
 
   private async readMiner(): Promise<MinerInfo | null> {
     try {
-      const res = await fetch("/api/node/blocks?limit=30");
+      const res = await fetch("/api/node/blocks?limit=30", { signal: AbortSignal.timeout(8000) });
       if (!res.ok) return null;
       const j = (await res.json()) as MinerInfo & { ok: boolean };
       return { exists: j.exists, running: j.running, perSecond: j.perSecond, windowBlocks: j.windowBlocks, blocks: j.blocks ?? [] };

@@ -12,6 +12,8 @@ import { debugSession } from "./debug.js";
 import { listDevAccountNames, revealDevAccountKey } from "./devkeys.js";
 import * as wsfs from "./fs.js";
 import { FsError } from "./fs.js";
+import * as cluster from "./cluster.js";
+import { ClusterError } from "./cluster.js";
 import * as store from "./store.js";
 import { StoreError } from "./store.js";
 import { createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe } from "./runner.js";
@@ -60,6 +62,9 @@ app.use(
 );
 
 app.onError((error, c) => {
+  if (error instanceof ClusterError) {
+    return c.json({ ok: false, code: error.code, message: error.message }, error.status as 400);
+  }
   if (error instanceof StoreError) {
     return c.json({ ok: false, code: error.code, message: error.message }, error.status as 400);
   }
@@ -532,6 +537,31 @@ app.post("/api/debug/command", async (c) => {
   }
 });
 
+// ---------------------------------------------------------------- cluster of extra local nodes (Docker)
+
+app.get("/api/cluster", async (c) => c.json({ ok: true, ...(await cluster.status()) }));
+
+app.get("/api/cluster/logs", async (c) => c.json({ ok: true, text: await cluster.logs(String(c.req.query("name") ?? ""), Number(c.req.query("tail")) || 200) }));
+
+app.post("/api/cluster/add", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { count?: number };
+  return c.json({ ok: true, added: await cluster.addNodes(Number(body.count) || 1) });
+});
+
+app.post("/api/cluster/scale", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { replicas?: number };
+  return c.json({ ok: true, ...(await cluster.scale(Number(body.replicas ?? 0))) });
+});
+
+app.post("/api/cluster/node", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { name?: string; action?: "start" | "stop" | "restart" | "remove" };
+  if (!body.name || !body.action || !["start", "stop", "restart", "remove"].includes(body.action)) return c.json({ ok: false, code: "BAD_REQUEST", message: "name and action are required" }, 400);
+  await cluster.nodeAction(body.name, body.action);
+  return c.json({ ok: true });
+});
 // ---------------------------------------------------------------- query store (HardKAS's SQLite index), read-only
 
 app.get("/api/store/health", async (c) => c.json({ ok: true, ...(await store.health()) }));
