@@ -1,5 +1,6 @@
 import { Check, Copy, Link2, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
+import { copyText } from "@/utils/clipboard";
 import { useEnv } from "@/store/env";
 import { useIde } from "@/store/ide";
 
@@ -51,7 +52,7 @@ export function WalletCard() {
   ];
 
   const copy = async (key: string, text: string) => {
-    await navigator.clipboard.writeText(text);
+    await copyText(text);
     setCopiedKey(key);
     setMsg(`Copied ${key}`);
     setTimeout(() => {

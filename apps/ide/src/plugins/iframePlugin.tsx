@@ -66,8 +66,24 @@ export class IframePlugin extends Plugin {
     this.view = () => <IframeView plugin={this} />;
   }
 
+  /**
+   * Plugin pages served by ide-server (/api/plugins/...) are loaded straight from ide-server
+   * (http://127.0.0.1:7421), not through the Vite origin. That makes them a different origin from the
+   * IDE, so the browser's same-origin policy isolates them from the IDE's storage, cookies and DOM,
+   * which lets the sandbox keep `allow-same-origin` (needed for scripts to run and postMessage to work
+   * in every engine) without giving the plugin access to the host page.
+   */
   resolvedUrl(): string {
-    return this.manifest.url.startsWith("http") ? this.manifest.url : new URL(this.manifest.url, location.origin).toString();
+    return pluginPageUrl(this.manifest.url);
+  }
+
+  /** True when the page is on a different origin than the IDE (so allow-same-origin cannot reach the host). */
+  isCrossOrigin(): boolean {
+    try {
+      return new URL(this.resolvedUrl()).origin !== location.origin;
+    } catch {
+      return false;
+    }
   }
 
   onActivation(): void {
@@ -183,9 +199,19 @@ function safe(value: unknown): unknown {
   }
 }
 
+/** Base URL of ide-server as seen by the browser (a different origin from the Vite dev server). */
+const IDE_SERVER_ORIGIN: string = (import.meta.env.VITE_IDE_SERVER as string | undefined) ?? "http://127.0.0.1:7421";
+
+/** Absolute http(s) URLs stay as they are; ide-server paths (/api/plugins/...) go to ide-server itself. */
+export function pluginPageUrl(url: string): string {
+  if (/^https?:\/\//.test(url)) return url;
+  if (url.startsWith("/api/plugins/")) return IDE_SERVER_ORIGIN + url;
+  return new URL(url, location.origin).toString();
+}
+
 function resolveOrigin(url: string): string {
   try {
-    return new URL(url, location.origin).origin;
+    return new URL(pluginPageUrl(url)).origin;
   } catch {
     return "null";
   }
@@ -204,7 +230,9 @@ function IframeView({ plugin }: { plugin: IframePlugin }) {
       src={plugin.resolvedUrl()}
       title={plugin.profile.displayName}
       className="w-full h-full border-0 bg-bg"
-      sandbox="allow-scripts allow-forms allow-popups allow-modals"
+      // Cross-origin pages keep allow-same-origin (so they can run and use their own storage) but the
+      // origin boundary protects the IDE. A same-origin page would defeat that, so it gets no such flag.
+      sandbox={plugin.isCrossOrigin() ? "allow-scripts allow-same-origin allow-forms allow-popups allow-modals" : "allow-scripts allow-forms allow-popups allow-modals"}
       referrerPolicy="no-referrer"
     />
   );

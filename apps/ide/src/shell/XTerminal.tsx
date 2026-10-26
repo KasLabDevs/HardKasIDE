@@ -94,6 +94,11 @@ export function XTerminal({ id, visible, onExit }: Props) {
       observer.disconnect();
       disposeData.dispose();
       disposeResize.dispose();
+      // An unmount (including React StrictMode's dev double-mount) must not count as the
+      // shell exiting: detach the handlers so onExit only fires for server-initiated closes.
+      ws.onclose = null;
+      ws.onmessage = null;
+      ws.onerror = null;
       ws.close();
       term.dispose();
       termRef.current = null;

@@ -79,9 +79,15 @@ export class PluginManagerPlugin extends Plugin {
     } catch {
       throw new Error("The URL did not return JSON. For a page URL, use the manual form and give the page as url.");
     }
-    const m = validateManifest(json);
-    // Relative plugin page next to the manifest.
-    if (!/^https?:\/\//.test(m.url) && !m.url.startsWith("/")) m.url = new URL(m.url, url).toString();
+    // A manifest usually points at a page next to itself ("index.html"): resolve that against the
+    // manifest URL *before* validation, which only accepts absolute http(s) URLs or server paths.
+    const raw = (json && typeof json === "object" ? { ...(json as Record<string, unknown>) } : {}) as Record<string, unknown>;
+    if (typeof raw.url === "string" && !/^https?:\/\//.test(raw.url) && !raw.url.startsWith("/")) {
+      const resolved = new URL(raw.url, url);
+      // Keep same-origin pages as server paths so they stay valid if the port changes.
+      raw.url = resolved.origin === location.origin ? resolved.pathname : resolved.toString();
+    }
+    const m = validateManifest(raw);
     m.source = { kind: "url", ref: url };
     return this.installManifest(m);
   }
