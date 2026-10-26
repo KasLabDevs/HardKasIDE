@@ -9,6 +9,42 @@ import type { TreeNode, WorkspaceInfo } from "@/api/client";
 export type ExecutionTarget = "simulator" | "localnet" | "rpc";
 
 /**
+ * Default environment: the Local node (Docker rusty-kaspad). It is a real node, so it is the most
+ * faithful place to try transactions and contracts. The choice is remembered once the user makes it;
+ * until then the environment plugin falls back to the Simulator when Docker is not available
+ * (see EnvironmentPlugin.applyDockerFallback).
+ */
+const TARGET_KEY = "hardkas-ide.target";
+const DEFAULT_TARGET: ExecutionTarget = "localnet";
+
+function loadTarget(): ExecutionTarget {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TARGET_KEY) ?? "null") as { target?: ExecutionTarget } | null;
+    if (saved?.target === "simulator" || saved?.target === "localnet" || saved?.target === "rpc") return saved.target;
+  } catch {
+    // storage unavailable: use the default
+  }
+  return DEFAULT_TARGET;
+}
+
+/** Whether the user ever picked an environment by hand (as opposed to the default or an automatic fallback). */
+export function userChoseTarget(): boolean {
+  try {
+    return (JSON.parse(localStorage.getItem(TARGET_KEY) ?? "null") as { by?: string } | null)?.by === "user";
+  } catch {
+    return false;
+  }
+}
+
+function saveTarget(target: ExecutionTarget, by: "user" | "auto"): void {
+  try {
+    localStorage.setItem(TARGET_KEY, JSON.stringify({ target, by }));
+  } catch {
+    // ignore
+  }
+}
+
+/**
  * The three places a transaction can go. One definition, used by every panel,
  * so the names match everywhere (HardKas itself says `--target simulator|localnet`
  * and `--network simulated|simnet|testnet-10`; both are shown).
@@ -138,7 +174,7 @@ export const useIde = create<IdeState>((set, get) => ({
   openFiles: [],
   activeFile: null,
   activeSidePlugin: "files",
-  target: "simulator",
+  target: loadTarget(),
   journal: [],
   terminalOpen: true,
   outlineOpen: true,
@@ -199,7 +235,10 @@ export const useIde = create<IdeState>((set, get) => ({
     else set({ revealed: name });
   },
   revealed: null,
-  setTarget: (target) => set({ target }),
+  setTarget: (target) => {
+    saveTarget(target, "user");
+    set({ target });
+  },
   log: (kind, text, data) =>
     set((s) => ({
       journal: [...s.journal.slice(-999), { id: ++journalSeq, kind, text, at: new Date().toISOString(), data }]
