@@ -16,3 +16,8 @@ examples/demo-workspace/.hardkas/
 
 examples/demo-workspace/events.jsonl
 
+
+# Desktop app build output
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/stage/
+apps/desktop/src-tauri/gen/
