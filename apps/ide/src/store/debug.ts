@@ -47,6 +47,8 @@ interface DebugStore {
   state: DebugRunState;
   message: string;
   reason: string;
+  /** Extra text for the stop, e.g. the exception message. */
+  detail: string;
   frames: DebugFrame[];
   frame: number;
   /** objectId → its properties, valid while paused */
@@ -66,6 +68,7 @@ export const useDebug = create<DebugStore>((set) => ({
   state: "idle",
   message: "",
   reason: "",
+  detail: "",
   frames: [],
   frame: 0,
   vars: {},

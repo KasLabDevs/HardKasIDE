@@ -1,72 +1,11 @@
 import clsx from "clsx";
-import { ArrowDownToLine, ArrowUpFromLine, Bug, ChevronDown, ChevronRight, CircleDot, Play, Plus, RotateCw, Square, StepForward, X } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleDot, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { DebugPlugin } from "@/plugins/debug";
 import { useDebug, type DebugVariable } from "@/store/debug";
-import { useIde } from "@/store/ide";
 
-const isTestFile = (p: string | null | undefined): p is string => !!p && /\.(test|spec)\.[cm]?[jt]sx?$/.test(p);
-
-/** Debug view: start a test run under the debugger, step through it, look at the stack, variables and watches. */
-export function DebugPanel() {
-  const engine = useEngine();
-  const plugin = engine.get<DebugPlugin>("debug");
-  const s = useDebug();
-  const activeFile = useIde((i) => i.activeFile);
-  const [error, setError] = useState<string | null>(null);
-  const live = s.state === "starting" || s.state === "running" || s.state === "paused";
-  const paused = s.state === "paused";
-
-  const guard = (fn: () => Promise<unknown>) => () => {
-    setError(null);
-    void fn().catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
-  };
-  const target = isTestFile(activeFile) ? activeFile : null;
-
-  return (
-    <div className="text-xs">
-      <div className="px-3 py-2 border-b border-border space-y-2">
-        <div className="flex items-center gap-1">
-          {!live ? (
-            <button type="button" className="btn-primary flex-1 justify-center truncate" onClick={guard(() => (target ? plugin.debugFile(target) : plugin.debugAll()))} title={target ? `Run ${target} under the debugger` : "Run all tests under the debugger"}>
-              <Bug size={13} className="shrink-0" /> <span className="truncate">{target ? `Debug ${target.split("/").pop()}` : "Debug all tests"}</span>
-            </button>
-          ) : (
-            <>
-              <Tool icon={<Play size={14} />} label="Continue (F5)" disabled={!paused} onClick={guard(() => plugin.resume())} accent />
-              <Tool icon={<StepForward size={14} />} label="Step over (F10)" disabled={!paused} onClick={guard(() => plugin.stepOver())} />
-              <Tool icon={<ArrowDownToLine size={14} />} label="Step into (F11)" disabled={!paused} onClick={guard(() => plugin.stepInto())} />
-              <Tool icon={<ArrowUpFromLine size={14} />} label="Step out (Shift+F11)" disabled={!paused} onClick={guard(() => plugin.stepOut())} />
-              <Tool icon={<RotateCw size={14} />} label="Restart" onClick={guard(() => plugin.restart())} />
-              <Tool icon={<Square size={13} />} label="Stop (Shift+F5)" onClick={guard(() => plugin.stop())} danger />
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-2 min-w-0">
-          <span className={clsx("w-2 h-2 rounded-full shrink-0", paused ? "bg-warn" : live ? "bg-ok animate-pulse" : s.state === "error" ? "bg-error" : "bg-fg-muted")} />
-          <span className="text-fg-muted truncate" title={s.message}>
-            {paused ? `Paused${s.reason && s.reason !== "other" ? ` (${s.reason})` : ""}` : s.state === "idle" ? "Not debugging" : s.state === "starting" ? "Starting…" : s.state === "running" ? "Running tests…" : s.state === "finished" ? s.message || "Finished" : s.message || "Error"}
-          </span>
-        </div>
-        {error && <div role="alert" className="text-error break-words">{error}</div>}
-        {s.state === "error" && s.message && !error && <div role="alert" className="text-error break-words">{s.message}</div>}
-        <label className="flex items-center gap-2 text-fg-muted cursor-pointer">
-          <input type="checkbox" checked={s.pauseOnExceptions !== "none"} onChange={(e) => void plugin.setPauseOnExceptions(e.target.checked ? "all" : "none")} />
-          Pause when an exception is thrown
-        </label>
-      </div>
-
-      {paused && <CallStack />}
-      {paused && <Variables plugin={plugin} />}
-      <Watches plugin={plugin} />
-      <Breakpoints plugin={plugin} />
-      <Output />
-    </div>
-  );
-}
-
-function Tool({ icon, label, onClick, disabled, accent, danger }: { icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean; accent?: boolean; danger?: boolean }) {
+export function Tool({ icon, label, onClick, disabled, accent, danger }: { icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean; accent?: boolean; danger?: boolean }) {
   return (
     <button
       type="button"
@@ -84,7 +23,7 @@ function Tool({ icon, label, onClick, disabled, accent, danger }: { icon: React.
   );
 }
 
-function Section({ title, count, children, defaultOpen = true, actions }: { title: string; count?: number; children: React.ReactNode; defaultOpen?: boolean; actions?: React.ReactNode }) {
+export function Section({ title, count, children, defaultOpen = true, actions }: { title: string; count?: number; children: React.ReactNode; defaultOpen?: boolean; actions?: React.ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section className="border-b border-border">
@@ -100,7 +39,7 @@ function Section({ title, count, children, defaultOpen = true, actions }: { titl
   );
 }
 
-function CallStack() {
+export function CallStack() {
   const engine = useEngine();
   const plugin = engine.get<DebugPlugin>("debug");
   const frames = useDebug((s) => s.frames);
@@ -126,7 +65,7 @@ function CallStack() {
   );
 }
 
-function Variables({ plugin }: { plugin: DebugPlugin }) {
+export function Variables({ plugin }: { plugin: DebugPlugin }) {
   const frame = useDebug((s) => s.frames[s.frame]);
   if (!frame) return null;
   const scopes = frame.scopes.filter((sc) => sc.objectId && sc.type !== "script");
@@ -197,7 +136,7 @@ function VarRow({ v, plugin }: { v: DebugVariable; plugin: DebugPlugin }) {
   );
 }
 
-function Watches({ plugin }: { plugin: DebugPlugin }) {
+export function Watches({ plugin }: { plugin: DebugPlugin }) {
   const watches = useDebug((s) => s.watches);
   const results = useDebug((s) => s.watchResults);
   const paused = useDebug((s) => s.state === "paused");
@@ -234,7 +173,7 @@ function Watches({ plugin }: { plugin: DebugPlugin }) {
   );
 }
 
-function Breakpoints({ plugin }: { plugin: DebugPlugin }) {
+export function Breakpoints({ plugin }: { plugin: DebugPlugin }) {
   const breakpoints = useDebug((s) => s.breakpoints);
   const status = useDebug((s) => s.status);
   const files = Object.keys(breakpoints).sort();
@@ -280,7 +219,7 @@ function Breakpoints({ plugin }: { plugin: DebugPlugin }) {
   );
 }
 
-function Output() {
+export function Output() {
   const output = useDebug((s) => s.output);
   const ref = useRef<HTMLPreElement>(null);
   useEffect(() => {

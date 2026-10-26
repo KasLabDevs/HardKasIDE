@@ -1,11 +1,9 @@
-import { Bug } from "lucide-react";
 import { Plugin } from "@/engine/engine";
-import { DebugPanel } from "@/panels/DebugPanel";
 import { currentLocation, useDebug, type DebugFrame, type DebugVariable, type OutputLine } from "@/store/debug";
 import { useIde } from "@/store/ide";
 
 /**
- * Test debugger (Eclipse "Debug As → JUnit Test"): breakpoints in the gutter, a session that runs vitest under the Node
+ * Test debugger service (Eclipse "Debug As → JUnit Test"); its screen is the Tests view. Breakpoints in the gutter, a session that runs vitest under the Node
  * inspector (see ide-server debug.ts), and the usual controls: continue, step over / into / out, variables, watches.
  */
 
@@ -14,15 +12,16 @@ const BP_KEY = "hardkas-ide.breakpoints:";
 type ServerEvent =
   | { type: "status"; state: "idle" | "starting" | "running" | "paused" | "finished" | "error"; message?: string }
   | { type: "output"; stream: OutputLine["stream"]; text: string }
-  | { type: "paused"; reason: string; frames: DebugFrame[] }
+  | { type: "paused"; reason: string; frames: DebugFrame[]; detail?: string }
   | { type: "resumed" }
   | { type: "breakpoints"; file: string; breakpoints: Array<{ line: number; verified: boolean; actual?: number }> }
   | { type: "exit"; code: number | null };
 
 export class DebugPlugin extends Plugin {
-  view = DebugPanel;
   private source: EventSource | null = null;
   private retry: ReturnType<typeof setTimeout> | null = null;
+  private watchdog: ReturnType<typeof setInterval> | null = null;
+  private lastBeat = 0;
   private root = "";
 
   constructor() {
@@ -30,9 +29,7 @@ export class DebugPlugin extends Plugin {
       name: "debug",
       displayName: "Debug",
       description: "Breakpoints and stepping for the project's tests",
-      location: "sidePanel",
-      icon: Bug,
-      order: 36,
+      location: "none",
       methods: ["toggleBreakpoint", "start", "debugFile", "debugTest", "debugAll", "resume", "stepOver", "stepInto", "stepOut", "stop", "restart", "loadVariables", "selectFrame", "addWatch", "removeWatch", "clearBreakpoints", "replaceBreakpoints", "setPauseOnExceptions", "evaluate", "isBreakpoint"],
       events: ["paused", "finished"]
     });
@@ -46,9 +43,15 @@ export class DebugPlugin extends Plugin {
       useDebug.getState().set({ breakpoints: {} });
     }
     this.connect();
+    // The server pings every 10 s; a stream that goes quiet for 35 s (a proxy or the server restarted) is replaced.
+    this.watchdog = setInterval(() => {
+      if (Date.now() - this.lastBeat > 35_000) this.connect();
+    }, 10_000);
   }
 
   onDeactivation(): void {
+    if (this.watchdog) clearInterval(this.watchdog);
+    this.watchdog = null;
     if (this.retry) clearTimeout(this.retry);
     this.source?.close();
     this.source = null;
@@ -60,7 +63,14 @@ export class DebugPlugin extends Plugin {
   private connect(): void {
     this.source?.close();
     const es = new EventSource("/api/debug/events");
-    es.addEventListener("debug", (e) => this.onEvent(JSON.parse((e as MessageEvent).data as string) as ServerEvent));
+    this.lastBeat = Date.now();
+    es.addEventListener("ping", () => {
+      this.lastBeat = Date.now();
+    });
+    es.addEventListener("debug", (e) => {
+      this.lastBeat = Date.now();
+      this.onEvent(JSON.parse((e as MessageEvent).data as string) as ServerEvent);
+    });
     // The browser retries a dropped stream by itself, but gives up for good when the server answers with an error
     // while it restarts: reconnect by hand in that case.
     es.onerror = () => {
@@ -84,7 +94,7 @@ export class DebugPlugin extends Plugin {
         s.set({ output: [...s.output, { stream: e.stream, text: e.text }].slice(-600) });
         break;
       case "paused":
-        s.set({ state: "paused", reason: e.reason, frames: e.frames, frame: Math.max(0, e.frames.findIndex((f) => f.file !== null)), vars: {} });
+        s.set({ state: "paused", reason: e.reason, detail: e.detail ?? "", frames: e.frames, frame: Math.max(0, e.frames.findIndex((f) => f.file !== null)), vars: {} });
         void this.onPaused();
         break;
       case "resumed":
@@ -102,7 +112,7 @@ export class DebugPlugin extends Plugin {
   private async onPaused(): Promise<void> {
     const s = useDebug.getState();
     const loc = currentLocation(s);
-    useIde.getState().revealPlugin("debug", "Debug");
+    useIde.getState().revealPlugin("tests", "Tests");
     if (loc) {
       await this.call("fileManager", "open", loc.file).catch(() => undefined);
       this.call("editor", "gotoLine", loc.line).catch(() => undefined);
@@ -158,7 +168,7 @@ export class DebugPlugin extends Plugin {
     const s = useDebug.getState();
     if (s.state === "starting" || s.state === "running" || s.state === "paused") throw new Error("A debug session is already running.");
     s.set({ target, output: [], frames: [], vars: {}, status: {}, watchResults: {} });
-    useIde.getState().revealPlugin("debug", "Debug");
+    useIde.getState().revealPlugin("tests", "Tests");
     const res = await fetch("/api/debug/start", {
       method: "POST",
       headers: { "content-type": "application/json" },

@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { Check, Copy, Pickaxe, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { ExplorerPlugin } from "@/plugins/explorer";
 import { formatKas, useEnv } from "@/store/env";
@@ -21,9 +21,27 @@ export function ExplorerCard() {
   const mempool = useExplorer((s) => s.mempool);
   const [tab, setTab] = useState<Tab>("chain");
 
+  // Left-column views stay mounted while hidden, so "mounted" does not mean "on screen": poll only while the card is visible.
+  const cardRef = useRef<HTMLElement>(null);
   useEffect(() => {
-    explorer.start();
-    return () => explorer.stop();
+    const el = cardRef.current;
+    if (!el) return;
+    let running = false;
+    const stop = () => {
+      if (running) explorer.stop();
+      running = false;
+    };
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting && !running) {
+        running = true;
+        explorer.start();
+      } else if (!entry?.isIntersecting) stop();
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      stop();
+    };
   }, [explorer]);
 
   const ready = node?.rpcReady === true;
@@ -35,7 +53,7 @@ export function ExplorerCard() {
   ];
 
   return (
-    <section className="border-b border-border" aria-label="Node explorer">
+    <section ref={cardRef} className="border-b border-border" aria-label="Node explorer">
       <div className="flex items-center justify-between px-3 py-1.5">
         <span className="label mb-0 flex items-center gap-2">
           <span className={clsx("w-2 h-2 rounded-full", ready ? "bg-ok" : "bg-fg-muted")} /> Explorer · {dag?.networkId ?? "simnet"}
@@ -238,7 +256,7 @@ function UtxosTab({ explorer, ready }: { explorer: ExplorerPlugin; ready: boolea
             <Stat k="UTXOs" v={view.count.toLocaleString()} />
             <Stat k="total" v={formatKas(view.totalSompi)} />
           </div>
-          <div className="text-[10px] text-fg-muted">Biggest {view.rows.length} of {view.count.toLocaleString()}.</div>
+          <div className="text-[10px] text-fg-muted">{view.count === 0 ? "This address holds no UTXOs on the node." : view.count > view.rows.length ? `Biggest ${view.rows.length} of ${view.count.toLocaleString()}.` : `All ${view.count} UTXOs.`}</div>
           <ul className="space-y-0.5">
             {view.rows.map((u) => (
               <li key={`${u.txId}:${u.index}`} className="flex flex-wrap items-center gap-x-2 gap-y-0 tabular-nums border-b border-border/40 pb-0.5">

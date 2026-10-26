@@ -46,7 +46,7 @@ export function CommandPalette() {
       { id: "debug:all", title: "Debug: debug all tests", run: () => engine.call("debug", "debugAll") },
       { id: "debug:stop", title: "Debug: stop debugging", keys: "Shift+F5", run: () => engine.call("debug", "stop") },
       { id: "debug:clear", title: "Debug: remove all breakpoints", run: () => engine.call("debug", "clearBreakpoints") },
-      { id: "debug:view", title: "Debug: show the Debug view", run: () => ide().revealPlugin("debug", "Debug") },
+      { id: "debug:view", title: "Debug: show the debugger (in the Tests view)", run: () => engine.call("tests", "open") },
       { id: "history", title: "Show Run history (payments, deploys, contract calls)", run: () => engine.call("runHistory", "open") },
       { id: "outline", title: "Toggle Outline", run: () => ide().setOutlineOpen(!ide().outlineOpen) },
       { id: "layout:reset", title: "Layout: reset panels to their default places", hint: "undo any docking", run: () => ide().resetLayout() },

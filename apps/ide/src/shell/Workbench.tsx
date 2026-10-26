@@ -49,13 +49,13 @@ export function Workbench({ onHome }: Props) {
               <NodeOpBanner />
               <div className="flex-1 min-h-0">
                 <PanelGroup direction="vertical">
-                  <Panel minSize={20}>
+                  <Panel id="editor" order={1} minSize={20}>
                     <MainArea />
                   </Panel>
                   {terminalOpen && (
                     <>
                       <PanelResizeHandle className="h-px bg-border hover:bg-accent transition-colors" />
-                      <Panel defaultSize={30} minSize={10}>
+                      <Panel id="bottom" order={2} defaultSize={30} minSize={10}>
                         <BottomPanel />
                       </Panel>
                     </>

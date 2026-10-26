@@ -131,7 +131,8 @@ export function GitGraph({ artifacts, edges, fresh, replays, selected, filter, o
   const { rows, lanes } = useMemo(() => buildGitGraph(artifacts, edges), [artifacts, edges]);
   const width = PAD * 2 + Math.max(1, lanes) * LANE_W;
   const q = filter.trim().toLowerCase();
-  const matches = (a: ArtifactRow) => !q || [a.artifactId, a.txId ?? "", a.schema, a.networkId ?? "", a.mode ?? ""].some((s) => s.toLowerCase().includes(q));
+  // Matches what is on screen too: the kind chip ("submitted", "receipt"…), the id, tx and network.
+  const matches = (a: ArtifactRow) => !q || [a.artifactId, a.txId ?? "", a.schema, SCHEMA_STYLE[shortSchema(a.schema)]?.label ?? "", shortSchema(a.schema), a.networkId ?? "", a.mode ?? ""].some((s) => s.toLowerCase().includes(q));
 
   return (
     <div role="list" aria-label="Artifact history" className="min-w-[34rem]">
