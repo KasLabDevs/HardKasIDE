@@ -8,6 +8,7 @@ A single-purpose IDE for [HardKas](https://github.com/KasLabDevs/HardKas) projec
 - **Project flow** shaped like Visual Studio: a Home screen with New project (from HardKas CLI templates), Open folder and Recents.
 - Projects are real folders on disk with `hardkas.config.ts` and `.hardkas/`, driven through `hardkas <cmd> --json`.
 
+- **Desktop app** (`apps/desktop`): a frameless Tauri window around the IDE with a Windows installer; it starts the IDE server itself. See [docs/desktop.md](docs/desktop.md).
 - **MCP server** (`packages/mcp-server`): lets an AI agent compile SilverScript, run the local node, move test coins and deploy contracts through the IDE. See [docs/mcp.md](docs/mcp.md).
 
 Design notes: [docs/design-notes.md](docs/design-notes.md).
@@ -18,6 +19,7 @@ Design notes: [docs/design-notes.md](docs/design-notes.md).
 apps/ide              Vite + React 19 + Monaco (http://localhost:5173)
 packages/ide-server   Hono server (http://127.0.0.1:7421): workspace files, hardkas jobs, dev-server proxy
 packages/mcp-server   MCP server (stdio) for AI agents, a client of the IDE server
+apps/desktop          Tauri desktop app (frameless window, installer, starts the server)
 docs/                 design documents
 ```
 
