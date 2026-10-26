@@ -135,6 +135,34 @@ a:focus-visible {
   background-color: var(--accent) !important;
 }
 
+/* Debugger marks in the editor gutter and on the line where the debuggee is stopped. */
+.hk-bp,
+.hk-bp-hover {
+  width: 10px !important;
+  height: 10px !important;
+  margin: 5px 0 0 5px;
+  border-radius: 50%;
+  background: var(--error);
+}
+.hk-bp-hover {
+  background: color-mix(in srgb, var(--error) 35%, transparent);
+}
+.hk-bp-off {
+  background: transparent;
+  border: 1.5px solid var(--fg-muted);
+  box-sizing: border-box;
+}
+.hk-current-arrow {
+  width: 12px !important;
+  height: 12px !important;
+  margin: 4px 0 0 3px;
+  background: var(--warn);
+  clip-path: polygon(0 25%, 55% 25%, 55% 0, 100% 50%, 55% 100%, 55% 75%, 0 75%);
+}
+.hk-current-line {
+  background: color-mix(in srgb, var(--warn) 20%, transparent);
+}
+
 /* Title bar: the drag region of a desktop shell (Electron/Tauri/installed PWA); controls stay clickable. */
 .titlebar {
   -webkit-app-region: drag;

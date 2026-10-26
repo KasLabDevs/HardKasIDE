@@ -6,6 +6,7 @@ import { HomeScreen } from "@/home/HomeScreen";
 import { CompilerPlugin } from "@/plugins/compiler";
 import { EditorPlugin } from "@/plugins/editor";
 import { EnvironmentPlugin } from "@/plugins/environment";
+import { DebugPlugin } from "@/plugins/debug";
 import { ExplorerPlugin } from "@/plugins/explorer";
 import { FileManagerPlugin } from "@/plugins/fileManager";
 import { HistoryPlugin } from "@/plugins/history";
@@ -42,6 +43,7 @@ function createEngine(): Engine {
   engine.register(new HistoryPlugin());
   engine.register(new LineagePlugin());
   engine.register(new TestsPlugin());
+  engine.register(new DebugPlugin());
   engine.register(new SettingsPlugin());
   engine.register(new PluginManagerPlugin());
   engine.register(new VsxPlugin());
@@ -53,7 +55,7 @@ function createEngine(): Engine {
   return engine;
 }
 
-const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "runHistory", "environment", "explorer", "accounts", "assistant", "artifacts", "lineage", "tests", "settings", "pluginManager", "vsx"];
+const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "runHistory", "environment", "explorer", "accounts", "assistant", "artifacts", "lineage", "tests", "debug", "settings", "pluginManager", "vsx"];
 
 export default function App() {
   const engine = useMemo(createEngine, []);
