@@ -5,7 +5,8 @@ import { useEngine } from "@/engine/context";
 import type { CompilerPlugin } from "@/plugins/compiler";
 import type { EnvironmentPlugin } from "@/plugins/environment";
 import type { LineagePlugin } from "@/plugins/lineage";
-import { useIde } from "@/store/ide";
+import { DEFAULT_ZOOM, useIde } from "@/store/ide";
+import { PALETTE_EVENT, confirmAndResetNode, zoomBy } from "./actions";
 
 interface CommandItem {
   id: string;
@@ -52,14 +53,12 @@ export function CommandPalette() {
       { id: "node:start", title: "Node: start localnet (rusty-kaspad)", hint: "hardkas localnet start --toccata", run: () => engine.get<EnvironmentPlugin>("environment").startNode() },
       { id: "node:stop", title: "Node: stop localnet", hint: "hardkas localnet stop", run: () => engine.get<EnvironmentPlugin>("environment").stopNode() },
       { id: "node:restart", title: "Node: restart localnet", run: () => engine.get<EnvironmentPlugin>("environment").restartNode() },
-      {
-        id: "node:reset",
-        title: "Node: reset from scratch (wipes the local chain)",
-        hint: "hardkas node reset --yes",
-        run: () => {
-          if (window.confirm("Reset the local node from scratch?\n\nThis DELETES the whole local chain: balances go back to zero and deployed contracts disappear. Artifacts and your files are kept.")) return engine.get<EnvironmentPlugin>("environment").resetNode();
-        }
-      },
+      { id: "node:reset", title: "Node: reset from scratch (wipes the local chain)", hint: "hardkas node reset --yes", run: () => confirmAndResetNode(engine) },
+      { id: "sidebar", title: "View: toggle primary side bar", keys: "Ctrl+B", run: () => ide().setSidebarOpen(!ide().sidebarOpen) },
+      { id: "terminal:new", title: "Terminal: new terminal", keys: "Ctrl+Shift+`", run: () => ide().requestTerminal() },
+      { id: "zoom:in", title: "View: zoom in", keys: "Ctrl+=", run: () => zoomBy(10) },
+      { id: "zoom:out", title: "View: zoom out", keys: "Ctrl+-", run: () => zoomBy(-10) },
+      { id: "zoom:reset", title: "View: reset zoom", keys: "Ctrl+0", run: () => ide().setZoom(DEFAULT_ZOOM) },
       { id: "accounts:refresh", title: "Accounts: refresh balances", run: () => engine.get<EnvironmentPlugin>("environment").refreshAccounts() },
       { id: "target:simulator", title: "Target: simulator", run: () => ide().setTarget("simulator") },
       { id: "target:localnet", title: "Target: localnet (simnet)", run: () => ide().setTarget("localnet") },
@@ -83,7 +82,7 @@ export function CommandPalette() {
       if (mod && e.shiftKey && e.key.toLowerCase() === "p") {
         e.preventDefault();
         setOpen((o) => !o);
-      } else if (mod && e.key.toLowerCase() === "k" && !e.shiftKey) {
+      } else if (mod && (e.key.toLowerCase() === "k" || e.key.toLowerCase() === "p") && !e.shiftKey) {
         e.preventDefault();
         setOpen((o) => !o);
       } else if (mod && e.key === "Enter") {
@@ -98,6 +97,13 @@ export function CommandPalette() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [engine, activeFile, open]);
+
+  // The title bar's search box and the menus open the palette through this event.
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(PALETTE_EVENT, onOpen);
+    return () => window.removeEventListener(PALETTE_EVENT, onOpen);
+  }, []);
 
   useEffect(() => {
     if (open) {

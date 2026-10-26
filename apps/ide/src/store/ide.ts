@@ -140,6 +140,16 @@ interface IdeState {
   journal: JournalBlock[];
   terminalOpen: boolean;
   outlineOpen: boolean;
+  /** Primary side bar (the left column: Explorer, Run, Servers…). */
+  sidebarOpen: boolean;
+  setSidebarOpen(open: boolean): void;
+  /** UI scale in percent (default 110), like the browser/VS Code zoom but remembered. */
+  zoom: number;
+  setZoom(percent: number): void;
+  /** Set by File/Terminal menus: the bottom panel opens a new terminal as soon as it is mounted. */
+  pendingTerminal: boolean;
+  requestTerminal(): void;
+  clearTerminalRequest(): void;
   statusMessage: string;
   docks: Record<string, Dock>;
   setDock(pluginName: string, dock: Dock): void;
@@ -170,7 +180,48 @@ interface IdeState {
 
 let journalSeq = 0;
 
+const ZOOM_KEY = "hardkas-ide.zoom";
+export const DEFAULT_ZOOM = 110;
+export const MIN_ZOOM = 70;
+export const MAX_ZOOM = 200;
+
+function loadZoom(): number {
+  try {
+    const n = Number(localStorage.getItem(ZOOM_KEY));
+    if (Number.isFinite(n) && n >= MIN_ZOOM && n <= MAX_ZOOM) return Math.round(n);
+  } catch {
+    // storage unavailable: default
+  }
+  return DEFAULT_ZOOM;
+}
+
+/** rem-based sizes follow <html>; the body's px size is the 13px origin scaled the same way. */
+function applyZoom(percent: number): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.style.fontSize = `${percent}%`;
+  document.body.style.fontSize = `${((13 * percent) / 100).toFixed(1)}px`;
+}
+
+const initialZoom = loadZoom();
+applyZoom(initialZoom);
+
 export const useIde = create<IdeState>((set, get) => ({
+  sidebarOpen: true,
+  setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+  zoom: initialZoom,
+  setZoom: (percent) => {
+    const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(percent)));
+    applyZoom(zoom);
+    try {
+      localStorage.setItem(ZOOM_KEY, String(zoom));
+    } catch {
+      // ignore
+    }
+    set({ zoom });
+  },
+  pendingTerminal: false,
+  requestTerminal: () => set({ terminalOpen: true, pendingTerminal: true }),
+  clearTerminalRequest: () => set({ pendingTerminal: false }),
   workspace: null,
   tree: [],
   openFiles: [],
@@ -204,7 +255,7 @@ export const useIde = create<IdeState>((set, get) => ({
     } catch {
       // ignore
     }
-    set({ docks: { ...DEFAULT_DOCKS }, activeSidePlugin: "files", outlineOpen: true, terminalOpen: true });
+    set({ docks: { ...DEFAULT_DOCKS }, activeSidePlugin: "files", outlineOpen: true, terminalOpen: true, sidebarOpen: true });
   },
 
   setWorkspace: (workspace) => set({ workspace }),
@@ -237,13 +288,13 @@ export const useIde = create<IdeState>((set, get) => ({
         activeFile: path
       };
     }),
-  setActiveSidePlugin: (activeSidePlugin) => set({ activeSidePlugin }),
+  setActiveSidePlugin: (activeSidePlugin) => set({ activeSidePlugin, sidebarOpen: true }),
   revealPlugin: (name, title) => {
     const dock = get().docks[name] ?? "left";
-    if (dock === "left") set({ activeSidePlugin: name });
+    if (dock === "left") set({ activeSidePlugin: name, sidebarOpen: true });
     else if (dock === "main") get().openView(name, title ?? name);
     // "leftBottom" and "right" panels are already visible in their column; flag it so the UI can focus them.
-    else set({ revealed: name });
+    else set({ revealed: name, sidebarOpen: dock === "leftBottom" ? true : get().sidebarOpen });
   },
   revealed: null,
   setTarget: (target) => {
