@@ -2,6 +2,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useEngine, useEngineVersion } from "@/engine/context";
 import { useIde } from "@/store/ide";
 import { DockControls } from "./DockControls";
+import { ErrorBoundary } from "./ErrorBoundary";
 
 /**
  * Left column. The active left-docked view on top; views docked "below the Explorer"
@@ -42,7 +43,9 @@ export function SidePanel() {
                       <DockControls pluginName={p.profile.name} displayName={p.profile.displayName} />
                     </header>
                     <div className="flex-1 min-h-0 overflow-auto">
-                      <View />
+                      <ErrorBoundary name={p.profile.displayName}>
+                        <View />
+                      </ErrorBoundary>
                     </div>
                   </section>
                 );
@@ -60,7 +63,9 @@ export function SidePanel() {
                     <DockControls pluginName={p.profile.name} displayName={p.profile.displayName} />
                   </header>
                   <div className="flex-1 min-h-0 overflow-auto">
-                    <View />
+                    <ErrorBoundary name={p.profile.displayName}>
+                      <View />
+                    </ErrorBoundary>
                   </div>
                 </section>
               </StackedPanel>

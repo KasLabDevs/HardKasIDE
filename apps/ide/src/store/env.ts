@@ -29,9 +29,9 @@ export interface AccountInfo {
   balanceSompi: string | null;
   utxoCount: number | null;
   balanceNetwork: string | null;
-  /** Whether a plaintext private key is available to copy (accounts.real.json). */
+  /** Whether a private key is exportable/copyable (plaintext dev key or simnet dev keystore). */
   hasPlainKey: boolean;
-  keystore: "plain" | "encrypted" | "synthetic" | "unknown";
+  keystore: "plain" | "encrypted" | "synthetic" | "dev-keystore" | "unknown";
 }
 
 export interface DockerStatus {
@@ -80,6 +80,22 @@ export const useEnv = create<EnvState>((set) => ({
 
 export function formatKas(sompi: string | null): string {
   if (sompi === null) return "…";
+  const trimmed = sompi.trim();
+  if (/^-?\d+$/.test(trimmed)) {
+    try {
+      const raw = BigInt(trimmed);
+      const neg = raw < 0n ? "-" : "";
+      const abs = raw < 0n ? -raw : raw;
+      const whole = abs / 100_000_000n;
+      const frac = abs % 100_000_000n;
+      const wholeStr = whole.toLocaleString();
+      if (frac === 0n) return `${neg}${wholeStr} KAS`;
+      const fracStr = frac.toString().padStart(8, "0").replace(/0+$/, "");
+      return `${neg}${wholeStr}.${fracStr} KAS`;
+    } catch {
+      // fall through
+    }
+  }
   const n = Number(sompi);
   if (!Number.isFinite(n)) return sompi;
   return (n / 1e8).toLocaleString(undefined, { maximumFractionDigits: 8 }) + " KAS";

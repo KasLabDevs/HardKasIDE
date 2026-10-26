@@ -16,6 +16,7 @@ export const REQUIRED_PLUGINS = ["console", "fileManager", "editor", "files", "p
  */
 export class PluginManagerPlugin extends Plugin {
   view = PluginManagerPanel;
+  private offs: Array<() => void> = [];
 
   constructor() {
     super({
@@ -47,12 +48,20 @@ export class PluginManagerPlugin extends Plugin {
           }
         }
       }
+      this.offs.push(
+        this.engine.on("engine", "pluginActivated", () => this.persistActive()),
+        this.engine.on("engine", "pluginDeactivated", () => this.persistActive())
+      );
     })();
-    this.engine.on("engine", "pluginActivated", () => this.persistActive());
-    this.engine.on("engine", "pluginDeactivated", () => this.persistActive());
+  }
+
+  onDeactivation(): void {
+    for (const off of this.offs) off();
+    this.offs = [];
   }
 
   private persistActive(): void {
+    if (!this.engine.isActive(this.profile.name)) return;
     usePlugins.getState().setSavedActive(this.engine.activeNames());
   }
 

@@ -40,6 +40,7 @@ export class IframePlugin extends Plugin {
   readonly manifest: PluginManifest;
   private frame: HTMLIFrameElement | null = null;
   private subscriptions: Array<() => void> = [];
+  private subscribedKeys = new Set<string>();
   private pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private seq = 0;
   private origin: string;
@@ -77,6 +78,7 @@ export class IframePlugin extends Plugin {
     window.removeEventListener("message", this.listener);
     for (const off of this.subscriptions) off();
     this.subscriptions = [];
+    this.subscribedKeys.clear();
     for (const p of this.pending.values()) p.reject(new Error("plugin deactivated"));
     this.pending.clear();
   }
@@ -98,11 +100,14 @@ export class IframePlugin extends Plugin {
   }
 
   private post(message: unknown): void {
-    this.frame?.contentWindow?.postMessage(message, this.origin === "null" ? "*" : this.origin);
+    // Sandboxed iframes without allow-same-origin have an opaque ("null") origin;
+    // we post directly to this.frame.contentWindow reference.
+    this.frame?.contentWindow?.postMessage(message, "*");
   }
 
   private async onMessage(event: MessageEvent): Promise<void> {
     if (!this.frame || event.source !== this.frame.contentWindow) return;
+    if (this.origin !== "null" && event.origin !== "null" && event.origin !== this.origin) return;
     const msg = event.data as { type?: string; id?: string; plugin?: string; method?: string; args?: unknown[]; event?: string; ok?: boolean; result?: unknown; error?: string };
     if (!msg || typeof msg.type !== "string") return;
     switch (msg.type) {
@@ -113,6 +118,9 @@ export class IframePlugin extends Plugin {
         const { id, plugin, method, args } = msg;
         if (!id || !plugin || !method) return;
         try {
+          if (isBlockedExternalCall(plugin, method, args ?? [])) {
+            throw new Error(`blocked sensitive call: ${plugin}.${method}`);
+          }
           const allowed = isAllowed(this.profile.name, plugin, method, this.manifest.permissions) ?? askPermission(this.profile.name, this.profile.displayName, plugin, method);
           if (!allowed) throw new Error(`permission denied: ${plugin}.${method}`);
           const result = await this.call(plugin, method, ...(args ?? []));
@@ -126,6 +134,9 @@ export class IframePlugin extends Plugin {
         if (!msg.plugin || !msg.event) return;
         const plugin = msg.plugin;
         const name = msg.event;
+        const subKey = `${plugin}:${name}`;
+        if (this.subscribedKeys.has(subKey)) return;
+        this.subscribedKeys.add(subKey);
         this.subscriptions.push(this.on(plugin, name, (...args) => this.post({ type: "hardkas:event", plugin, event: name, args: safe(args) })));
         break;
       }
@@ -145,6 +156,22 @@ export class IframePlugin extends Plugin {
         break;
     }
   }
+}
+
+/** Prevents external plugins from reading private keys, dev-server tokens, or installing other plugins. */
+function isBlockedExternalCall(plugin: string, method: string, args: unknown[]): boolean {
+  if (plugin === "environment" && (method === "copyPrivateKey" || method === "getPrivateKey")) return true;
+  if (plugin === "accounts") return true;
+  if (plugin === "pluginManager") return true;
+  if (plugin === "fileManager") {
+    for (const arg of args) {
+      if (typeof arg === "string") {
+        const norm = arg.replace(/\\/g, "/").toLowerCase();
+        if (norm.includes("accounts.real.json") || norm.includes("dev-server-token")) return true;
+      }
+    }
+  }
+  return false;
 }
 
 /** Strips functions and class instances so the value survives postMessage. */
@@ -177,7 +204,7 @@ function IframeView({ plugin }: { plugin: IframePlugin }) {
       src={plugin.resolvedUrl()}
       title={plugin.profile.displayName}
       className="w-full h-full border-0 bg-bg"
-      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+      sandbox="allow-scripts allow-forms allow-popups allow-modals"
       referrerPolicy="no-referrer"
     />
   );

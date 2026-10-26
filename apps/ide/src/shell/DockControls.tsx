@@ -18,12 +18,15 @@ export function DockControls({ pluginName, displayName }: { pluginName: string; 
       {options.map((o) => (
         <button
           key={o.id}
+          type="button"
           title={o.title}
+          aria-label={`${displayName}: ${o.title}`}
+          aria-pressed={dock === o.id}
           onClick={() => {
             setDock(pluginName, o.id);
             if (o.id === "main") openView(pluginName, displayName);
           }}
-          className={clsx("p-0.5 rounded", dock === o.id ? "text-accent" : "text-fg-muted hover:text-fg hover:bg-bg-hover")}
+          className={clsx("p-1 rounded cursor-pointer transition-colors", dock === o.id ? "text-accent bg-bg-hover/60" : "text-fg-muted hover:text-fg hover:bg-bg-hover")}
         >
           {o.icon}
         </button>
