@@ -40,6 +40,7 @@ During development use `pnpm --filter @hardkas-ide/mcp dev` (tsx) instead of the
 | Project | `workspace_status`, `open_workspace` | Which project is open; open another folder |
 | | `list_files`, `read_file`, `write_file` | Files inside the project (paths are always project-relative) |
 | | `list_artifacts` | Plans, signed txs, receipts and SilverScript records under `.hardkas/artifacts` |
+| | `query_index` | Read-only SQL over HardKAS's query store (artifacts, events, lineage, traces), or its health when called without SQL |
 | Environment | `environment_status` | Docker and local node state (ready, DAA score) |
 | | `node_control` | start, stop or restart the Docker node. Stop and restart keep the chain |
 | Accounts | `accounts_list`, `account_balance` | Names, public addresses and balances. Never private keys |
@@ -51,7 +52,7 @@ During development use `pnpm --filter @hardkas-ide/mcp dev` (tsx) instead of the
 | Quality | `run_tests` | vitest in the project, per-test results |
 | Knowledge | `hardkas_help`, `kaspa_docs` | Real CLI options; the official Kaspa docs as text (docs.kaspa.org only) |
 
-Environments are `simulator` (in memory), `localnet` (Docker rusty-kaspad, simnet) and `testnet` (testnet-10). Mainnet is not available.
+Environments are `simulator` (in memory), `localnet` (Docker rusty-kaspad, simnet) and `testnet` (testnet-10). Mainnet is not available. `query_index` cannot write: the IDE server accepts a single SELECT and cuts long queries.
 
 ## What it deliberately does not do
 
