@@ -202,7 +202,23 @@ function safe(value: unknown): unknown {
 }
 
 /** Base URL of ide-server as seen by the browser (a different origin from the Vite dev server). */
-const IDE_SERVER_ORIGIN: string = (import.meta.env.VITE_IDE_SERVER as string | undefined) ?? "http://127.0.0.1:7421";
+const IDE_SERVER_BASE: string = (import.meta.env.VITE_IDE_SERVER as string | undefined) ?? "http://127.0.0.1:7421";
+
+/**
+ * Plugin pages must live on another origin than the IDE. In the desktop app (and `pnpm start`) the IDE itself is
+ * served by ide-server, so the same server answers on its other loopback name to keep the two origins apart.
+ */
+const IDE_SERVER_ORIGIN: string = (() => {
+  try {
+    const base = new URL(IDE_SERVER_BASE);
+    if (typeof location !== "undefined" && location.origin === base.origin) {
+      base.hostname = base.hostname === "localhost" ? "127.0.0.1" : "localhost";
+    }
+    return base.origin;
+  } catch {
+    return IDE_SERVER_BASE;
+  }
+})();
 
 /** Absolute http(s) URLs stay as they are; ide-server paths (/api/plugins/...) go to ide-server itself. */
 export function pluginPageUrl(url: string): string {

@@ -25,6 +25,11 @@ const MIME: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".ico": "image/x-icon",
   ".wasm": "application/wasm",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".webp": "image/webp",
+  ".webmanifest": "application/manifest+json",
   ".txt": "text/plain; charset=utf-8",
   ".map": "application/json"
 };
