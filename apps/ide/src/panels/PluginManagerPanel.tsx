@@ -41,9 +41,16 @@ export function PluginManagerPanel() {
 
   return (
     <div className="text-xs">
-      <div className="flex border-b border-border text-[11px] uppercase tracking-wider">
+      <div role="tablist" aria-label="Extensions tabs" className="flex border-b border-border text-[11px] uppercase tracking-wider">
         {(["installed", "vscode", "install"] as Tab[]).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={clsx("flex-1 py-1.5", tab === t ? "text-fg border-b-2 border-accent" : "text-fg-muted hover:text-fg")}>
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => setTab(t)}
+            className={clsx("flex-1 py-1.5 cursor-pointer tabular-nums transition-colors", tab === t ? "text-fg border-b-2 border-accent font-semibold" : "text-fg-muted hover:text-fg")}
+          >
             {t === "installed" ? `Installed · ${plugins.length}` : t === "vscode" ? "Search" : "Install"}
           </button>
         ))}
@@ -52,14 +59,14 @@ export function PluginManagerPanel() {
       {tab === "installed" && (
         <div className="p-2 space-y-3">
           <div>
-            <div className="label">External · {externals.length}</div>
+            <div className="label tabular-nums">External · {externals.length}</div>
             {externals.length === 0 && <div className="text-fg-muted px-1">None yet. Install one from the Install tab (try the bundled example).</div>}
             {externals.map((p) => (
               <PluginRow key={p.profile.name} plugin={p} manifest={installed.find((m) => m.name === p.profile.name)} onToggle={() => void run(`${p.profile.displayName} ${engine.isActive(p.profile.name) ? "deactivated" : "activated"}`, () => manager.toggle(p.profile.name))} onUninstall={() => confirm(`Uninstall ${p.profile.displayName}?`) && void run("uninstalled", () => manager.uninstall(p.profile.name))} />
             ))}
           </div>
           <div>
-            <div className="label">Built in · {builtins.length}</div>
+            <div className="label tabular-nums">Built in · {builtins.length}</div>
             {builtins.map((p) => (
               <PluginRow key={p.profile.name} plugin={p} onToggle={() => void run(`${p.profile.displayName} ${engine.isActive(p.profile.name) ? "deactivated" : "activated"}`, () => manager.toggle(p.profile.name))} />
             ))}
@@ -70,7 +77,7 @@ export function PluginManagerPanel() {
       {tab === "vscode" && <VsxTab />}
       {tab === "install" && <InstallForms manager={manager} busy={busy} run={run} />}
 
-      {msg && <div className="px-3 py-2 text-[11px] text-accent border-t border-border">{msg}</div>}
+      {msg && <div role="status" aria-live="polite" className="px-3 py-2 text-[11px] text-accent border-t border-border">{msg}</div>}
     </div>
   );
 }
@@ -84,22 +91,30 @@ function PluginRow({ plugin, manifest, onToggle, onUninstall }: { plugin: Plugin
   return (
     <div className="rounded border border-border bg-bg-elev mb-1.5">
       <div className="flex items-center gap-2 px-2 py-1.5">
-        <Icon size={14} className={active ? "text-accent" : "text-fg-muted"} />
-        <button className="flex-1 min-w-0 text-left" onClick={() => setOpen((o) => !o)}>
+        <Icon size={14} className={clsx("shrink-0", active ? "text-accent" : "text-fg-muted")} />
+        <button type="button" aria-expanded={open} className="flex-1 min-w-0 text-left cursor-pointer" onClick={() => setOpen((o) => !o)}>
           <div className="flex items-center gap-1.5">
             <span className={clsx("font-semibold truncate", active ? "text-fg" : "text-fg-muted")}>{plugin.profile.displayName}</span>
-            {plugin.profile.version && <span className="text-[10px] text-fg-muted">v{plugin.profile.version}</span>}
-            {plugin.profile.kind === "external" && plugin.profile.required && <span className="text-[10px] text-fg-muted">· required</span>}
+            {plugin.profile.version && <span className="text-[10px] text-fg-muted shrink-0">v{plugin.profile.version}</span>}
+            {plugin.profile.kind === "external" && plugin.profile.required && <span className="text-[10px] text-fg-muted shrink-0">· required</span>}
           </div>
           {plugin.profile.description && <div className="text-[10px] text-fg-muted truncate">{plugin.profile.description}</div>}
         </button>
         {onUninstall && (
-          <button onClick={onUninstall} className="text-fg-muted hover:text-error" title="Uninstall">
+          <button type="button" onClick={onUninstall} className="p-0.5 rounded text-fg-muted hover:text-error cursor-pointer" title="Uninstall" aria-label={`Uninstall ${plugin.profile.displayName}`}>
             <Trash2 size={13} />
           </button>
         )}
         {plugin.profile.kind === "external" ? (
-          <button onClick={onToggle} disabled={plugin.profile.required} className={clsx(plugin.profile.required ? "text-fg-muted/40" : active ? "text-accent" : "text-fg-muted hover:text-fg")} title={active ? "Deactivate" : "Activate"}>
+          <button
+            type="button"
+            onClick={onToggle}
+            disabled={plugin.profile.required}
+            aria-label={`${active ? "Deactivate" : "Activate"} ${plugin.profile.displayName}`}
+            aria-pressed={active}
+            className={clsx("cursor-pointer", plugin.profile.required ? "text-fg-muted/40 cursor-not-allowed" : active ? "text-accent" : "text-fg-muted hover:text-fg")}
+            title={active ? "Deactivate" : "Activate"}
+          >
             {active ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
           </button>
         ) : (
@@ -155,9 +170,9 @@ function InstallForms({ manager, busy, run }: { manager: PluginManagerPlugin; bu
         <div>
           <div className="label">Bundled examples</div>
           {examples.map((e) => (
-            <button key={e.name} className="btn-ghost w-full justify-start mb-1" disabled={busy} onClick={() => void run(`installed example ${e.name}`, () => manager.installFromUrl(new URL(e.manifestUrl, location.origin).toString()))}>
+            <button key={e.name} type="button" className="btn-ghost w-full justify-start mb-1" disabled={busy} onClick={() => void run(`installed example ${e.name}`, () => manager.installFromUrl(new URL(e.manifestUrl, location.origin).toString()))}>
               <Puzzle size={12} /> {e.name}
-              <span className="ml-auto text-[10px] text-fg-muted">examples/plugins/{e.name}</span>
+              <span className="ml-auto text-[10px] text-fg-muted truncate">examples/plugins/{e.name}</span>
             </button>
           ))}
         </div>
@@ -168,8 +183,8 @@ function InstallForms({ manager, busy, run }: { manager: PluginManagerPlugin; bu
           <Globe size={11} /> From a manifest URL
         </div>
         <div className="flex gap-1">
-          <input className="input font-mono" placeholder="https://…/hardkas-plugin.json" value={url} onChange={(e) => setUrl(e.target.value)} />
-          <button className="btn-primary shrink-0" disabled={busy || !url} onClick={() => void run("installed", () => manager.installFromUrl(url))}>
+          <input aria-label="Plugin manifest URL" className="input font-mono" placeholder="https://…/hardkas-plugin.json" value={url} onChange={(e) => setUrl(e.target.value)} />
+          <button type="button" aria-label="Install plugin from manifest URL" title="Install from URL" className="btn-primary shrink-0" disabled={busy || !url} onClick={() => void run("installed", () => manager.installFromUrl(url))}>
             <Download size={12} />
           </button>
         </div>
@@ -181,8 +196,8 @@ function InstallForms({ manager, busy, run }: { manager: PluginManagerPlugin; bu
           <Package size={11} /> From npm
         </div>
         <div className="flex gap-1">
-          <input className="input font-mono" placeholder="@scope/hardkas-plugin-foo" value={pkg} onChange={(e) => setPkg(e.target.value)} />
-          <button className="btn-primary shrink-0" disabled={busy || !pkg} onClick={() => void run("installed from npm", () => manager.installFromNpm(pkg))}>
+          <input aria-label="NPM package name" className="input font-mono" placeholder="@scope/hardkas-plugin-foo" value={pkg} onChange={(e) => setPkg(e.target.value)} />
+          <button type="button" aria-label="Install plugin from npm" title="Install from npm" className="btn-primary shrink-0" disabled={busy || !pkg} onClick={() => void run("installed from npm", () => manager.installFromNpm(pkg))}>
             <Download size={12} />
           </button>
         </div>
@@ -192,15 +207,15 @@ function InstallForms({ manager, busy, run }: { manager: PluginManagerPlugin; bu
       <div>
         <div className="label">Manual</div>
         <div className="space-y-1">
-          <input className="input" placeholder="name (my-plugin)" value={manual.name} onChange={(e) => setManual({ ...manual, name: e.target.value })} />
-          <input className="input" placeholder="display name" value={manual.displayName} onChange={(e) => setManual({ ...manual, displayName: e.target.value })} />
-          <input className="input font-mono" placeholder="https://…/index.html" value={manual.url} onChange={(e) => setManual({ ...manual, url: e.target.value })} />
-          <select className="input" value={manual.location} onChange={(e) => setManual({ ...manual, location: e.target.value })}>
+          <input aria-label="Plugin ID" className="input" placeholder="name (my-plugin)" value={manual.name} onChange={(e) => setManual({ ...manual, name: e.target.value })} />
+          <input aria-label="Plugin display name" className="input" placeholder="display name" value={manual.displayName} onChange={(e) => setManual({ ...manual, displayName: e.target.value })} />
+          <input aria-label="Plugin page URL" className="input font-mono" placeholder="https://…/index.html" value={manual.url} onChange={(e) => setManual({ ...manual, url: e.target.value })} />
+          <select aria-label="Plugin location" className="input" value={manual.location} onChange={(e) => setManual({ ...manual, location: e.target.value })}>
             <option value="sidePanel">side panel</option>
             <option value="mainPanel">main panel (tab)</option>
           </select>
-          <input className="input font-mono" placeholder="permissions: fileManager.readFile, console.*" value={manual.permissions} onChange={(e) => setManual({ ...manual, permissions: e.target.value })} />
-          <button className="btn-primary w-full justify-center" disabled={busy || !manual.name || !manual.url} onClick={() => void run("installed", () => manager.installManifest({ ...manual, location: manual.location as "sidePanel" | "mainPanel", permissions: manual.permissions.split(",").map((s) => s.trim()).filter(Boolean), source: { kind: "manual", ref: manual.url } }))}>
+          <input aria-label="Plugin permissions" className="input font-mono" placeholder="permissions: fileManager.readFile, console.*" value={manual.permissions} onChange={(e) => setManual({ ...manual, permissions: e.target.value })} />
+          <button type="button" className="btn-primary w-full justify-center" disabled={busy || !manual.name || !manual.url} onClick={() => void run("installed", () => manager.installManifest({ ...manual, location: manual.location as "sidePanel" | "mainPanel", permissions: manual.permissions.split(",").map((s) => s.trim()).filter(Boolean), source: { kind: "manual", ref: manual.url } }))}>
             <Download size={12} /> Install
           </button>
         </div>

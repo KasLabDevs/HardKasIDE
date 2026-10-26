@@ -68,20 +68,121 @@ option {
 
 .btn-primary,
 .btn-ghost {
-  @apply inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  @apply inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium transition-all duration-150 cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-accent/80 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
 }
 .btn-primary {
-  @apply bg-accent text-accent-fg hover:brightness-110;
+  @apply bg-accent text-accent-fg hover:brightness-110 shadow-xs;
 }
 .btn-ghost {
-  @apply bg-transparent text-fg hover:bg-bg-hover border border-border;
+  @apply bg-transparent text-fg hover:bg-bg-hover border border-border hover:border-fg-muted/40;
 }
 .input {
-  @apply w-full rounded border border-border bg-bg px-2 py-1.5 text-xs text-fg outline-none focus:border-accent;
+  @apply w-full rounded border border-border bg-bg px-2 py-1.5 text-xs text-fg outline-none transition-colors focus:border-accent focus-visible:ring-1 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed;
 }
 .label {
-  @apply block text-[11px] uppercase tracking-wide text-fg-muted mb-1;
+  @apply block text-[11px] font-semibold uppercase tracking-wide text-fg-muted mb-1;
 }
 .panel-title {
-  @apply px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border;
+  @apply px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border select-none;
 }
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Accessible keyboard focus ring for icon buttons and interactive controls */
+button:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible,
+[role="treeitem"]:focus-visible,
+[role="menuitem"]:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* Ergonomic resize handles with wider invisible hit area */
+[data-panel-resize-handle-id] {
+  position: relative;
+  outline: none;
+}
+[data-panel-resize-handle-id][data-panel-group-direction="horizontal"] {
+  cursor: col-resize;
+}
+[data-panel-resize-handle-id][data-panel-group-direction="horizontal"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: -3px;
+  z-index: 10;
+}
+[data-panel-resize-handle-id][data-panel-group-direction="vertical"] {
+  cursor: row-resize;
+}
+[data-panel-resize-handle-id][data-panel-group-direction="vertical"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  bottom: -3px;
+  z-index: 10;
+}
+[data-panel-resize-handle-id]:focus-visible,
+[data-panel-resize-handle-id][data-resize-handle-state="drag"] {
+  background-color: var(--accent) !important;
+}
+
+/* Debugger marks in the editor gutter and on the line where the debuggee is stopped. */
+.hk-bp,
+.hk-bp-hover {
+  width: 10px !important;
+  height: 10px !important;
+  margin: 5px 0 0 5px;
+  border-radius: 50%;
+  background: var(--error);
+}
+.hk-bp-hover {
+  background: color-mix(in srgb, var(--error) 35%, transparent);
+}
+.hk-bp-off {
+  background: transparent;
+  border: 1.5px solid var(--fg-muted);
+  box-sizing: border-box;
+}
+.hk-current-arrow {
+  width: 12px !important;
+  height: 12px !important;
+  margin: 4px 0 0 3px;
+  background: var(--warn);
+  clip-path: polygon(0 25%, 55% 25%, 55% 0, 100% 50%, 55% 100%, 55% 75%, 0 75%);
+}
+.hk-current-line {
+  background: color-mix(in srgb, var(--warn) 20%, transparent);
+}
+
+/* Title bar: the drag region of a desktop shell (Electron/Tauri/installed PWA); controls stay clickable. */
+.titlebar {
+  -webkit-app-region: drag;
+  padding-left: max(0.5rem, env(titlebar-area-x, 0px));
+}
+.titlebar button,
+.titlebar a,
+.titlebar [role="menu"],
+.titlebar-nodrag {
+  -webkit-app-region: no-drag;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+

@@ -59,12 +59,15 @@ async function resolveHardkas(cwd: string): Promise<Resolved> {
   return { command: isWin ? "npx.cmd" : "npx", prefix: ["-y", `@hardkas/cli@${HARDKAS_CLI_VERSION}`], shell: isWin };
 }
 
+const ALLOWED_COMMANDS = new Set(["hardkas", "npx", "npm"]);
+const WIN_SHELL_UNSAFE = /[\0\r\n&|<>^%!]/;
+
 export interface RunOptions {
   /** Arguments after `hardkas`, e.g. ["silver", "compile", "contract.sil", "--json"]. */
   args: string[];
   /** Working directory; defaults to the open workspace. */
   cwd?: string;
-  /** Run `hardkas` (default) or an arbitrary executable such as "npx". */
+  /** Run `hardkas` (default) or an allowlisted executable ("npx" | "npm"). */
   command?: "hardkas" | string;
 }
 
@@ -73,18 +76,36 @@ export async function startJob(options: RunOptions): Promise<Job> {
   if (!cwd) throw new Error("No workspace is open and no cwd was given");
   if (!(await exists(cwd))) throw new Error(`cwd does not exist: ${cwd}`);
 
+  const requestedCmd = options.command ?? "hardkas";
+  if (!ALLOWED_COMMANDS.has(requestedCmd)) {
+    throw new Error(`Disallowed command: ${requestedCmd}`);
+  }
+  if (requestedCmd === "npx" && options.args[0] !== "vitest") {
+    throw new Error("npx is only permitted for running vitest");
+  }
+
   let command: string;
   let args: string[];
   let shell = false;
-  if (!options.command || options.command === "hardkas") {
+  if (requestedCmd === "hardkas") {
     const resolved = await resolveHardkas(cwd);
     command = resolved.command;
     args = [...resolved.prefix, ...options.args];
     shell = resolved.shell;
   } else {
-    command = options.command;
+    const isWin = process.platform === "win32";
+    command = isWin ? `${requestedCmd}.cmd` : requestedCmd;
     args = options.args;
-    shell = process.platform === "win32";
+    shell = isWin;
+  }
+
+  for (const arg of args) {
+    if (typeof arg !== "string" || arg.includes("\0") || arg.includes("\r") || arg.includes("\n")) {
+      throw new Error("Invalid control characters in job arguments");
+    }
+    if (shell && WIN_SHELL_UNSAFE.test(arg)) {
+      throw new Error(`Unsafe shell character in argument: ${arg}`);
+    }
   }
 
   const id = `job_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;

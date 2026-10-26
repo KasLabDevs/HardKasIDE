@@ -1,6 +1,6 @@
 import type { editor } from "monaco-editor";
 
-/** Builds the Monaco theme from the CSS variables in index.css, like Remix does with Bootstrap vars. */
+/** Builds the Monaco theme from the CSS variables in index.css. */
 export function buildMonacoTheme(): editor.IStandaloneThemeData {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;

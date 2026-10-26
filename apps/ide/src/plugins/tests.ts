@@ -3,26 +3,26 @@ import { api } from "@/api/client";
 import { Plugin } from "@/engine/engine";
 import { useIde } from "@/store/ide";
 import { parseVitestJson, useTests } from "@/store/tests";
-import { TestsView } from "@/views/TestsView";
+import { TestsPanel } from "@/panels/TestsPanel";
 import type { ConsolePlugin } from "./console";
 
 const RESULTS_FILE = ".hardkas/ide/test-results.json";
 
 /**
- * Test runner view (Eclipse JUnit style). Runs the workspace's vitest with the
+ * Test runner view (Eclipse JUnit style, with the debugger built in). Runs the workspace's vitest with the
  * JSON reporter and renders every test green / red, with failure details.
  *
  *   npx vitest run [file] --reporter=json --outputFile=.hardkas/ide/test-results.json
  */
 export class TestsPlugin extends Plugin {
-  view = TestsView;
+  view = TestsPanel;
 
   constructor() {
     super({
       name: "tests",
       displayName: "Tests",
       description: "Run the project's tests and see each one pass or fail",
-      location: "mainPanel",
+      location: "sidePanel",
       icon: FlaskConical,
       order: 60,
       methods: ["open", "run", "runFile", "openTest"],
@@ -31,7 +31,7 @@ export class TestsPlugin extends Plugin {
   }
 
   open(): void {
-    useIde.getState().openView(this.profile.name, "Tests");
+    useIde.getState().revealPlugin(this.profile.name, "Tests");
   }
 
   async run(): Promise<void> {

@@ -1,9 +1,10 @@
 import { Server } from "lucide-react";
 import { api } from "@/api/client";
 import { Plugin } from "@/engine/engine";
+import { copyText } from "@/utils/clipboard";
 import { ServersPanel } from "@/panels/ServersPanel";
-import { useEnv, type AccountInfo, type NodeStatus } from "@/store/env";
-import { useIde, type ExecutionTarget } from "@/store/ide";
+import { useEnv, type AccountInfo, type NodeOp, type NodeStatus } from "@/store/env";
+import { useIde, userChoseTarget, type ExecutionTarget } from "@/store/ide";
 import type { ConsolePlugin } from "./console";
 
 /**
@@ -35,7 +36,7 @@ export class EnvironmentPlugin extends Plugin {
       location: "sidePanel",
       icon: Server,
       order: 15,
-      methods: ["refresh", "refreshNode", "refreshDocker", "refreshAccounts", "startNode", "stopNode", "restartNode", "createAccount", "copyPrivateKey", "fund"],
+      methods: ["refresh", "refreshNode", "refreshDocker", "refreshAccounts", "startNode", "stopNode", "restartNode", "resetNode", "createAccount", "copyPrivateKey", "getPrivateKey", "fund"],
       events: ["nodeChanged", "accountsChanged"]
     });
   }
@@ -73,8 +74,26 @@ export class EnvironmentPlugin extends Plugin {
     try {
       const sys = await api.system();
       useEnv.getState().setDocker(sys.docker);
+      this.applyDockerFallback(sys.docker);
     } catch {
       useEnv.getState().setDocker(null);
+    }
+  }
+
+  private notifiedFallback = false;
+
+  /**
+   * The default environment is the Docker local node. If Docker is missing or stopped and the user never
+   * chose an environment themselves, start in the Simulator instead of a broken state, and say why once.
+   * An explicit choice is never overridden.
+   */
+  private applyDockerFallback(docker: { installed: boolean; running: boolean }): void {
+    const ide = useIde.getState();
+    if (userChoseTarget() || ide.target !== "localnet" || (docker.installed && docker.running)) return;
+    useIde.setState({ target: "simulator" });
+    if (!this.notifiedFallback) {
+      this.notifiedFallback = true;
+      this.console().info(`${docker.installed ? "Docker is not running" : "Docker is not installed"}: using the Simulator for now. Start Docker and pick "Local node" to use a real rusty-kaspad.`);
     }
   }
 
@@ -82,6 +101,8 @@ export class EnvironmentPlugin extends Plugin {
     const env = useEnv.getState();
     await this.refreshDocker();
     try {
+      // `localnet status` knows the Toccata profile: identity verification, miner, DAA, server version.
+      // `node status` is the generic Docker view; parseNodeStatus understands both shapes.
       const run = await this.console().runHardkas(["localnet", "status", "--json"], { quiet });
       const raw = run.result as Record<string, unknown> | null;
       if (!raw) throw new Error("localnet status returned no JSON");
@@ -96,78 +117,160 @@ export class EnvironmentPlugin extends Plugin {
     }
   }
 
+  // ---- node operations: every one shows its steps (store.nodeOp) so nobody stares at stale balances ----
+
+  private stepStopNode = (): OpStep => ({ label: "Stopping the node and its miner", run: async () => this.runCli(["localnet", "stop", "--toccata", "--json"], "Could not stop the node") });
+  private stepStartNode = (): OpStep => ({ label: "Starting rusty-kaspad (Docker)", run: async () => this.runCli(["localnet", "start", "--toccata", "--json"], "Could not start the node") });
+  private stepWaitReady = (): OpStep => ({ label: "Waiting for the node to answer on RPC", run: async (note) => this.waitUntilReady(note) });
+  private stepLoadAccounts = (): OpStep => ({
+    label: "Loading the dev accounts and their balances",
+    run: async () => {
+      await this.refreshAccounts();
+    }
+  });
+
+  /** `localnet start --toccata` starts (or adopts) rusty-kaspad AND creates the dev accounts alice…erin. */
   async startNode(): Promise<void> {
-    await this.nodeAction("start", ["localnet", "start", "--toccata", "--json"]);
+    await this.runOp("start", "Starting the local node", [this.stepStartNode(), this.stepWaitReady(), this.stepLoadAccounts()], "The node is ready. Fund an account to mine its first KAS.");
   }
 
+  /** `localnet stop` stops the node and its CPU miner (plain `node stop` would leave the miner running). */
   async stopNode(): Promise<void> {
-    await this.nodeAction("stop", ["localnet", "stop", "--toccata", "--json"]);
+    await this.runOp("stop", "Stopping the local node", [this.stepStopNode()], "The node is stopped. Transactions on the Local node will fail until it is started.");
   }
 
   async restartNode(): Promise<void> {
-    const env = useEnv.getState();
-    env.setNodeBusy("restart");
-    try {
-      await this.console().runHardkas(["localnet", "stop", "--toccata", "--json"]);
-      await this.console().runHardkas(["localnet", "start", "--toccata", "--json"]);
-    } finally {
-      env.setNodeBusy(null);
-      await this.refreshNode(true);
+    await this.runOp("restart", "Restarting the local node", [this.stepStopNode(), this.stepStartNode(), this.stepWaitReady(), this.stepLoadAccounts()], "The node is back.");
+  }
+
+  /**
+   * Wipes the local chain and starts over: stop node + miner, `node reset --yes` (removes all local chain
+   * data), then `localnet start --toccata` (fresh node, dev accounts recreated, empty). Callers must have
+   * asked the user to confirm: this is destructive.
+   */
+  async resetNode(): Promise<void> {
+    await this.runOp(
+      "reset",
+      "Resetting the local node from scratch",
+      [
+        this.stepStopNode(),
+        { label: "Wiping all local chain data", run: async () => this.runCli(["node", "reset", "--yes"], "node reset failed: the local chain was not wiped") },
+        { ...this.stepStartNode(), label: "Starting a fresh node" },
+        this.stepWaitReady(),
+        { ...this.stepLoadAccounts(), label: "Recreating the dev accounts (empty)" }
+      ],
+      "Fresh empty chain. Fund an account to mine its first KAS."
+    );
+  }
+
+  /** Runs a hardkas command through the console and throws with `failure` when it does not succeed. */
+  private async runCli(args: string[], failure: string): Promise<void> {
+    const run = await this.console().runHardkas(args);
+    if (run.status !== "succeeded") throw new Error(`${failure} (exit ${run.exitCode}). See the Console for details.`);
+  }
+
+  /** Polls `localnet status` until the node answers RPC (up to ~2 minutes: first start pulls the image and mines). */
+  private async waitUntilReady(note: (text: string) => void): Promise<void> {
+    const deadline = Date.now() + 120_000;
+    let tries = 0;
+    for (;;) {
+      const node = await this.refreshNode(true);
+      if (node?.rpcReady) return;
+      if (Date.now() > deadline) throw new Error("The node did not answer on RPC within 2 minutes. Check the Console and Docker.");
+      tries += 1;
+      note(`attempt ${tries}…`);
+      await new Promise((r) => setTimeout(r, 2000));
     }
   }
 
-  private async nodeAction(label: string, args: string[]): Promise<void> {
+  /** Executes the steps in order, publishing progress; the Accounts/Servers/Deploy views lock while it runs. */
+  private async runOp(kind: NodeOp["kind"], title: string, steps: OpStep[], next: string): Promise<void> {
     const env = useEnv.getState();
-    env.setNodeBusy(label);
-    try {
-      await this.console().runHardkas(args);
-    } finally {
-      env.setNodeBusy(null);
-      await this.refreshNode(true);
+    if (env.nodeOp?.state === "running") return; // one operation at a time
+    env.setNodeBusy(kind);
+    env.setNodeOp({ kind, title, steps: steps.map((s) => ({ label: s.label, status: "pending" })), state: "running", startedAt: Date.now() });
+    let failed: string | null = null;
+    for (let i = 0; i < steps.length; i++) {
+      useEnv.getState().patchNodeOp(i, { status: "running" });
+      try {
+        await steps[i].run((detail) => useEnv.getState().patchNodeOp(i, { detail }));
+        useEnv.getState().patchNodeOp(i, { status: "done", detail: undefined });
+      } catch (e) {
+        failed = e instanceof Error ? e.message : String(e);
+        useEnv.getState().patchNodeOp(i, { status: "error", detail: failed });
+        this.console().error(failed);
+        break;
+      }
+    }
+    env.setNodeBusy(null);
+    await this.refreshNode(true); // the real state after the operation, whatever happened
+    useEnv.getState().patchNodeOp(null, undefined, failed ? { state: "error", error: failed } : { state: "done", next });
+    if (failed) {
       await this.refreshAccounts();
+    } else {
+      this.console().info(`${title}: done. ${next}`);
+      // Success notices fade on their own; errors stay until dismissed.
+      setTimeout(() => {
+        const op = useEnv.getState().nodeOp;
+        if (op && op.state === "done" && op.kind === kind) useEnv.getState().setNodeOp(null);
+      }, 6000);
     }
   }
+
+  private accountsSeq = 0;
 
   async refreshAccounts(): Promise<AccountInfo[]> {
+    const seq = ++this.accountsSeq;
     const env = useEnv.getState();
     env.setAccountsBusy(true);
     try {
       const network = networkForTarget(useIde.getState().target);
-      const run = await this.console().runHardkas(["accounts", "list", "--json"], { quiet: true });
+      const [run, devKeyNames] = await Promise.all([
+        this.console().runHardkas(["accounts", "list", "--json"], { quiet: true }),
+        api.devkeys.list().catch(() => [] as string[])
+      ]);
+      if (seq !== this.accountsSeq) return useEnv.getState().accounts;
+      const devKeySet = new Set(devKeyNames);
       const list = Array.isArray(run.result) ? (run.result as Array<{ name: string; kind: string; address: string }>) : [];
-      const plainKeys = await this.readPlainKeys();
-      const accounts: AccountInfo[] = list.map((a) => ({
-        name: a.name,
-        kind: a.kind,
-        address: a.address,
-        balanceSompi: null,
-        utxoCount: null,
-        balanceNetwork: network,
-        hasPlainKey: plainKeys.has(a.name),
-        keystore: plainKeys.has(a.name) ? "plain" : a.kind === "synthetic" ? "encrypted" : "unknown"
-      }));
+      const accounts: AccountInfo[] = list.map((a) => {
+        const canExport = devKeySet.has(a.name);
+        return {
+          name: a.name,
+          kind: a.kind,
+          address: a.address,
+          balanceSompi: null,
+          utxoCount: null,
+          balanceNetwork: network,
+          hasPlainKey: canExport,
+          keystore: canExport ? "dev-keystore" : a.kind === "synthetic" ? "encrypted" : "unknown"
+        };
+      });
       env.setAccounts(accounts);
       this.emit("accountsChanged", accounts);
-      // Balances one by one (the CLI has no batch call); keep the UI responsive.
-      for (const a of accounts) {
-        try {
-          const b = await this.console().runHardkas(["accounts", "balance", a.name, "--network", network, "--json"], { quiet: true });
-          const res = (b.result as { result?: { balanceSompi?: string; utxoCount?: number; address?: string } } | null)?.result;
-          // `accounts list` always reports the synthetic address; `accounts balance` reports the one used on this network.
-          env.patchAccount(a.name, {
-            balanceSompi: res?.balanceSompi ?? "0",
-            utxoCount: res?.utxoCount ?? 0,
-            balanceNetwork: network,
-            address: res?.address ?? a.address
-          });
-        } catch {
-          env.patchAccount(a.name, { balanceSompi: "0", utxoCount: 0, balanceNetwork: network });
-        }
-      }
+      await Promise.all(
+        accounts.map(async (a) => {
+          try {
+            const b = await this.console().runHardkas(["accounts", "balance", a.name, "--network", network, "--json"], { quiet: true });
+            if (seq !== this.accountsSeq) return;
+            const res = (b.result as { result?: { balanceSompi?: string; utxoCount?: number; address?: string } } | null)?.result;
+            env.patchAccount(a.name, {
+              balanceSompi: res?.balanceSompi ?? "0",
+              utxoCount: res?.utxoCount ?? 0,
+              balanceNetwork: network,
+              address: res?.address ?? a.address
+            });
+          } catch {
+            if (seq !== this.accountsSeq) return;
+            env.patchAccount(a.name, { balanceSompi: "0", utxoCount: 0, balanceNetwork: network });
+          }
+        })
+      );
       return useEnv.getState().accounts;
     } finally {
-      env.setAccountsBusy(false);
-      env.touch();
+      if (seq === this.accountsSeq) {
+        env.setAccountsBusy(false);
+        env.touch();
+      }
     }
   }
 
@@ -177,79 +280,96 @@ export class EnvironmentPlugin extends Plugin {
     await this.refreshAccounts();
   }
 
+  /**
+   * Funding depends on the environment:
+   *   Simulator  → `simulator fund` (HardKas' in-memory faucet)
+   *   Local node → `localnet fund --profile toccata-v2` (mines real simnet blocks to the account)
+   *   Testnet    → no faucet from the IDE
+   */
   async fund(name: string, amountKas: string): Promise<void> {
     const target = useIde.getState().target;
     if (target === "localnet") {
       await this.console().runHardkas(["localnet", "fund", name, "--amount", amountKas, "--profile", "toccata-v2", "--json"]);
+    } else if (target === "simulator") {
+      // `simulator fund` is the stable replacement for the deprecated `accounts fund`.
+      await this.console().runHardkas(["simulator", "fund", name, "--amount", amountKas, "--json"]);
     } else {
-      await this.console().runHardkas(["localnet", "fund", name, "--amount", amountKas, "--json"]);
+      throw new Error("No faucet for the public testnet from the IDE; use a testnet faucet and send to the address.");
     }
     await this.refreshAccounts();
   }
 
   /**
-   * Copies the private key to the clipboard without ever rendering it.
-   * Only accounts stored in plaintext by `localnet account create` can be copied;
-   * alice…erin live in argon2id/AES-GCM keystores the CLI does not export.
+   * Copies the raw hex private key to the clipboard without rendering it.
+   * Works for both accounts.real.json and HardKas dev keystores (.hardkas/dev-accounts).
+   * Format is raw 64 hex characters, directly importable into KasWare.
    */
   async copyPrivateKey(name: string): Promise<boolean> {
-    const keys = await this.readPlainKeys();
-    const key = keys.get(name);
+    const key = await this.getPrivateKey(name);
     if (!key) return false;
-    await navigator.clipboard.writeText(key);
-    this.console().info(`Private key of ${name} copied to the clipboard (simnet dev account). It was not displayed.`);
+    await copyText(key);
+    this.console().info(`Private key of ${name} copied to clipboard (raw hex, KasWare compatible).`);
     return true;
   }
 
-  private async readPlainKeys(): Promise<Map<string, string>> {
-    const map = new Map<string, string>();
+  /** Returns the raw hex private key so the Accounts view can reveal it for KasWare; null if not exportable. */
+  async getPrivateKey(name: string): Promise<string | null> {
     try {
-      const text = await api.fs.read(".hardkas/accounts.real.json");
-      const parsed = JSON.parse(text) as unknown;
-      const entries: Array<Record<string, unknown>> = Array.isArray(parsed)
-        ? (parsed as Array<Record<string, unknown>>)
-        : parsed && typeof parsed === "object" && Array.isArray((parsed as { accounts?: unknown }).accounts)
-          ? ((parsed as { accounts: Array<Record<string, unknown>> }).accounts)
-          : parsed && typeof parsed === "object"
-            ? Object.entries(parsed as Record<string, unknown>).map(([k, v]) => ({ name: k, ...(v as Record<string, unknown>) }))
-            : [];
-      for (const e of entries) {
-        const name = typeof e.name === "string" ? e.name : typeof e.label === "string" ? e.label : null;
-        const key = ["privateKey", "privateKeyHex", "secretKey", "secret"].map((k) => e[k]).find((v) => typeof v === "string") as string | undefined;
-        if (name && key) map.set(name, key);
-      }
+      const dev = await api.devkeys.reveal(name);
+      return dev.privateKey;
     } catch {
-      // no plaintext store: nothing to copy
+      return null;
     }
-    return map;
   }
 }
 
+/** One stage of a node operation: `run` may report short progress notes through `note`. */
+interface OpStep {
+  label: string;
+  run: (note: (text: string) => void) => Promise<void>;
+}
+
 function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {
+  const container = (raw.container ?? {}) as Record<string, unknown>;
+  const rpc = (raw.rpc ?? {}) as Record<string, unknown>;
   const node = (raw.node ?? {}) as Record<string, unknown>;
   const identity = (raw.identity ?? {}) as Record<string, unknown>;
   const observed = (identity.observed ?? {}) as Record<string, unknown>;
   const server = (observed.server ?? {}) as Record<string, unknown>;
   const expected = (identity.expected ?? {}) as Record<string, unknown>;
   const miner = (raw.miner ?? {}) as Record<string, unknown>;
-  const transports = (node.transports ?? {}) as Record<string, { port?: number; ready?: boolean }>;
-  const running = Boolean(node.running);
-  const rpcReady = Boolean(node.rpcReady ?? node.ready);
+
+  // `localnet status` has two shapes: a full one (container/rpc/ports) and, when the node answers, a short
+  // one where `node.ready` is true and there is no `running` flag. A node that answers RPC is running.
+  const rpcReady = Boolean(rpc.ready ?? node.rpcReady ?? node.ready);
+  const running = rpcReady || Boolean(container.running ?? node.running);
+
+  const rpcTransports = (rpc.transports ?? {}) as Record<string, { port?: number; ready?: boolean }>;
+  const nodeTransports = (node.transports ?? {}) as Record<string, { port?: number; ready?: boolean }>;
+  const transports = Object.keys(rpcTransports).length > 0 ? rpcTransports : nodeTransports;
+
+  const nodePorts = (node.ports ?? {}) as Record<string, number | undefined>;
+  const ports: NodeStatus["ports"] = {
+    rpc: rpcTransports.grpc?.port ?? nodePorts.rpc,
+    borshRpc: rpcTransports.borsh?.port ?? nodePorts.borshRpc,
+    jsonRpc: rpcTransports.json?.port ?? nodePorts.jsonRpc
+  };
+
   return {
     profile: String(raw.profile ?? "toccata-v2"),
     status: String(raw.status ?? (rpcReady ? "READY" : running ? "STARTING" : "STOPPED")),
     running,
     rpcReady,
-    containerName: (node.containerName as string | undefined) ?? (expected.containerName as string | undefined),
-    image: (node.image as string | undefined) ?? (expected.image as string | undefined),
-    network: (node.network as string | undefined) ?? (expected.network as string | undefined),
-    rpcUrl: node.rpcUrl as string | undefined,
-    ports: node.ports as NodeStatus["ports"],
-    serverVersion: (server.serverVersion as string | undefined) ?? (expected.serverVersion as string | undefined),
-    isSynced: server.isSynced as boolean | undefined,
-    virtualDaaScore: server.virtualDaaScore as string | undefined,
+    containerName: (container.name as string | undefined) ?? (node.containerName as string | undefined) ?? (expected.containerName as string | undefined),
+    image: (container.image as string | undefined) ?? (node.image as string | undefined) ?? (expected.image as string | undefined),
+    network: (node.network as string | undefined) ?? (node.networkId as string | undefined) ?? (expected.network as string | undefined) ?? "simnet",
+    rpcUrl: (rpc.url as string | undefined) ?? (node.rpcUrl as string | undefined),
+    ports,
+    serverVersion: (server.serverVersion as string | undefined) ?? (node.serverVersion as string | undefined) ?? (expected.serverVersion as string | undefined),
+    isSynced: (server.isSynced as boolean | undefined) ?? (node.isSynced as boolean | undefined),
+    virtualDaaScore: (server.virtualDaaScore as string | undefined) ?? (node.virtualDaaScore as string | undefined),
     miner: miner && typeof miner.running === "boolean" ? { running: Boolean(miner.running), status: String(miner.status ?? "") } : undefined,
-    lastError: (node.lastError as string | null | undefined) ?? null,
+    lastError: (rpc.lastError as string | null | undefined) ?? (node.lastError as string | null | undefined) ?? null,
     checkedAt: identity.checkedAt as string | undefined,
     raw: { ...raw, transports }
   };

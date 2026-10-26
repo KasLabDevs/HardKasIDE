@@ -93,7 +93,14 @@ export async function findBySuffix(dir: string, suffix: string, limit = 20): Pro
 }
 
 export async function readFile(relative: string): Promise<string> {
-  return fs.readFile(resolveInRoot(relative), "utf8");
+  try {
+    return await fs.readFile(resolveInRoot(relative), "utf8");
+  } catch (error: any) {
+    if (error?.code === "ENOENT") {
+      throw new FsError(404, "NOT_FOUND", `File not found: ${relative}`);
+    }
+    throw error;
+  }
 }
 
 export async function writeFile(relative: string, content: string): Promise<void> {

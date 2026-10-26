@@ -52,8 +52,9 @@ export function Console() {
         <div ref={bottomRef} />
       </div>
       <div className="h-8 shrink-0 flex items-center gap-2 px-3 border-t border-border">
-        <span className="text-accent">hardkas ›</span>
+        <span className="text-accent select-none">hardkas ›</span>
         <input
+          aria-label="HardKas CLI command"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -75,7 +76,7 @@ export function Console() {
           className="flex-1 bg-transparent outline-none text-fg placeholder:text-fg-muted/60"
           spellCheck={false}
         />
-        <button onClick={clear} className="text-fg-muted hover:text-fg" title="Clear console">
+        <button type="button" onClick={clear} className="p-1 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer" title="Clear console" aria-label="Clear console">
           <Eraser size={14} />
         </button>
       </div>
@@ -97,10 +98,15 @@ function Block({ block }: { block: JournalBlock }) {
   if (block.kind === "json") {
     return (
       <div className="rounded border border-border bg-bg-elev">
-        <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-1.5 px-2 py-1 text-left text-fg-muted hover:text-fg">
-          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          className="w-full flex items-center gap-1.5 px-2 py-1 text-left text-fg-muted hover:text-fg cursor-pointer"
+        >
+          {open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
           <span className="truncate">{block.text}</span>
-          <span className="ml-auto text-[10px] opacity-60">{time(block.at)}</span>
+          <span className="ml-auto text-[10px] opacity-60 tabular-nums shrink-0">{time(block.at)}</span>
         </button>
         {open && <pre className="px-3 pb-2 overflow-auto max-h-80 text-[11px] leading-relaxed whitespace-pre">{JSON.stringify(block.data, null, 2)}</pre>}
       </div>

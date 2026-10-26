@@ -1,0 +1,17 @@
+{
+  "name": "@hardkas-ide/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "HardKas IDE as a Windows desktop app (Tauri): a frameless window around the IDE, with the IDE server started by the app.",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "stage": "node scripts/stage.mjs",
+    "build": "node scripts/stage.mjs && tauri build",
+    "icons": "tauri icon app-icon.svg"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.5.0"
+  }
+}

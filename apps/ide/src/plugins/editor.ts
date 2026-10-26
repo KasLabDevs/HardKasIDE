@@ -2,8 +2,8 @@ import type * as Monaco from "monaco-editor";
 import { Plugin } from "@/engine/engine";
 
 /**
- * Editor service. Owns the Monaco instance and exposes the same kind of API
- * Remix's editor plugin exposes: markers, goto line, change events.
+ * Editor service. Owns the Monaco instance and exposes markers, goto line,
+ * insert/trigger helpers and change events to the other plugins.
  */
 
 export interface EditorDiagnostic {
@@ -26,9 +26,16 @@ export class EditorPlugin extends Plugin {
       name: "editor",
       displayName: "Editor",
       location: "none",
-      methods: ["addErrorMarker", "clearErrorMarkers", "gotoLine", "focus"],
+      methods: ["addErrorMarker", "clearErrorMarkers", "gotoLine", "focus", "insertText", "trigger"],
       events: ["contentChanged", "editorMounted"]
     });
+  }
+
+  onDeactivation(): void {
+    if (this.changeTimer) {
+      clearTimeout(this.changeTimer);
+      this.changeTimer = null;
+    }
   }
 
   attach(editor: Monaco.editor.IStandaloneCodeEditor, monaco: typeof Monaco): void {
@@ -42,7 +49,7 @@ export class EditorPlugin extends Plugin {
     return this.monaco;
   }
 
-  /** Debounced like Remix (500 ms): drives auto-save and auto-compile. */
+  /** Debounced (500 ms): drives auto-save and auto-compile. */
   notifyChange(path: string): void {
     if (this.changeTimer) clearTimeout(this.changeTimer);
     this.changeTimer = setTimeout(() => this.emit("contentChanged", path), 500);
@@ -52,12 +59,13 @@ export class EditorPlugin extends Plugin {
     if (!this.monaco) return;
     const byFile = new Map<string, EditorDiagnostic[]>();
     for (const d of diagnostics) {
-      const list = byFile.get(d.file) ?? [];
+      const normFile = d.file.replace(/\\/g, "/").replace(/^\//, "");
+      const list = byFile.get(normFile) ?? [];
       list.push(d);
-      byFile.set(d.file, list);
+      byFile.set(normFile, list);
     }
     for (const model of this.monaco.editor.getModels()) {
-      const path = model.uri.path.replace(/^\//, "");
+      const path = model.uri.path.replace(/\\/g, "/").replace(/^\//, "");
       const list = byFile.get(path) ?? [];
       this.monaco.editor.setModelMarkers(
         model,
@@ -92,7 +100,26 @@ export class EditorPlugin extends Plugin {
     this.editor?.focus();
   }
 
+  /** Replaces the selection (or inserts at the cursor) with `text`; used by the Assistant's "Insert" button. */
+  insertText(text: string): boolean {
+    const ed = this.editor;
+    const sel = ed?.getSelection();
+    if (!ed || !sel) return false;
+    ed.executeEdits("assistant", [{ range: sel, text, forceMoveMarkers: true }]);
+    ed.focus();
+    return true;
+  }
+
   focus(): void {
     this.editor?.focus();
+  }
+
+  /** Runs a Monaco command by id ("undo", "actions.find", "editor.action.formatDocument"…); used by the Edit and Go menus. */
+  trigger(commandId: string): boolean {
+    const ed = this.editor;
+    if (!ed) return false;
+    ed.focus();
+    ed.trigger("menu", commandId, null);
+    return true;
   }
 }

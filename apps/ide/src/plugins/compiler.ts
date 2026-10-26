@@ -7,7 +7,7 @@ import type { ConsolePlugin } from "./console";
 
 /**
  * SilverScript compiler plugin. Runs `hardkas silver compile <file> --json` and
- * emits `compilationFinished` like Remix's solidity plugin, so Deploy & Run can
+ * emits `compilationFinished` so Deploy & Run can
  * list the compiled contracts without knowing about silverc.
  */
 

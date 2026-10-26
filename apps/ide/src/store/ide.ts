@@ -9,6 +9,42 @@ import type { TreeNode, WorkspaceInfo } from "@/api/client";
 export type ExecutionTarget = "simulator" | "localnet" | "rpc";
 
 /**
+ * Default environment: the Local node (Docker rusty-kaspad). It is a real node, so it is the most
+ * faithful place to try transactions and contracts. The choice is remembered once the user makes it;
+ * until then the environment plugin falls back to the Simulator when Docker is not available
+ * (see EnvironmentPlugin.applyDockerFallback).
+ */
+const TARGET_KEY = "hardkas-ide.target";
+const DEFAULT_TARGET: ExecutionTarget = "localnet";
+
+function loadTarget(): ExecutionTarget {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TARGET_KEY) ?? "null") as { target?: ExecutionTarget } | null;
+    if (saved?.target === "simulator" || saved?.target === "localnet" || saved?.target === "rpc") return saved.target;
+  } catch {
+    // storage unavailable: use the default
+  }
+  return DEFAULT_TARGET;
+}
+
+/** Whether the user ever picked an environment by hand (as opposed to the default or an automatic fallback). */
+export function userChoseTarget(): boolean {
+  try {
+    return (JSON.parse(localStorage.getItem(TARGET_KEY) ?? "null") as { by?: string } | null)?.by === "user";
+  } catch {
+    return false;
+  }
+}
+
+function saveTarget(target: ExecutionTarget, by: "user" | "auto"): void {
+  try {
+    localStorage.setItem(TARGET_KEY, JSON.stringify({ target, by }));
+  } catch {
+    // ignore
+  }
+}
+
+/**
  * The three places a transaction can go. One definition, used by every panel,
  * so the names match everywhere (HardKas itself says `--target simulator|localnet`
  * and `--network simulated|simnet|testnet-10`; both are shown).
@@ -72,11 +108,14 @@ export const VIEW_PREFIX = "view:";
 /** Where a side-panel plugin is docked (Eclipse-style movable views). */
 export type Dock = "left" | "leftBottom" | "right" | "main";
 const DOCKS_KEY = "hardkas-ide.docks";
+/** Out-of-the-box placement: the Assistant chat lives on the right, like an editor's side panels. */
+const DEFAULT_DOCKS: Record<string, Dock> = { assistant: "right" };
+
 function loadDocks(): Record<string, Dock> {
   try {
-    return JSON.parse(localStorage.getItem(DOCKS_KEY) ?? "{}") as Record<string, Dock>;
+    return { ...DEFAULT_DOCKS, ...(JSON.parse(localStorage.getItem(DOCKS_KEY) ?? "{}") as Record<string, Dock>) };
   } catch {
-    return {};
+    return { ...DEFAULT_DOCKS };
   }
 }
 
@@ -101,6 +140,16 @@ interface IdeState {
   journal: JournalBlock[];
   terminalOpen: boolean;
   outlineOpen: boolean;
+  /** Primary side bar (the left column: Explorer, Run, Servers…). */
+  sidebarOpen: boolean;
+  setSidebarOpen(open: boolean): void;
+  /** UI scale in percent (default 110), like the browser/VS Code zoom but remembered. */
+  zoom: number;
+  setZoom(percent: number): void;
+  /** Set by File/Terminal menus: the bottom panel opens a new terminal as soon as it is mounted. */
+  pendingTerminal: boolean;
+  requestTerminal(): void;
+  clearTerminalRequest(): void;
   statusMessage: string;
   docks: Record<string, Dock>;
   setDock(pluginName: string, dock: Dock): void;
@@ -115,6 +164,12 @@ interface IdeState {
   /** Opens (or focuses) a main-panel plugin view as a tab. */
   openView(pluginName: string, title: string): void;
   setActiveSidePlugin(name: string): void;
+  /** Puts every panel back where it starts (Assistant on the right, the rest on the left) and shows outline and console. */
+  resetLayout(): void;
+  /** Shows a plugin wherever it is docked (left column, stacked, right column or editor tab). */
+  revealPlugin(name: string, title?: string): void;
+  /** Last plugin revealed in a column that is always visible (lets a view focus itself). */
+  revealed: string | null;
   setTarget(target: ExecutionTarget): void;
   log(kind: JournalKind, text: string, data?: unknown): void;
   clearJournal(): void;
@@ -125,13 +180,54 @@ interface IdeState {
 
 let journalSeq = 0;
 
-export const useIde = create<IdeState>((set) => ({
+const ZOOM_KEY = "hardkas-ide.zoom";
+export const DEFAULT_ZOOM = 110;
+export const MIN_ZOOM = 70;
+export const MAX_ZOOM = 200;
+
+function loadZoom(): number {
+  try {
+    const n = Number(localStorage.getItem(ZOOM_KEY));
+    if (Number.isFinite(n) && n >= MIN_ZOOM && n <= MAX_ZOOM) return Math.round(n);
+  } catch {
+    // storage unavailable: default
+  }
+  return DEFAULT_ZOOM;
+}
+
+/** rem-based sizes follow <html>; the body's px size is the 13px origin scaled the same way. */
+function applyZoom(percent: number): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.style.fontSize = `${percent}%`;
+  document.body.style.fontSize = `${((13 * percent) / 100).toFixed(1)}px`;
+}
+
+const initialZoom = loadZoom();
+applyZoom(initialZoom);
+
+export const useIde = create<IdeState>((set, get) => ({
+  sidebarOpen: true,
+  setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+  zoom: initialZoom,
+  setZoom: (percent) => {
+    const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(percent)));
+    applyZoom(zoom);
+    try {
+      localStorage.setItem(ZOOM_KEY, String(zoom));
+    } catch {
+      // ignore
+    }
+    set({ zoom });
+  },
+  pendingTerminal: false,
+  requestTerminal: () => set({ terminalOpen: true, pendingTerminal: true }),
+  clearTerminalRequest: () => set({ pendingTerminal: false }),
   workspace: null,
   tree: [],
   openFiles: [],
   activeFile: null,
   activeSidePlugin: "files",
-  target: "simulator",
+  target: loadTarget(),
   journal: [],
   terminalOpen: true,
   outlineOpen: true,
@@ -146,10 +242,21 @@ export const useIde = create<IdeState>((set) => ({
         // ignore
       }
       // A plugin moved to the right/main should not stay selected on the left.
+      // A plugin moved out of the left column must not stay "active" there; selecting a docked-elsewhere
+      // plugin from the palette also moves it back to the left so it actually shows.
       const activeSidePlugin = s.activeSidePlugin === pluginName && dock !== "left" ? "files" : s.activeSidePlugin;
       if (dock === "leftBottom" && pluginName === "files") return s; // the Explorer anchors the left column
       return { docks, activeSidePlugin, outlineOpen: dock === "right" ? true : s.outlineOpen };
     }),
+
+  resetLayout: () => {
+    try {
+      localStorage.removeItem(DOCKS_KEY);
+    } catch {
+      // ignore
+    }
+    set({ docks: { ...DEFAULT_DOCKS }, activeSidePlugin: "files", outlineOpen: true, terminalOpen: true, sidebarOpen: true });
+  },
 
   setWorkspace: (workspace) => set({ workspace }),
   setTree: (tree) => set({ tree }),
@@ -181,8 +288,19 @@ export const useIde = create<IdeState>((set) => ({
         activeFile: path
       };
     }),
-  setActiveSidePlugin: (activeSidePlugin) => set({ activeSidePlugin }),
-  setTarget: (target) => set({ target }),
+  setActiveSidePlugin: (activeSidePlugin) => set({ activeSidePlugin, sidebarOpen: true }),
+  revealPlugin: (name, title) => {
+    const dock = get().docks[name] ?? "left";
+    if (dock === "left") set({ activeSidePlugin: name, sidebarOpen: true });
+    else if (dock === "main") get().openView(name, title ?? name);
+    // "leftBottom" and "right" panels are already visible in their column; flag it so the UI can focus them.
+    else set({ revealed: name, sidebarOpen: dock === "leftBottom" ? true : get().sidebarOpen });
+  },
+  revealed: null,
+  setTarget: (target) => {
+    saveTarget(target, "user");
+    set({ target });
+  },
   log: (kind, text, data) =>
     set((s) => ({
       journal: [...s.journal.slice(-999), { id: ++journalSeq, kind, text, at: new Date().toISOString(), data }]

@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 
 /**
- * A small plugin engine in the spirit of Remix's @remixproject/engine.
+ * A small plugin engine built around profiles and a message bus.
  *
  * Every feature (files, editor, compiler, run, terminal) is a Plugin with a
  * profile. Plugins talk to each other only through the engine:

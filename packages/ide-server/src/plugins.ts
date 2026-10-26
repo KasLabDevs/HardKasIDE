@@ -25,6 +25,11 @@ const MIME: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".ico": "image/x-icon",
   ".wasm": "application/wasm",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".webp": "image/webp",
+  ".webmanifest": "application/manifest+json",
   ".txt": "text/plain; charset=utf-8",
   ".map": "application/json"
 };
@@ -37,7 +42,16 @@ export function examplesDir(): string {
 export async function fetchText(url: string): Promise<string> {
   const u = new URL(url);
   if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("Only http(s) URLs");
-  const res = await fetch(u, { headers: { accept: "application/json, text/plain, */*" }, redirect: "follow" });
+  const host = u.hostname.toLowerCase();
+  const isLoopback = host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1" || host === "0.0.0.0";
+  if (host === "169.254.169.254" || (isLoopback && !u.pathname.startsWith("/api/plugins/examples/"))) {
+    throw new Error("Refusing to fetch internal/loopback URL");
+  }
+  const res = await fetch(u, {
+    headers: { accept: "application/json, text/plain, */*" },
+    redirect: "follow",
+    signal: AbortSignal.timeout(10_000)
+  });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} from ${u.host}`);
   const text = await res.text();
   if (text.length > 512 * 1024) throw new Error("Manifest too large");

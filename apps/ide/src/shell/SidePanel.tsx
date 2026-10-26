@@ -2,6 +2,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useEngine, useEngineVersion } from "@/engine/context";
 import { useIde } from "@/store/ide";
 import { DockControls } from "./DockControls";
+import { ErrorBoundary } from "./ErrorBoundary";
 
 /**
  * Left column. The active left-docked view on top; views docked "below the Explorer"
@@ -17,6 +18,8 @@ export function SidePanel() {
   const all = engine.listByLocation("sidePanel");
   const left = all.filter((p) => (docks[p.profile.name] ?? "left") === "left");
   const below = all.filter((p) => docks[p.profile.name] === "leftBottom" && p.view);
+  // If the selected view lives elsewhere (docked right, as a tab…), show the first left view instead of an empty column.
+  const shown = left.some((p) => p.profile.name === active) ? active : (left.find((p) => p.profile.name === "files") ?? left[0])?.profile.name;
 
   return (
     <aside className="h-full bg-bg-panel border-r border-border flex flex-col min-w-0">
@@ -29,12 +32,12 @@ export function SidePanel() {
       </div>
       <div className="flex-1 min-h-0">
         <PanelGroup direction="vertical">
-          <Panel minSize={15} defaultSize={below.length ? 55 : 100}>
+          <Panel id="side-main" order={0} minSize={15} defaultSize={below.length ? 55 : 100}>
             <div className="h-full flex flex-col min-h-0">
               {left.map((p) => {
                 const View = p.view;
                 if (!View) return null;
-                const isActive = p.profile.name === active;
+                const isActive = p.profile.name === shown;
                 return (
                   <section key={p.profile.name} className="flex-1 min-h-0 flex-col" style={{ display: isActive ? "flex" : "none" }}>
                     <header className="panel-title flex items-center justify-between">
@@ -42,25 +45,29 @@ export function SidePanel() {
                       <DockControls pluginName={p.profile.name} displayName={p.profile.displayName} />
                     </header>
                     <div className="flex-1 min-h-0 overflow-auto">
-                      <View />
+                      <ErrorBoundary name={p.profile.displayName}>
+                        <View />
+                      </ErrorBoundary>
                     </div>
                   </section>
                 );
               })}
-              {left.length > 0 && !left.some((p) => p.profile.name === active) && <div className="p-3 text-xs text-fg-muted">Pick a view in the rail on the left.</div>}
+              {left.length === 0 && <div className="p-3 text-xs text-fg-muted">Every view is docked elsewhere. Click an icon in the rail to show it, or reset the layout from the command palette.</div>}
             </div>
           </Panel>
           {below.map((p) => {
             const View = p.view!;
             return (
-              <StackedPanel key={p.profile.name}>
+              <StackedPanel key={p.profile.name} id={`side-${p.profile.name}`}>
                 <section className="h-full flex flex-col min-h-0 border-t border-border">
                   <header className="panel-title flex items-center justify-between">
                     <span>{p.profile.displayName}</span>
                     <DockControls pluginName={p.profile.name} displayName={p.profile.displayName} />
                   </header>
                   <div className="flex-1 min-h-0 overflow-auto">
-                    <View />
+                    <ErrorBoundary name={p.profile.displayName}>
+                      <View />
+                    </ErrorBoundary>
                   </div>
                 </section>
               </StackedPanel>
@@ -72,11 +79,11 @@ export function SidePanel() {
   );
 }
 
-function StackedPanel({ children }: { children: React.ReactNode }) {
+function StackedPanel({ id, children }: { id: string; children: React.ReactNode }) {
   return (
     <>
       <PanelResizeHandle className="h-px bg-border hover:bg-accent transition-colors" />
-      <Panel minSize={10}>{children}</Panel>
+      <Panel id={id} order={1} minSize={10}>{children}</Panel>
     </>
   );
 }

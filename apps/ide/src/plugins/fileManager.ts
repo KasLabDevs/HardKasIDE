@@ -4,7 +4,7 @@ import { languageForPath, useIde } from "@/store/ide";
 
 /**
  * File manager service: the only plugin that touches the workspace file system.
- * Everyone else calls it (Remix's fileManager pattern).
+ * Everyone else calls it (single owner of the file system).
  */
 export class FileManagerPlugin extends Plugin {
   constructor() {
@@ -60,7 +60,7 @@ export class FileManagerPlugin extends Plugin {
   async saveFile(path: string): Promise<void> {
     const state = useIde.getState();
     const file = state.openFiles.find((f) => f.path === path);
-    if (!file) return;
+    if (!file || file.kind === "view") return;
     await api.fs.write(path, file.content);
     state.markSaved(path);
     state.setStatus(`Saved ${path}`);
@@ -69,7 +69,7 @@ export class FileManagerPlugin extends Plugin {
 
   async saveCurrentFile(): Promise<void> {
     const current = this.getCurrentFile();
-    if (current) await this.saveFile(current);
+    if (current && !current.startsWith("view:")) await this.saveFile(current);
   }
 
   async createFile(path: string, content = ""): Promise<void> {
@@ -97,10 +97,24 @@ export class FileManagerPlugin extends Plugin {
   async rename(from: string, to: string): Promise<void> {
     await api.fs.rename(from, to);
     const state = useIde.getState();
-    const open = state.openFiles.find((f) => f.path === from);
-    if (open) {
-      state.closeFile(from);
-      state.upsertOpenFile({ ...open, path: to, language: languageForPath(to) });
+    const prefix = from + "/";
+    const affected = state.openFiles.filter((f) => f.path === from || f.path.startsWith(prefix));
+    if (affected.length > 0) {
+      const nextFiles = state.openFiles.map((f) => {
+        if (f.path === from) return { ...f, path: to, language: languageForPath(to) };
+        if (f.path.startsWith(prefix)) {
+          const nextPath = to + "/" + f.path.slice(prefix.length);
+          return { ...f, path: nextPath, language: languageForPath(nextPath) };
+        }
+        return f;
+      });
+      const activeFile =
+        state.activeFile === from
+          ? to
+          : state.activeFile?.startsWith(prefix)
+            ? to + "/" + state.activeFile.slice(prefix.length)
+            : state.activeFile;
+      useIde.setState({ openFiles: nextFiles, activeFile });
     }
     await this.refresh();
   }
