@@ -118,6 +118,10 @@ interface IdeState {
   /** Opens (or focuses) a main-panel plugin view as a tab. */
   openView(pluginName: string, title: string): void;
   setActiveSidePlugin(name: string): void;
+  /** Shows a plugin wherever it is docked (left column, stacked, right column or editor tab). */
+  revealPlugin(name: string, title?: string): void;
+  /** Last plugin revealed in a column that is always visible (lets a view focus itself). */
+  revealed: string | null;
   setTarget(target: ExecutionTarget): void;
   log(kind: JournalKind, text: string, data?: unknown): void;
   clearJournal(): void;
@@ -128,7 +132,7 @@ interface IdeState {
 
 let journalSeq = 0;
 
-export const useIde = create<IdeState>((set) => ({
+export const useIde = create<IdeState>((set, get) => ({
   workspace: null,
   tree: [],
   openFiles: [],
@@ -149,6 +153,8 @@ export const useIde = create<IdeState>((set) => ({
         // ignore
       }
       // A plugin moved to the right/main should not stay selected on the left.
+      // A plugin moved out of the left column must not stay "active" there; selecting a docked-elsewhere
+      // plugin from the palette also moves it back to the left so it actually shows.
       const activeSidePlugin = s.activeSidePlugin === pluginName && dock !== "left" ? "files" : s.activeSidePlugin;
       if (dock === "leftBottom" && pluginName === "files") return s; // the Explorer anchors the left column
       return { docks, activeSidePlugin, outlineOpen: dock === "right" ? true : s.outlineOpen };
@@ -185,6 +191,14 @@ export const useIde = create<IdeState>((set) => ({
       };
     }),
   setActiveSidePlugin: (activeSidePlugin) => set({ activeSidePlugin }),
+  revealPlugin: (name, title) => {
+    const dock = get().docks[name] ?? "left";
+    if (dock === "left") set({ activeSidePlugin: name });
+    else if (dock === "main") get().openView(name, title ?? name);
+    // "leftBottom" and "right" panels are already visible in their column; flag it so the UI can focus them.
+    else set({ revealed: name });
+  },
+  revealed: null,
   setTarget: (target) => set({ target }),
   log: (kind, text, data) =>
     set((s) => ({
