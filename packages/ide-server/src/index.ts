@@ -3,10 +3,19 @@ import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { AssistantError, kaspaDocs, loadConfig, providerDefaults, publicConfig, saveConfig, streamChat, type ChatRequest } from "./assistant.js";
+import { debugSession } from "./debug.js";
+import { listDevAccountNames, revealDevAccountKey } from "./devkeys.js";
 import * as wsfs from "./fs.js";
 import { FsError } from "./fs.js";
+import * as cluster from "./cluster.js";
+import { ClusterError } from "./cluster.js";
+import * as store from "./store.js";
+import { StoreError } from "./store.js";
 import { createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe } from "./runner.js";
 import { closeTerminal, defaultShell, listTerminals, openTerminal } from "./terminal.js";
 import { examplesDir, fetchText, installNpmPlugin, listExamples, loadRegistry, pluginsRoot, readStatic, searchNpmPlugins } from "./plugins.js";
@@ -30,17 +39,22 @@ const DEV_SERVER = process.env.HARDKAS_DEV_SERVER ?? "http://localhost:7420";
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
+function isLocalOrigin(origin: string | undefined): boolean {
+  if (!origin) return false;
+  try {
+    const url = new URL(origin);
+    return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 app.use(
   "/api/*",
   cors({
     origin: (origin) => {
       if (!origin) return origin;
-      try {
-        const url = new URL(origin);
-        return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ? origin : "";
-      } catch {
-        return "";
-      }
+      return isLocalOrigin(origin) ? origin : "";
     },
     allowHeaders: ["Content-Type", "Authorization", "X-Hardkas-Request"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
@@ -48,6 +62,12 @@ app.use(
 );
 
 app.onError((error, c) => {
+  if (error instanceof ClusterError) {
+    return c.json({ ok: false, code: error.code, message: error.message }, error.status as 400);
+  }
+  if (error instanceof StoreError) {
+    return c.json({ ok: false, code: error.code, message: error.message }, error.status as 400);
+  }
   if (error instanceof FsError) {
     return c.json({ ok: false, code: error.code, message: error.message }, error.status as 400);
   }
@@ -122,10 +142,22 @@ app.delete("/api/fs", async (c) => {
 
 // ---------------------------------------------------------------- jobs
 
+function resolveSafeCwd(cwd: string | undefined): string | undefined {
+  const root = getRoot();
+  if (!cwd) return root ?? undefined;
+  if (!root) throw new FsError(409, "NO_WORKSPACE", "No workspace is open");
+  const target = path.isAbsolute(cwd) ? path.resolve(cwd) : wsfs.resolveInRoot(cwd);
+  const rel = path.relative(root, target);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new FsError(400, "OUTSIDE_WORKSPACE", `cwd escapes the workspace: ${cwd}`);
+  }
+  return target;
+}
+
 app.post("/api/run", async (c) => {
   const body = (await c.req.json()) as { args?: string[]; cwd?: string; command?: string };
   if (!Array.isArray(body.args)) return c.json({ ok: false, code: "BAD_REQUEST", message: "args[] is required" }, 400);
-  const job = await startJob({ args: body.args, cwd: body.cwd, command: body.command });
+  const job = await startJob({ args: body.args, cwd: resolveSafeCwd(body.cwd), command: body.command });
   return c.json({ ok: true, job: summarize(job) });
 });
 
@@ -197,13 +229,21 @@ app.get("/api/terminal", (c) => c.json({ ok: true, shell: defaultShell().file, t
 app.get(
   "/api/terminal/ws",
   upgradeWebSocket((c) => {
-    const cols = Number(c.req.query("cols") ?? 100) || 100;
-    const rows = Number(c.req.query("rows") ?? 30) || 30;
-    const cwd = c.req.query("cwd") || undefined;
+    const origin = c.req.header("origin");
+    const allowedOrigin = isLocalOrigin(origin);
+    const cols = Math.min(Math.max(Number(c.req.query("cols") ?? 100) || 100, 10), 500);
+    const rows = Math.min(Math.max(Number(c.req.query("rows") ?? 30) || 30, 5), 200);
+    const rawCwd = c.req.query("cwd") || undefined;
     let session: ReturnType<typeof openTerminal> | null = null;
     return {
       onOpen(_event, ws) {
+        if (!allowedOrigin) {
+          ws.send("\r\n[ide-server] forbidden WebSocket origin\r\n");
+          ws.close();
+          return;
+        }
         try {
+          const cwd = resolveSafeCwd(rawCwd);
           session = openTerminal({ cwd, cols, rows });
         } catch (error) {
           ws.send(`\r\n[ide-server] could not start a shell: ${error instanceof Error ? error.message : String(error)}\r\n`);
@@ -228,7 +268,11 @@ app.get(
           return;
         }
         if (msg.type === "input" && typeof msg.data === "string") session.pty.write(msg.data);
-        else if (msg.type === "resize" && msg.cols && msg.rows) session.pty.resize(msg.cols, msg.rows);
+        else if (msg.type === "resize" && msg.cols && msg.rows) {
+          const safeCols = Math.min(Math.max(Math.floor(msg.cols), 10), 500);
+          const safeRows = Math.min(Math.max(Math.floor(msg.rows), 5), 200);
+          session.pty.resize(safeCols, safeRows);
+        }
       },
       onClose() {
         if (session) closeTerminal(session.id);
@@ -353,6 +397,199 @@ app.all("/api/dev/*", async (c) => {
   return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
 });
 
+// ---------------------------------------------------------------- simnet dev-account keys (KasWare import)
+
+app.get("/api/devkeys", async (c) => c.json({ ok: true, names: await listDevAccountNames() }));
+
+app.post("/api/devkeys/reveal", async (c) => {
+  // Private keys: only the IDE page itself (local origin, JSON body => CORS preflight) may ask.
+  const origin = c.req.header("origin");
+  if (origin && !isLocalOrigin(origin)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  if (!(c.req.header("content-type") ?? "").includes("application/json")) {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: "JSON body required" }, 400);
+  }
+  const body = (await c.req.json()) as { name?: string };
+  if (!body.name) return c.json({ ok: false, code: "BAD_REQUEST", message: "name is required" }, 400);
+  const key = await revealDevAccountKey(body.name);
+  c.header("cache-control", "no-store");
+  return c.json({ ok: true, ...key });
+});
+
+// ---------------------------------------------------------------- assistant (chat grounded in the Kaspa docs)
+
+app.get("/api/assistant/config", async (c) => c.json({ ok: true, config: publicConfig(await loadConfig()), defaults: providerDefaults() }));
+
+app.put("/api/assistant/config", async (c) => {
+  const origin = c.req.header("origin");
+  if (origin && !isLocalOrigin(origin)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json()) as Parameters<typeof saveConfig>[0];
+  try {
+    return c.json({ ok: true, config: publicConfig(await saveConfig(body)) });
+  } catch (error) {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: error instanceof Error ? error.message : String(error) }, 400);
+  }
+});
+
+app.get("/api/assistant/docs", async (c) => {
+  const mode = (c.req.query("mode") ?? "core") as "off" | "core" | "full";
+  try {
+    const d = await kaspaDocs(mode);
+    return c.json({ ok: true, mode, chars: d?.chars ?? 0, approxTokens: Math.round((d?.chars ?? 0) / 4), fetchedAt: d?.fetchedAt ?? null, stale: d?.stale ?? false, source: "https://docs.kaspa.org/llms.txt" });
+  } catch (error) {
+    return c.json({ ok: false, code: "DOCS_UNREACHABLE", message: error instanceof Error ? error.message : String(error) }, 502);
+  }
+});
+
+app.post("/api/assistant/chat", async (c) => {
+  const origin = c.req.header("origin");
+  if (origin && !isLocalOrigin(origin)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json()) as ChatRequest;
+  return streamSSE(c, async (stream) => {
+    const ac = new AbortController();
+    stream.onAbort(() => ac.abort());
+    try {
+      for await (const ev of streamChat(body, ac.signal)) {
+        await stream.writeSSE({ event: ev.type, data: JSON.stringify(ev) });
+      }
+      await stream.writeSSE({ event: "done", data: "{}" });
+    } catch (error) {
+      if (ac.signal.aborted) return;
+      const code = error instanceof AssistantError ? error.code : "INTERNAL";
+      await stream.writeSSE({ event: "error", data: JSON.stringify({ code, message: error instanceof Error ? error.message : String(error) }) });
+    }
+  });
+});
+
+// ---------------------------------------------------------------- test debugger (vitest + Node inspector)
+
+function localOnly(c: { req: { header(name: string): string | undefined } }): boolean {
+  const origin = c.req.header("origin");
+  return !origin || isLocalOrigin(origin);
+}
+
+app.get("/api/debug/events", (c) =>
+  streamSSE(c, async (stream) => {
+    const send = (e: unknown) => stream.writeSSE({ event: "debug", data: JSON.stringify(e) });
+    for (const e of debugSession.snapshot()) await send(e);
+    const onEvent = (e: unknown) => void send(e);
+    debugSession.on("event", onEvent);
+    // A heartbeat lets the IDE notice a stream that died silently (a proxy or the server restarted) and reconnect.
+    const beat = setInterval(() => void stream.writeSSE({ event: "ping", data: "" }).catch(() => undefined), 10_000);
+    await new Promise<void>((resolve) => {
+      stream.onAbort(() => {
+        clearInterval(beat);
+        debugSession.off("event", onEvent);
+        resolve();
+      });
+    });
+  })
+);
+
+app.post("/api/debug/start", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as Parameters<typeof debugSession.start>[0];
+  try {
+    await debugSession.start(body);
+    return c.json({ ok: true });
+  } catch (error) {
+    return c.json({ ok: false, code: "DEBUG_START_FAILED", message: error instanceof Error ? error.message : String(error) }, 400);
+  }
+});
+
+app.post("/api/debug/command", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const b = (await c.req.json()) as { cmd?: string; file?: string; lines?: number[]; objectId?: string; frameId?: string; expression?: string; state?: "none" | "uncaught" | "all" };
+  try {
+    switch (b.cmd) {
+      case "setBreakpoints":
+        await debugSession.setBreakpoints(String(b.file), b.lines ?? []);
+        return c.json({ ok: true });
+      case "resume":
+        await debugSession.resume();
+        return c.json({ ok: true });
+      case "stepOver":
+        await debugSession.stepOver();
+        return c.json({ ok: true });
+      case "stepInto":
+        await debugSession.stepInto();
+        return c.json({ ok: true });
+      case "stepOut":
+        await debugSession.stepOut();
+        return c.json({ ok: true });
+      case "pause":
+        await debugSession.pause();
+        return c.json({ ok: true });
+      case "stop":
+        await debugSession.stop();
+        return c.json({ ok: true });
+      case "setPauseOnExceptions":
+        await debugSession.setPauseOnExceptions(b.state ?? "none");
+        return c.json({ ok: true });
+      case "properties":
+        return c.json({ ok: true, variables: await debugSession.properties(String(b.objectId)) });
+      case "evaluate":
+        return c.json({ ok: true, result: await debugSession.evaluate(String(b.frameId), String(b.expression)) });
+      default:
+        return c.json({ ok: false, code: "BAD_REQUEST", message: `unknown command ${b.cmd}` }, 400);
+    }
+  } catch (error) {
+    return c.json({ ok: false, code: "DEBUG_ERROR", message: error instanceof Error ? error.message : String(error) }, 400);
+  }
+});
+
+// ---------------------------------------------------------------- cluster of extra local nodes (Docker)
+
+app.get("/api/cluster", async (c) => c.json({ ok: true, ...(await cluster.status()) }));
+
+app.get("/api/cluster/logs", async (c) => c.json({ ok: true, text: await cluster.logs(String(c.req.query("name") ?? ""), Number(c.req.query("tail")) || 200) }));
+
+app.post("/api/cluster/add", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { count?: number };
+  return c.json({ ok: true, added: await cluster.addNodes(Number(body.count) || 1) });
+});
+
+app.post("/api/cluster/scale", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { replicas?: number };
+  return c.json({ ok: true, ...(await cluster.scale(Number(body.replicas ?? 0))) });
+});
+
+app.post("/api/cluster/node", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { name?: string; action?: "start" | "stop" | "restart" | "remove" };
+  if (!body.name || !body.action || !["start", "stop", "restart", "remove"].includes(body.action)) return c.json({ ok: false, code: "BAD_REQUEST", message: "name and action are required" }, 400);
+  await cluster.nodeAction(body.name, body.action);
+  return c.json({ ok: true });
+});
+// ---------------------------------------------------------------- query store (HardKAS's SQLite index), read-only
+
+app.get("/api/store/health", async (c) => c.json({ ok: true, ...(await store.health()) }));
+
+app.get("/api/store/artifacts", async (c) => {
+  const q = c.req.query();
+  return c.json({ ok: true, ...(await store.artifacts({ schema: q.schema, mode: q.mode, network: q.network, q: q.q, limit: Number(q.limit) || undefined, offset: Number(q.offset) || undefined })) });
+});
+
+app.get("/api/store/artifact", async (c) => {
+  const id = c.req.query("id");
+  if (!id) return c.json({ ok: false, code: "BAD_REQUEST", message: "id is required" }, 400);
+  return c.json({ ok: true, ...(await store.artifact(id)) });
+});
+
+app.get("/api/store/tx", async (c) => {
+  const id = c.req.query("id")?.trim();
+  if (!id) return c.json({ ok: true, recent: await store.recentTxIds() });
+  return c.json({ ok: true, ...(await store.tx(id)), recent: undefined });
+});
+
+app.get("/api/store/schema", async (c) => c.json({ ok: true, tables: await store.schema() }));
+
+app.post("/api/store/sql", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { sql?: string };
+  return c.json({ ok: true, ...(await store.runSql(String(body.sql ?? ""))) });
+});
 // ---------------------------------------------------------------- system checks (Docker, Node)
 
 app.get("/api/system", async (c) => {
@@ -378,9 +615,53 @@ app.get("/api/system", async (c) => {
   });
 });
 
-app.get("/", (c) =>
-  c.json({ name: "hardkas-ide-server", port: PORT, devServer: DEV_SERVER, workspace: getRoot(), hint: "Open the IDE at http://localhost:5173" })
-);
+// ---------------------------------------------------------------- blocks the local CPU miner found (Explorer)
+
+const MINER_CONTAINER = process.env.HARDKAS_MINER_CONTAINER ?? "hardkas-toccata-miner";
+
+app.get("/api/node/blocks", async (c) => {
+  const limit = Math.min(100, Math.max(1, Number(c.req.query("limit") ?? 25) || 25));
+  const { execFile } = await import("node:child_process");
+  const run = (args: string[]) =>
+    new Promise<{ ok: boolean; out: string; err: string }>((resolve) => {
+      execFile("docker", args, { timeout: 10000, windowsHide: true, maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => resolve({ ok: !error, out: String(stdout), err: String(stderr) }));
+    });
+  const state = await run(["inspect", "-f", "{{.State.Running}}", MINER_CONTAINER]);
+  if (!state.ok) return c.json({ ok: true, exists: false, running: false, blocks: [], windowBlocks: 0, perSecond: 0 });
+  const logs = await run(["logs", "--timestamps", "--tail", "800", MINER_CONTAINER]);
+  // docker logs writes the container's stderr to ours; the miner logs there. "Found a block: <hash>" (the hash can wrap to the next line).
+  const text = `${logs.out}\n${logs.err}`;
+  const found: Array<{ hash: string; at: string }> = [];
+  for (const m of text.matchAll(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+\[[^\]]*\]\s*Found a block:\s*([0-9a-f]{64})/gm)) found.push({ at: m[1], hash: m[2] });
+  const windowBlocks = found.length;
+  let perSecond = 0;
+  if (windowBlocks > 1) {
+    const span = (Date.parse(found[windowBlocks - 1].at) - Date.parse(found[0].at)) / 1000;
+    if (span > 0) perSecond = Number(((windowBlocks - 1) / span).toFixed(2));
+  }
+  return c.json({ ok: true, exists: true, running: state.out.trim() === "true", blocks: found.slice(-limit).reverse(), windowBlocks, perSecond });
+});
+
+const serverInfo = () => ({ name: "hardkas-ide-server", port: PORT, devServer: DEV_SERVER, workspace: getRoot(), ui: UI_READY ? "served from this server" : "not built: run pnpm build, or use the Vite dev server at http://localhost:5173" });
+app.get("/api/info", (c) => c.json(serverInfo()));
+
+// ---------------------------------------------------------------- the IDE itself (production build)
+// `pnpm build` produces apps/ide/dist; when it exists this server serves it, so one process is the whole IDE
+// (this is what the desktop app starts). In development the Vite server on :5173 serves the UI instead.
+
+const UI_DIR = path.resolve(process.env.HARDKAS_IDE_STATIC ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "apps", "ide", "dist"));
+const UI_READY = existsSync(path.join(UI_DIR, "index.html"));
+
+app.get("*", async (c) => {
+  if (c.req.path.startsWith("/api/")) return c.json({ ok: false, code: "NOT_FOUND", message: `No route ${c.req.path}` }, 404);
+  if (!UI_READY) return c.json(serverInfo());
+  const rel = decodeURIComponent(c.req.path);
+  // Real files first; any other path is a client-side route and gets index.html.
+  const file = (rel !== "/" ? await readStatic(UI_DIR, rel) : null) ?? (await readStatic(UI_DIR, "index.html"));
+  if (!file) return c.text("not found", 404);
+  const hashed = /\/assets\//.test(rel);
+  return new Response(file.body, { headers: { "content-type": file.type, "cache-control": hashed ? "public, max-age=31536000, immutable" : "no-cache" } });
+});
 
 // ---------------------------------------------------------------- boot
 

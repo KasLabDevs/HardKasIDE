@@ -36,6 +36,10 @@ export class LineagePlugin extends Plugin {
   }
 
   onDeactivation(): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
     this.source?.close();
     this.source = null;
     for (const off of this.offs) off();

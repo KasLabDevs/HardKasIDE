@@ -5,7 +5,8 @@ import { useEngine } from "@/engine/context";
 import type { CompilerPlugin } from "@/plugins/compiler";
 import type { EnvironmentPlugin } from "@/plugins/environment";
 import type { LineagePlugin } from "@/plugins/lineage";
-import { useIde } from "@/store/ide";
+import { DEFAULT_ZOOM, useIde } from "@/store/ide";
+import { PALETTE_EVENT, confirmAndResetNode, zoomBy } from "./actions";
 
 interface CommandItem {
   id: string;
@@ -41,14 +42,32 @@ export function CommandPalette() {
       { id: "lineage", title: "Show lineage graph", hint: "live artifact provenance", run: () => engine.get<LineagePlugin>("lineage").open() },
       { id: "tests", title: "Run all tests", hint: "vitest, JUnit-style results", run: () => engine.call("tests", "run") },
       { id: "tests:view", title: "Show Tests view", run: () => engine.call("tests", "open") },
+      { id: "debug:file", title: "Debug: debug the tests in the open file", keys: "F5", hint: "breakpoints, stepping", run: () => (activeFile ? engine.call("debug", "debugFile", activeFile) : engine.call("debug", "debugAll")) },
+      { id: "debug:all", title: "Debug: debug all tests", run: () => engine.call("debug", "debugAll") },
+      { id: "debug:stop", title: "Debug: stop debugging", keys: "Shift+F5", run: () => engine.call("debug", "stop") },
+      { id: "debug:clear", title: "Debug: remove all breakpoints", run: () => engine.call("debug", "clearBreakpoints") },
+      { id: "debug:view", title: "Debug: show the debugger (in the Tests view)", run: () => engine.call("tests", "open") },
+      { id: "index", title: "Show Index (artifacts, events and SQL over HardKAS's query store)", run: () => engine.call("queryIndex", "open") },
+      { id: "index:sql", title: "Index: open the SQL console", run: () => engine.call("queryIndex", "open", "sql") },
+      { id: "index:sync", title: "Index: sync new artifacts into the query store", hint: "hardkas query store sync", run: () => engine.call("queryIndex", "sync") },
+      { id: "history", title: "Show Run history (payments, deploys, contract calls)", run: () => engine.call("runHistory", "open") },
       { id: "outline", title: "Toggle Outline", run: () => ide().setOutlineOpen(!ide().outlineOpen) },
+      { id: "layout:reset", title: "Layout: reset panels to their default places", hint: "undo any docking", run: () => ide().resetLayout() },
       { id: "run", title: "Open Deploy & Run", run: () => ide().setActiveSidePlugin("deployRun") },
       { id: "servers", title: "Open Servers (node & accounts)", run: () => ide().setActiveSidePlugin("environment") },
+      { id: "accounts", title: "Open Accounts (keys & balances)", run: () => ide().setActiveSidePlugin("accounts") },
+      { id: "assistant", title: "Open Assistant (chat about Kaspa & SilverScript)", hint: "grounded in docs.kaspa.org", run: () => ide().revealPlugin("assistant", "Assistant") },
       { id: "artifacts", title: "Open Artifacts", run: () => ide().setActiveSidePlugin("artifacts") },
       { id: "files", title: "Open Explorer", run: () => ide().setActiveSidePlugin("files") },
       { id: "node:start", title: "Node: start localnet (rusty-kaspad)", hint: "hardkas localnet start --toccata", run: () => engine.get<EnvironmentPlugin>("environment").startNode() },
       { id: "node:stop", title: "Node: stop localnet", hint: "hardkas localnet stop", run: () => engine.get<EnvironmentPlugin>("environment").stopNode() },
       { id: "node:restart", title: "Node: restart localnet", run: () => engine.get<EnvironmentPlugin>("environment").restartNode() },
+      { id: "node:reset", title: "Node: reset from scratch (wipes the local chain)", hint: "hardkas node reset --yes", run: () => confirmAndResetNode(engine) },
+      { id: "sidebar", title: "View: toggle primary side bar", keys: "Ctrl+B", run: () => ide().setSidebarOpen(!ide().sidebarOpen) },
+      { id: "terminal:new", title: "Terminal: new terminal", keys: "Ctrl+Shift+`", run: () => ide().requestTerminal() },
+      { id: "zoom:in", title: "View: zoom in", keys: "Ctrl+=", run: () => zoomBy(10) },
+      { id: "zoom:out", title: "View: zoom out", keys: "Ctrl+-", run: () => zoomBy(-10) },
+      { id: "zoom:reset", title: "View: reset zoom", keys: "Ctrl+0", run: () => ide().setZoom(DEFAULT_ZOOM) },
       { id: "accounts:refresh", title: "Accounts: refresh balances", run: () => engine.get<EnvironmentPlugin>("environment").refreshAccounts() },
       { id: "target:simulator", title: "Target: simulator", run: () => ide().setTarget("simulator") },
       { id: "target:localnet", title: "Target: localnet (simnet)", run: () => ide().setTarget("localnet") },
@@ -72,7 +91,7 @@ export function CommandPalette() {
       if (mod && e.shiftKey && e.key.toLowerCase() === "p") {
         e.preventDefault();
         setOpen((o) => !o);
-      } else if (mod && e.key.toLowerCase() === "k" && !e.shiftKey) {
+      } else if (mod && (e.key.toLowerCase() === "k" || e.key.toLowerCase() === "p") && !e.shiftKey) {
         e.preventDefault();
         setOpen((o) => !o);
       } else if (mod && e.key === "Enter") {
@@ -87,6 +106,13 @@ export function CommandPalette() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [engine, activeFile, open]);
+
+  // The title bar's search box and the menus open the palette through this event.
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(PALETTE_EVENT, onOpen);
+    return () => window.removeEventListener(PALETTE_EVENT, onOpen);
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -105,7 +131,13 @@ export function CommandPalette() {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center pt-20" onClick={() => setOpen(false)}>
-      <div className="w-full max-w-xl rounded-lg border border-border bg-bg-elev shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+        className="w-full max-w-xl rounded-lg border border-border bg-bg-elev shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center gap-2 px-3 border-b border-border">
           <Command size={14} className="text-fg-muted" />
           <input

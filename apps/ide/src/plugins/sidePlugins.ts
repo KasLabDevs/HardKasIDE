@@ -1,5 +1,6 @@
-import { Files, Package, Settings } from "lucide-react";
+import { Files, Package, Settings, Users } from "lucide-react";
 import { Plugin } from "@/engine/engine";
+import { AccountsPanel } from "@/panels/AccountsPanel";
 import { ArtifactsPanel } from "@/panels/ArtifactsPanel";
 import { FilesPanel } from "@/panels/FilesPanel";
 import { SettingsPanel } from "@/panels/SettingsPanel";
@@ -18,6 +19,14 @@ export class ArtifactsPlugin extends Plugin {
   view = ArtifactsPanel;
   constructor() {
     super({ name: "artifacts", displayName: "Artifacts", location: "sidePanel", icon: Package, order: 40 });
+  }
+}
+
+/** Accounts view: balances, public address and private key (view/copy) of every account. */
+export class AccountsPlugin extends Plugin {
+  view = AccountsPanel;
+  constructor() {
+    super({ name: "accounts", displayName: "Accounts", description: "Account balances and keys", location: "sidePanel", icon: Users, order: 16 });
   }
 }
 
