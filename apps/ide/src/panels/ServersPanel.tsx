@@ -6,6 +6,7 @@ import { copyText } from "@/utils/clipboard";
 import type { EnvironmentPlugin } from "@/plugins/environment";
 import { formatKas, useEnv, type AccountInfo } from "@/store/env";
 import { ENVIRONMENTS, envOf, useIde } from "@/store/ide";
+import { OpSteps } from "@/shell/NodeOpProgress";
 import { WalletCard } from "./WalletCard";
 
 /** Eclipse "Servers"-style view: the node (start/stop/restart) and the accounts with balances. */
@@ -48,6 +49,7 @@ export function ServersPanel() {
   const dot = node ? (node.rpcReady ? "bg-ok" : node.running ? "bg-warn" : "bg-error") : "bg-fg-muted";
   const current = envOf(target);
   const dockerMissing = docker !== null && (!docker.installed || !docker.running);
+  const nodeOp = useEnv((s) => s.nodeOp);
 
   return (
     <div className="text-xs">
@@ -123,6 +125,7 @@ export function ServersPanel() {
             {node?.lastError && <div className="text-warn break-words">{node.lastError}</div>}
             {node?.status && <Row k="status" v={node.status} />}
           </div>
+          {nodeOp && <div className="rounded border border-border bg-bg p-2"><OpSteps op={nodeOp} compact /></div>}
           <div className="grid grid-cols-3 gap-1">
             <button type="button" className="btn-ghost justify-center" disabled={nodeBusy !== null || node?.running === true || dockerMissing} onClick={() => void env.startNode()} title={dockerMissing ? "Docker is required" : "hardkas localnet start --toccata"}>
               <Play size={12} /> {nodeBusy === "start" ? "…" : "Start"}

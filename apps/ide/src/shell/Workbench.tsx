@@ -4,6 +4,7 @@ import { BottomPanel } from "./BottomPanel";
 import { CommandPalette } from "./CommandPalette";
 import { EnvBar } from "./EnvBar";
 import { EnvNotice } from "./EnvNotice";
+import { NodeOpBanner } from "./NodeOpProgress";
 import { IconRail } from "./IconRail";
 import { MainArea } from "./MainArea";
 import { RightDock } from "./RightDock";
@@ -38,6 +39,7 @@ export function Workbench({ onHome }: Props) {
             <div className="h-full flex flex-col min-w-0">
               <EnvBar />
               <EnvNotice />
+              <NodeOpBanner />
               <div className="flex-1 min-h-0">
                 <PanelGroup direction="vertical">
                   <Panel minSize={20}>

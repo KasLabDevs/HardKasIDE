@@ -4,6 +4,7 @@ import { useEngine } from "@/engine/context";
 import type { Account, PlanOutcome, RunPlugin, SendOutcome, SignOutcome, TxStatus } from "@/plugins/run";
 import { formatKas } from "@/store/env";
 import { ENVIRONMENTS, useIde, type ExecutionTarget } from "@/store/ide";
+import { NodeBusyCover } from "@/shell/NodeOpProgress";
 import { ContractGUI } from "./ContractGUI";
 
 const TARGETS = ENVIRONMENTS.map((e) => ({ id: e.id, label: `${e.label} · ${e.networkId}`, hint: e.description }));
@@ -107,7 +108,8 @@ export function RunPanel() {
     );
 
   return (
-    <div className="p-3 space-y-4 text-xs">
+    <div className="p-3 space-y-4 text-xs relative min-h-full">
+      {target === "localnet" && <NodeBusyCover label="The local node is changing…" />}
       <div>
         <label htmlFor="run-env-select" className="label">Environment</label>
         <select id="run-env-select" className="input" value={target} onChange={(e) => setTarget(e.target.value as ExecutionTarget)}>

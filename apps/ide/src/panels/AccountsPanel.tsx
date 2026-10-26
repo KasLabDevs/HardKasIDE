@@ -6,6 +6,7 @@ import { copyText } from "@/utils/clipboard";
 import type { EnvironmentPlugin } from "@/plugins/environment";
 import { formatKas, useEnv, type AccountInfo } from "@/store/env";
 import { envOf, useIde } from "@/store/ide";
+import { NodeBusyCover } from "@/shell/NodeOpProgress";
 
 /** Accounts view: every account with its balance, public address and private key (hidden until revealed; both copyable). */
 export function AccountsPanel() {
@@ -49,7 +50,8 @@ export function AccountsPanel() {
   };
 
   return (
-    <div className="text-xs">
+    <div className="text-xs relative min-h-full">
+      {target === "localnet" && <NodeBusyCover label="Accounts are loading…" />}
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border">
         <span className="text-fg-muted tabular-nums">
           {accounts.length} account{accounts.length === 1 ? "" : "s"} · {envOf(target).networkId}
