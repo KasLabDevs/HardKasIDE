@@ -108,8 +108,8 @@ export const VIEW_PREFIX = "view:";
 /** Where a side-panel plugin is docked (Eclipse-style movable views). */
 export type Dock = "left" | "leftBottom" | "right" | "main";
 const DOCKS_KEY = "hardkas-ide.docks";
-/** Out-of-the-box placement: the Assistant chat and the Debug view live on the right, like an editor's side panels. */
-const DEFAULT_DOCKS: Record<string, Dock> = { assistant: "right", debug: "right" };
+/** Out-of-the-box placement: the Assistant chat lives on the right, like an editor's side panels. */
+const DEFAULT_DOCKS: Record<string, Dock> = { assistant: "right" };
 
 function loadDocks(): Record<string, Dock> {
   try {
