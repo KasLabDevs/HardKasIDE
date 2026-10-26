@@ -3,7 +3,7 @@ import type { PluginManifest } from "@/plugins/iframePlugin";
 
 /**
  * Installed external plugins and the set of active plugins, persisted in
- * localStorage (Remix keeps the same two lists: its plugin directory and `activate=`).
+ * localStorage.
  */
 
 const INSTALLED_KEY = "hardkas-ide.plugins.installed";

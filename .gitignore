@@ -8,7 +8,7 @@ coverage/
 .env.*
 !.env.example
 
-# Reference clones (Remix IDE etc.) are study material, not part of this repo
+# Reference clones are study material, not part of this repo
 reference/
 
 # HardKas runtime state of the demo workspace
@@ -16,3 +16,8 @@ examples/demo-workspace/.hardkas/
 
 examples/demo-workspace/events.jsonl
 
+
+# Desktop app build output
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/stage/
+apps/desktop/src-tauri/gen/

@@ -10,12 +10,13 @@ import { clearGrants } from "./permissions";
 export const REQUIRED_PLUGINS = ["console", "fileManager", "editor", "files", "pluginManager", "vsx"];
 
 /**
- * Plugin manager (Remix's plugin manager + VS Code's extensions view, scaled down):
+ * Plugin manager (a plugin directory plus VS Code's extensions view, scaled down):
  * lists every plugin, activates / deactivates them, installs external ones from a
  * manifest URL, a form, or an npm package, and persists the choices.
  */
 export class PluginManagerPlugin extends Plugin {
   view = PluginManagerPanel;
+  private offs: Array<() => void> = [];
 
   constructor() {
     super({
@@ -47,12 +48,20 @@ export class PluginManagerPlugin extends Plugin {
           }
         }
       }
+      this.offs.push(
+        this.engine.on("engine", "pluginActivated", () => this.persistActive()),
+        this.engine.on("engine", "pluginDeactivated", () => this.persistActive())
+      );
     })();
-    this.engine.on("engine", "pluginActivated", () => this.persistActive());
-    this.engine.on("engine", "pluginDeactivated", () => this.persistActive());
+  }
+
+  onDeactivation(): void {
+    for (const off of this.offs) off();
+    this.offs = [];
   }
 
   private persistActive(): void {
+    if (!this.engine.isActive(this.profile.name)) return;
     usePlugins.getState().setSavedActive(this.engine.activeNames());
   }
 
@@ -70,9 +79,15 @@ export class PluginManagerPlugin extends Plugin {
     } catch {
       throw new Error("The URL did not return JSON. For a page URL, use the manual form and give the page as url.");
     }
-    const m = validateManifest(json);
-    // Relative plugin page next to the manifest.
-    if (!/^https?:\/\//.test(m.url) && !m.url.startsWith("/")) m.url = new URL(m.url, url).toString();
+    // A manifest usually points at a page next to itself ("index.html"): resolve that against the
+    // manifest URL *before* validation, which only accepts absolute http(s) URLs or server paths.
+    const raw = (json && typeof json === "object" ? { ...(json as Record<string, unknown>) } : {}) as Record<string, unknown>;
+    if (typeof raw.url === "string" && !/^https?:\/\//.test(raw.url) && !raw.url.startsWith("/")) {
+      const resolved = new URL(raw.url, url);
+      // Keep same-origin pages as server paths so they stay valid if the port changes.
+      raw.url = resolved.origin === location.origin ? resolved.pathname : resolved.toString();
+    }
+    const m = validateManifest(raw);
     m.source = { kind: "url", ref: url };
     return this.installManifest(m);
   }

@@ -40,6 +40,7 @@ export class IframePlugin extends Plugin {
   readonly manifest: PluginManifest;
   private frame: HTMLIFrameElement | null = null;
   private subscriptions: Array<() => void> = [];
+  private subscribedKeys = new Set<string>();
   private pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private seq = 0;
   private origin: string;
@@ -65,8 +66,24 @@ export class IframePlugin extends Plugin {
     this.view = () => <IframeView plugin={this} />;
   }
 
+  /**
+   * Plugin pages served by ide-server (/api/plugins/...) are loaded straight from ide-server
+   * (http://127.0.0.1:7421), not through the Vite origin. That makes them a different origin from the
+   * IDE, so the browser's same-origin policy isolates them from the IDE's storage, cookies and DOM,
+   * which lets the sandbox keep `allow-same-origin` (needed for scripts to run and postMessage to work
+   * in every engine) without giving the plugin access to the host page.
+   */
   resolvedUrl(): string {
-    return this.manifest.url.startsWith("http") ? this.manifest.url : new URL(this.manifest.url, location.origin).toString();
+    return pluginPageUrl(this.manifest.url);
+  }
+
+  /** True when the page is on a different origin than the IDE (so allow-same-origin cannot reach the host). */
+  isCrossOrigin(): boolean {
+    try {
+      return new URL(this.resolvedUrl()).origin !== location.origin;
+    } catch {
+      return false;
+    }
   }
 
   onActivation(): void {
@@ -77,6 +94,7 @@ export class IframePlugin extends Plugin {
     window.removeEventListener("message", this.listener);
     for (const off of this.subscriptions) off();
     this.subscriptions = [];
+    this.subscribedKeys.clear();
     for (const p of this.pending.values()) p.reject(new Error("plugin deactivated"));
     this.pending.clear();
   }
@@ -98,11 +116,14 @@ export class IframePlugin extends Plugin {
   }
 
   private post(message: unknown): void {
-    this.frame?.contentWindow?.postMessage(message, this.origin === "null" ? "*" : this.origin);
+    // Sandboxed iframes without allow-same-origin have an opaque ("null") origin;
+    // we post directly to this.frame.contentWindow reference.
+    this.frame?.contentWindow?.postMessage(message, "*");
   }
 
   private async onMessage(event: MessageEvent): Promise<void> {
     if (!this.frame || event.source !== this.frame.contentWindow) return;
+    if (this.origin !== "null" && event.origin !== "null" && event.origin !== this.origin) return;
     const msg = event.data as { type?: string; id?: string; plugin?: string; method?: string; args?: unknown[]; event?: string; ok?: boolean; result?: unknown; error?: string };
     if (!msg || typeof msg.type !== "string") return;
     switch (msg.type) {
@@ -113,6 +134,9 @@ export class IframePlugin extends Plugin {
         const { id, plugin, method, args } = msg;
         if (!id || !plugin || !method) return;
         try {
+          if (isBlockedExternalCall(plugin, method, args ?? [])) {
+            throw new Error(`blocked sensitive call: ${plugin}.${method}`);
+          }
           const allowed = isAllowed(this.profile.name, plugin, method, this.manifest.permissions) ?? askPermission(this.profile.name, this.profile.displayName, plugin, method);
           if (!allowed) throw new Error(`permission denied: ${plugin}.${method}`);
           const result = await this.call(plugin, method, ...(args ?? []));
@@ -126,6 +150,9 @@ export class IframePlugin extends Plugin {
         if (!msg.plugin || !msg.event) return;
         const plugin = msg.plugin;
         const name = msg.event;
+        const subKey = `${plugin}:${name}`;
+        if (this.subscribedKeys.has(subKey)) return;
+        this.subscribedKeys.add(subKey);
         this.subscriptions.push(this.on(plugin, name, (...args) => this.post({ type: "hardkas:event", plugin, event: name, args: safe(args) })));
         break;
       }
@@ -147,6 +174,24 @@ export class IframePlugin extends Plugin {
   }
 }
 
+/** Prevents external plugins from reading private keys, dev-server tokens, or installing other plugins. */
+function isBlockedExternalCall(plugin: string, method: string, args: unknown[]): boolean {
+  if (plugin === "environment" && (method === "copyPrivateKey" || method === "getPrivateKey")) return true;
+  if (plugin === "accounts") return true;
+  // The assistant spends the user's API credits and sees the open file: plugins cannot drive it.
+  if (plugin === "assistant") return true;
+  if (plugin === "pluginManager") return true;
+  if (plugin === "fileManager") {
+    for (const arg of args) {
+      if (typeof arg === "string") {
+        const norm = arg.replace(/\\/g, "/").toLowerCase();
+        if (norm.includes("accounts.real.json") || norm.includes("dev-server-token")) return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Strips functions and class instances so the value survives postMessage. */
 function safe(value: unknown): unknown {
   try {
@@ -156,9 +201,35 @@ function safe(value: unknown): unknown {
   }
 }
 
+/** Base URL of ide-server as seen by the browser (a different origin from the Vite dev server). */
+const IDE_SERVER_BASE: string = (import.meta.env.VITE_IDE_SERVER as string | undefined) ?? "http://127.0.0.1:7421";
+
+/**
+ * Plugin pages must live on another origin than the IDE. In the desktop app (and `pnpm start`) the IDE itself is
+ * served by ide-server, so the same server answers on its other loopback name to keep the two origins apart.
+ */
+const IDE_SERVER_ORIGIN: string = (() => {
+  try {
+    const base = new URL(IDE_SERVER_BASE);
+    if (typeof location !== "undefined" && location.origin === base.origin) {
+      base.hostname = base.hostname === "localhost" ? "127.0.0.1" : "localhost";
+    }
+    return base.origin;
+  } catch {
+    return IDE_SERVER_BASE;
+  }
+})();
+
+/** Absolute http(s) URLs stay as they are; ide-server paths (/api/plugins/...) go to ide-server itself. */
+export function pluginPageUrl(url: string): string {
+  if (/^https?:\/\//.test(url)) return url;
+  if (url.startsWith("/api/plugins/")) return IDE_SERVER_ORIGIN + url;
+  return new URL(url, location.origin).toString();
+}
+
 function resolveOrigin(url: string): string {
   try {
-    return new URL(url, location.origin).origin;
+    return new URL(pluginPageUrl(url)).origin;
   } catch {
     return "null";
   }
@@ -177,7 +248,9 @@ function IframeView({ plugin }: { plugin: IframePlugin }) {
       src={plugin.resolvedUrl()}
       title={plugin.profile.displayName}
       className="w-full h-full border-0 bg-bg"
-      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+      // Cross-origin pages keep allow-same-origin (so they can run and use their own storage) but the
+      // origin boundary protects the IDE. A same-origin page would defeat that, so it gets no such flag.
+      sandbox={plugin.isCrossOrigin() ? "allow-scripts allow-same-origin allow-forms allow-popups allow-modals" : "allow-scripts allow-forms allow-popups allow-modals"}
       referrerPolicy="no-referrer"
     />
   );
