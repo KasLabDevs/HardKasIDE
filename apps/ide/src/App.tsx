@@ -10,6 +10,7 @@ import { DebugPlugin } from "@/plugins/debug";
 import { ExplorerPlugin } from "@/plugins/explorer";
 import { FileManagerPlugin } from "@/plugins/fileManager";
 import { HistoryPlugin } from "@/plugins/history";
+import { IndexPlugin } from "@/plugins/indexView";
 import { LineagePlugin } from "@/plugins/lineage";
 import { PluginManagerPlugin, REQUIRED_PLUGINS } from "@/plugins/pluginManager";
 import { SilverPlugin } from "@/plugins/silver";
@@ -41,6 +42,7 @@ function createEngine(): Engine {
   engine.register(new RunPlugin());
   engine.register(new ArtifactsPlugin());
   engine.register(new HistoryPlugin());
+  engine.register(new IndexPlugin());
   engine.register(new LineagePlugin());
   engine.register(new TestsPlugin());
   engine.register(new DebugPlugin());
@@ -55,7 +57,7 @@ function createEngine(): Engine {
   return engine;
 }
 
-const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "runHistory", "environment", "explorer", "accounts", "assistant", "artifacts", "lineage", "tests", "debug", "settings", "pluginManager", "vsx"];
+const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "runHistory", "queryIndex", "environment", "explorer", "accounts", "assistant", "artifacts", "lineage", "tests", "debug", "settings", "pluginManager", "vsx"];
 
 export default function App() {
   const engine = useMemo(createEngine, []);

@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { FilePlus2, FlaskConical, GitBranch, Rocket, X } from "lucide-react";
+import { Database, FilePlus2, FlaskConical, GitBranch, Rocket, X } from "lucide-react";
 import { Editor } from "@/editor/Editor";
 import { useEngine, useEngineVersion } from "@/engine/context";
 import { useIde, VIEW_PREFIX } from "@/store/ide";
@@ -99,6 +99,9 @@ export function MainArea() {
               </button>
               <button type="button" className="btn-ghost" onClick={() => void engine.call("lineage", "open")}>
                 <GitBranch size={13} /> Lineage Graph
+              </button>
+              <button type="button" className="btn-ghost" onClick={() => void engine.call("queryIndex", "open")}>
+                <Database size={13} /> Index
               </button>
               <button type="button" className="btn-ghost" onClick={() => void engine.call("tests", "open")}>
                 <FlaskConical size={13} /> Tests

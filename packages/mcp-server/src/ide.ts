@@ -88,3 +88,9 @@ export function flattenTree(nodes: TreeNode[], dir = "", out: string[] = []): st
   }
   return out;
 }
+
+/** Read-only SQL over HardKAS's query store (the IDE server enforces: one SELECT, 500 rows, 6 seconds). */
+export const querySql = (sql: string) =>
+  request<{ columns: string[]; rows: Array<Record<string, unknown>>; total: number; truncated: boolean; ms: number }>("POST", "/api/store/sql", { sql });
+
+export const storeHealth = () => request<Record<string, unknown>>("GET", "/api/store/health");

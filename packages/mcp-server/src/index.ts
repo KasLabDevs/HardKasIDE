@@ -131,6 +131,17 @@ server.registerTool(
 // ------------------------------------------------------------------ environment
 
 server.registerTool(
+  "query_index",
+  {
+    title: "Query the HardKAS index",
+    description:
+      "Read-only SQL over the project's query store (.hardkas/store.db): tables artifacts, events, lineage_edges, lineage_closure, traces. One SELECT, at most 500 rows. With no `sql` it returns the store's health instead (counts, kinds, whether it is behind the files on disk). Useful to find receipts, follow lineage or count things without reading files one by one.",
+    inputSchema: { sql: z.string().min(1).max(4000).optional().describe("A single SELECT or WITH statement") },
+    annotations: READ
+  },
+  safe(async ({ sql }) => text(sql ? await ide.querySql(sql) : await ide.storeHealth()))
+);
+server.registerTool(
   "environment_status",
   { title: "Environment status", description: "Docker availability and the state of the local node (rusty-kaspad on simnet): ready, DAA score, container.", annotations: READ },
   safe(async () => {

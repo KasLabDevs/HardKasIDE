@@ -12,6 +12,8 @@ import { debugSession } from "./debug.js";
 import { listDevAccountNames, revealDevAccountKey } from "./devkeys.js";
 import * as wsfs from "./fs.js";
 import { FsError } from "./fs.js";
+import * as store from "./store.js";
+import { StoreError } from "./store.js";
 import { createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe } from "./runner.js";
 import { closeTerminal, defaultShell, listTerminals, openTerminal } from "./terminal.js";
 import { examplesDir, fetchText, installNpmPlugin, listExamples, loadRegistry, pluginsRoot, readStatic, searchNpmPlugins } from "./plugins.js";
@@ -58,6 +60,9 @@ app.use(
 );
 
 app.onError((error, c) => {
+  if (error instanceof StoreError) {
+    return c.json({ ok: false, code: error.code, message: error.message }, error.status as 400);
+  }
   if (error instanceof FsError) {
     return c.json({ ok: false, code: error.code, message: error.message }, error.status as 400);
   }
@@ -527,6 +532,34 @@ app.post("/api/debug/command", async (c) => {
   }
 });
 
+// ---------------------------------------------------------------- query store (HardKAS's SQLite index), read-only
+
+app.get("/api/store/health", async (c) => c.json({ ok: true, ...(await store.health()) }));
+
+app.get("/api/store/artifacts", async (c) => {
+  const q = c.req.query();
+  return c.json({ ok: true, ...(await store.artifacts({ schema: q.schema, mode: q.mode, network: q.network, q: q.q, limit: Number(q.limit) || undefined, offset: Number(q.offset) || undefined })) });
+});
+
+app.get("/api/store/artifact", async (c) => {
+  const id = c.req.query("id");
+  if (!id) return c.json({ ok: false, code: "BAD_REQUEST", message: "id is required" }, 400);
+  return c.json({ ok: true, ...(await store.artifact(id)) });
+});
+
+app.get("/api/store/tx", async (c) => {
+  const id = c.req.query("id")?.trim();
+  if (!id) return c.json({ ok: true, recent: await store.recentTxIds() });
+  return c.json({ ok: true, ...(await store.tx(id)), recent: undefined });
+});
+
+app.get("/api/store/schema", async (c) => c.json({ ok: true, tables: await store.schema() }));
+
+app.post("/api/store/sql", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { sql?: string };
+  return c.json({ ok: true, ...(await store.runSql(String(body.sql ?? ""))) });
+});
 // ---------------------------------------------------------------- system checks (Docker, Node)
 
 app.get("/api/system", async (c) => {
