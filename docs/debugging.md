@@ -21,7 +21,7 @@ While a session is open the Tests view shows the controls (continue, step over /
 
 ## Good to know
 
-- Breakpoints are remembered per project and follow their lines while you edit. A breakpoint on a line without code moves to the next line that has code; the Debug view shows where it really stops.
+- Breakpoints are remembered per project and follow their lines while you edit. A breakpoint on a line without code moves to the next line that has code; the Tests view lists where it really stops.
 - Test and hook timeouts are switched off while debugging, otherwise a test paused for a few seconds would fail with "Test timed out".
 - Stepping skips library code (`node_modules` and Node internals).
 - The Tests view is a normal dockable view: left by default so the editor stays next to it; its dock controls can move it to the right or open it as a wide tab, and *Reset panel layout* puts it back.
