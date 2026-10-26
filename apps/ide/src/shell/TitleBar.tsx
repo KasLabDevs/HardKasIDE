@@ -118,6 +118,7 @@ export function TitleBar({ onHome }: Props) {
           item("Assistant", reveal("assistant", "Assistant")),
           item("Tests", () => engine.call("tests", "open")),
           item("Run history", () => engine.call("runHistory", "open")),
+          item("Index (artifacts, events, SQL)", () => engine.call("queryIndex", "open")),
           item("Lineage graph", () => engine.get<LineagePlugin>("lineage").open()),
           item("Plugin manager", reveal("pluginManager", "Plugin manager")),
           sep,
