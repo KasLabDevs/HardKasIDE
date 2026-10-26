@@ -5,6 +5,7 @@ import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import os from "node:os";
 import path from "node:path";
+import { listDevAccountNames, revealDevAccountKey } from "./devkeys.js";
 import * as wsfs from "./fs.js";
 import { FsError } from "./fs.js";
 import { createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe } from "./runner.js";
@@ -30,17 +31,22 @@ const DEV_SERVER = process.env.HARDKAS_DEV_SERVER ?? "http://localhost:7420";
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
+function isLocalOrigin(origin: string | undefined): boolean {
+  if (!origin) return false;
+  try {
+    const url = new URL(origin);
+    return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 app.use(
   "/api/*",
   cors({
     origin: (origin) => {
       if (!origin) return origin;
-      try {
-        const url = new URL(origin);
-        return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ? origin : "";
-      } catch {
-        return "";
-      }
+      return isLocalOrigin(origin) ? origin : "";
     },
     allowHeaders: ["Content-Type", "Authorization", "X-Hardkas-Request"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
@@ -122,10 +128,22 @@ app.delete("/api/fs", async (c) => {
 
 // ---------------------------------------------------------------- jobs
 
+function resolveSafeCwd(cwd: string | undefined): string | undefined {
+  const root = getRoot();
+  if (!cwd) return root ?? undefined;
+  if (!root) throw new FsError(409, "NO_WORKSPACE", "No workspace is open");
+  const target = path.isAbsolute(cwd) ? path.resolve(cwd) : wsfs.resolveInRoot(cwd);
+  const rel = path.relative(root, target);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new FsError(400, "OUTSIDE_WORKSPACE", `cwd escapes the workspace: ${cwd}`);
+  }
+  return target;
+}
+
 app.post("/api/run", async (c) => {
   const body = (await c.req.json()) as { args?: string[]; cwd?: string; command?: string };
   if (!Array.isArray(body.args)) return c.json({ ok: false, code: "BAD_REQUEST", message: "args[] is required" }, 400);
-  const job = await startJob({ args: body.args, cwd: body.cwd, command: body.command });
+  const job = await startJob({ args: body.args, cwd: resolveSafeCwd(body.cwd), command: body.command });
   return c.json({ ok: true, job: summarize(job) });
 });
 
@@ -197,13 +215,21 @@ app.get("/api/terminal", (c) => c.json({ ok: true, shell: defaultShell().file, t
 app.get(
   "/api/terminal/ws",
   upgradeWebSocket((c) => {
-    const cols = Number(c.req.query("cols") ?? 100) || 100;
-    const rows = Number(c.req.query("rows") ?? 30) || 30;
-    const cwd = c.req.query("cwd") || undefined;
+    const origin = c.req.header("origin");
+    const allowedOrigin = isLocalOrigin(origin);
+    const cols = Math.min(Math.max(Number(c.req.query("cols") ?? 100) || 100, 10), 500);
+    const rows = Math.min(Math.max(Number(c.req.query("rows") ?? 30) || 30, 5), 200);
+    const rawCwd = c.req.query("cwd") || undefined;
     let session: ReturnType<typeof openTerminal> | null = null;
     return {
       onOpen(_event, ws) {
+        if (!allowedOrigin) {
+          ws.send("\r\n[ide-server] forbidden WebSocket origin\r\n");
+          ws.close();
+          return;
+        }
         try {
+          const cwd = resolveSafeCwd(rawCwd);
           session = openTerminal({ cwd, cols, rows });
         } catch (error) {
           ws.send(`\r\n[ide-server] could not start a shell: ${error instanceof Error ? error.message : String(error)}\r\n`);
@@ -228,7 +254,11 @@ app.get(
           return;
         }
         if (msg.type === "input" && typeof msg.data === "string") session.pty.write(msg.data);
-        else if (msg.type === "resize" && msg.cols && msg.rows) session.pty.resize(msg.cols, msg.rows);
+        else if (msg.type === "resize" && msg.cols && msg.rows) {
+          const safeCols = Math.min(Math.max(Math.floor(msg.cols), 10), 500);
+          const safeRows = Math.min(Math.max(Math.floor(msg.rows), 5), 200);
+          session.pty.resize(safeCols, safeRows);
+        }
       },
       onClose() {
         if (session) closeTerminal(session.id);
@@ -351,6 +381,24 @@ app.all("/api/dev/*", async (c) => {
     if (value) responseHeaders.set(name, value);
   }
   return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+});
+
+// ---------------------------------------------------------------- simnet dev-account keys (KasWare import)
+
+app.get("/api/devkeys", async (c) => c.json({ ok: true, names: await listDevAccountNames() }));
+
+app.post("/api/devkeys/reveal", async (c) => {
+  // Private keys: only the IDE page itself (local origin, JSON body => CORS preflight) may ask.
+  const origin = c.req.header("origin");
+  if (origin && !isLocalOrigin(origin)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  if (!(c.req.header("content-type") ?? "").includes("application/json")) {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: "JSON body required" }, 400);
+  }
+  const body = (await c.req.json()) as { name?: string };
+  if (!body.name) return c.json({ ok: false, code: "BAD_REQUEST", message: "name is required" }, 400);
+  const key = await revealDevAccountKey(body.name);
+  c.header("cache-control", "no-store");
+  return c.json({ ok: true, ...key });
 });
 
 // ---------------------------------------------------------------- system checks (Docker, Node)

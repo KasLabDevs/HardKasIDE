@@ -59,22 +59,23 @@ export function HomeScreen({ onOpened }: Props) {
             <div>
               <h2 className="label">Start</h2>
               <div className="space-y-2">
-                <button className="btn-primary w-full justify-start py-2.5" onClick={() => setShowNew(true)}>
+                <button type="button" className="btn-primary w-full justify-start py-2.5" onClick={() => setShowNew(true)}>
                   <FolderPlus size={16} /> New project…
                 </button>
                 <div className="rounded border border-border bg-bg-panel p-3 space-y-2">
-                  <div className="flex items-center gap-2 text-fg">
+                  <label htmlFor="home-open-folder-input" className="flex items-center gap-2 text-fg cursor-pointer">
                     <FolderOpen size={16} className="text-fg-muted" /> Open folder
-                  </div>
+                  </label>
                   <input
+                    id="home-open-folder-input"
                     className="input font-mono"
                     placeholder={home ? `${home.replace(/\\/g, "/")}/my-hardkas-project` : "C:/path/to/project"}
                     value={openPath}
                     onChange={(e) => setOpenPath(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && openPath && void open(openPath)}
                   />
-                  <button className="btn-ghost w-full justify-center" disabled={!openPath || busy} onClick={() => void open(openPath)}>
-                    Open
+                  <button type="button" className="btn-ghost w-full justify-center" disabled={!openPath || busy} onClick={() => void open(openPath)}>
+                    {busy ? "Opening…" : "Open"}
                   </button>
                   <p className="text-fg-muted text-[11px]">A HardKas project is any folder with a hardkas.config.ts. Paste the absolute path.</p>
                 </div>
@@ -96,25 +97,26 @@ export function HomeScreen({ onOpened }: Props) {
                 No recent projects yet. Create one or open a folder.
               </div>
             ) : (
-              <ul className="divide-y divide-border rounded border border-border bg-bg-panel">
+              <ul className="divide-y divide-border rounded border border-border bg-bg-panel overflow-hidden">
                 {recents.map((r) => (
                   <li key={r.path}>
                     <button
+                      type="button"
                       disabled={busy}
                       onClick={() => void open(r.path)}
-                      className="w-full text-left px-4 py-3 hover:bg-bg-hover flex items-center justify-between gap-4"
+                      className="w-full text-left px-4 py-3 hover:bg-bg-hover flex items-center justify-between gap-4 cursor-pointer transition-colors disabled:opacity-50"
                     >
                       <div className="min-w-0">
-                        <div className="text-fg font-medium">{r.name}</div>
+                        <div className="text-fg font-medium truncate">{r.name}</div>
                         <div className="text-fg-muted font-mono text-[11px] truncate">{r.path}</div>
                       </div>
-                      <div className="text-fg-muted text-[11px] shrink-0">{new Date(r.openedAt).toLocaleDateString()}</div>
+                      <div className="text-fg-muted text-[11px] shrink-0 tabular-nums">{new Date(r.openedAt).toLocaleDateString()}</div>
                     </button>
                   </li>
                 ))}
               </ul>
             )}
-            {error && <div className="mt-3 text-error">{error}</div>}
+            {error && <div role="alert" className="mt-3 text-error text-xs break-words">{error}</div>}
           </section>
         </div>
       </div>

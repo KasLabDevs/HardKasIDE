@@ -82,24 +82,33 @@ export function ArtifactsPanel() {
   return (
     <div className="text-xs">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border">
-        <select className="input py-1" value={filter} onChange={(e) => setFilter(e.target.value)}>
+        <select aria-label="Filter artifacts by schema" className="input py-1" value={filter} onChange={(e) => setFilter(e.target.value)}>
           <option value="">all schemas</option>
           <option value="txPlan">plans</option>
           <option value="signedTx">signed</option>
           <option value="txReceipt">receipts</option>
           <option value="silverCompile">silver</option>
         </select>
-        <span className="text-fg-muted whitespace-nowrap">{visible.length}</span>
-        <button onClick={() => void load()} className="text-fg-muted hover:text-fg" title="Refresh">
+        <span className="text-fg-muted whitespace-nowrap tabular-nums">{visible.length}</span>
+        <button type="button" onClick={() => void load()} className="p-0.5 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer" title="Refresh" aria-label="Refresh artifacts">
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
         </button>
       </div>
       {error && (
         <div className="p-3 space-y-2">
-          <div className="text-warn">{error}</div>
+          <div role="alert" className="text-warn">{error}</div>
           <div className="text-fg-muted">Start the HardKas dev-server in the project folder, then refresh:</div>
-          <button className="btn-ghost w-full justify-center" onClick={() => void engine.get<ConsolePlugin>("console").runHardkas(["dev", "--headless"])}>
+          <button type="button" className="btn-ghost w-full justify-center" onClick={() => void engine.get<ConsolePlugin>("console").runHardkas(["dev", "--headless"])}>
             Run hardkas dev --headless
+          </button>
+        </div>
+      )}
+      {!error && !loading && visible.length === 0 && (
+        <div className="p-4 text-center space-y-2 text-fg-muted">
+          <div>{filter ? `No "${filter}" artifacts found.` : "No artifacts recorded yet."}</div>
+          <div className="text-[11px]">Run a Plan → Sign → Send flow or compile a SilverScript contract to generate artifacts.</div>
+          <button type="button" className="btn-ghost w-full justify-center" onClick={() => useIde.getState().setActiveSidePlugin("deployRun")}>
+            Open Deploy &amp; Run
           </button>
         </div>
       )}
@@ -107,16 +116,16 @@ export function ArtifactsPanel() {
         {visible.map((a) => {
           const short = a.schema.replace(/^hardkas\./, "");
           return (
-            <li key={a.artifactId} className="px-3 py-2 border-b border-border hover:bg-bg-hover">
+            <li key={a.artifactId} className="px-3 py-2 border-b border-border hover:bg-bg-hover transition-colors">
               <div className="flex items-center justify-between gap-2">
-                <span className={clsx("font-semibold", SCHEMA_COLORS[short] ?? "text-fg")}>{short}</span>
-                <span className="flex items-center gap-2">
+                <span className={clsx("font-semibold truncate", SCHEMA_COLORS[short] ?? "text-fg")}>{short}</span>
+                <span className="flex items-center gap-1.5 shrink-0">
                   {a.path && (
-                    <button title="Open JSON" onClick={() => open(a)} className="text-fg-muted hover:text-accent">
+                    <button type="button" title="Open JSON" aria-label={`Open ${short} JSON`} onClick={() => open(a)} className="p-0.5 rounded text-fg-muted hover:text-accent cursor-pointer">
                       <FileJson size={14} />
                     </button>
                   )}
-                  <button title="Replay verify" onClick={() => void replay(a.artifactId)} className="text-fg-muted hover:text-accent">
+                  <button type="button" title="Replay verify" aria-label={`Replay verify ${a.artifactId.slice(0, 12)}`} onClick={() => void replay(a.artifactId)} className="p-0.5 rounded text-fg-muted hover:text-accent cursor-pointer">
                     <ShieldCheck size={14} />
                   </button>
                 </span>
@@ -129,7 +138,7 @@ export function ArtifactsPanel() {
                   tx {a.txId}
                 </div>
               )}
-              <div className="flex gap-2 text-fg-muted mt-0.5">
+              <div className="flex gap-2 text-fg-muted mt-0.5 tabular-nums">
                 {a.mode && <span>{a.mode}</span>}
                 {a.networkId && <span>{a.networkId}</span>}
                 {a.integrityStatus && <span className={a.integrityStatus === "ok" || a.integrityStatus === "verified" ? "text-ok" : "text-warn"}>{a.integrityStatus}</span>}

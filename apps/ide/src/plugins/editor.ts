@@ -31,6 +31,13 @@ export class EditorPlugin extends Plugin {
     });
   }
 
+  onDeactivation(): void {
+    if (this.changeTimer) {
+      clearTimeout(this.changeTimer);
+      this.changeTimer = null;
+    }
+  }
+
   attach(editor: Monaco.editor.IStandaloneCodeEditor, monaco: typeof Monaco): void {
     this.editor = editor;
     this.monaco = monaco;
@@ -52,12 +59,13 @@ export class EditorPlugin extends Plugin {
     if (!this.monaco) return;
     const byFile = new Map<string, EditorDiagnostic[]>();
     for (const d of diagnostics) {
-      const list = byFile.get(d.file) ?? [];
+      const normFile = d.file.replace(/\\/g, "/").replace(/^\//, "");
+      const list = byFile.get(normFile) ?? [];
       list.push(d);
-      byFile.set(d.file, list);
+      byFile.set(normFile, list);
     }
     for (const model of this.monaco.editor.getModels()) {
-      const path = model.uri.path.replace(/^\//, "");
+      const path = model.uri.path.replace(/\\/g, "/").replace(/^\//, "");
       const list = byFile.get(path) ?? [];
       this.monaco.editor.setModelMarkers(
         model,

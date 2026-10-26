@@ -50,13 +50,13 @@ export function FilesPanel() {
         <span className="truncate flex-1 font-medium text-fg" title={workspace?.root ?? ""}>
           {workspace?.name ?? "—"}
         </span>
-        <button title="New file" onClick={() => setCreating("file")} className="p-1 hover:text-fg">
+        <button type="button" title="New file" aria-label="New file" onClick={() => setCreating("file")} className="p-1 rounded hover:text-fg hover:bg-bg-hover cursor-pointer">
           <FilePlus2 size={14} />
         </button>
-        <button title="New folder" onClick={() => setCreating("dir")} className="p-1 hover:text-fg">
+        <button type="button" title="New folder" aria-label="New folder" onClick={() => setCreating("dir")} className="p-1 rounded hover:text-fg hover:bg-bg-hover cursor-pointer">
           <FolderPlus size={14} />
         </button>
-        <button title="Refresh" onClick={refresh} className="p-1 hover:text-fg">
+        <button type="button" title="Refresh" aria-label="Refresh files" onClick={refresh} className="p-1 rounded hover:text-fg hover:bg-bg-hover cursor-pointer">
           <RefreshCw size={14} />
         </button>
       </div>
@@ -64,6 +64,7 @@ export function FilesPanel() {
         <div className="px-2 py-1.5 border-b border-border">
           <input
             autoFocus
+            aria-label={creating === "dir" ? "New folder path" : "New file path"}
             className="input"
             placeholder={creating === "dir" ? "folder/name" : "contracts/hello.sil"}
             value={newName}
@@ -75,11 +76,18 @@ export function FilesPanel() {
           />
         </div>
       )}
-      <div className="py-1">
-        {tree.length === 0 && <div className="px-3 py-2 text-fg-muted">Empty workspace.</div>}
+      <div role="tree" aria-label="Workspace files" className="py-1">
+        {tree.length === 0 && (
+          <div className="px-3 py-4 text-center space-y-2 text-fg-muted">
+            <div>Empty workspace.</div>
+            <button type="button" className="btn-ghost w-full justify-center" onClick={() => setCreating("file")}>
+              <FilePlus2 size={13} /> New file
+            </button>
+          </div>
+        )}
         {/* The project's own files first; dot-folders such as .hardkas (HardKas runtime state) go last, collapsed. */}
         {sortProjectFirst(tree).map((node) => (
-          <Node key={node.path} node={node} depth={0} onMenu={(e, n) => setMenu({ x: e.clientX, y: e.clientY, node: n })} />
+          <Node key={node.path} node={node} depth={0} onMenu={(x, y, n) => setMenu({ x, y, node: n })} />
         ))}
       </div>
       {menu && <ContextMenu menu={menu} onClose={() => setMenu(null)} />}
@@ -99,7 +107,7 @@ function sortProjectFirst(nodes: TreeNode[]): TreeNode[] {
   });
 }
 
-function Node({ node, depth, onMenu }: { node: TreeNode; depth: number; onMenu: (e: React.MouseEvent, n: TreeNode) => void }) {
+function Node({ node, depth, onMenu }: { node: TreeNode; depth: number; onMenu: (x: number, y: number, n: TreeNode) => void }) {
   const engine = useEngine();
   const activeFile = useIde((s) => s.activeFile);
   const internal = isInternal(node);
@@ -107,7 +115,7 @@ function Node({ node, depth, onMenu }: { node: TreeNode; depth: number; onMenu: 
   const isDir = node.type === "dir";
   const isActive = node.path === activeFile;
 
-  const onClick = () => {
+  const onActivate = () => {
     if (isDir) setOpen((o) => !o);
     else void engine.call("fileManager", "open", node.path);
   };
@@ -115,23 +123,53 @@ function Node({ node, depth, onMenu }: { node: TreeNode; depth: number; onMenu: 
   const Icon = isDir ? (open ? FolderOpen : Folder) : node.name.endsWith(".sil") || node.name.endsWith(".ts") ? FileCode2 : File;
 
   return (
-    <div>
+    <div role="none">
       <div
-        onClick={onClick}
+        role="treeitem"
+        tabIndex={0}
+        aria-expanded={isDir ? open : undefined}
+        aria-selected={isActive}
+        onClick={onActivate}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onActivate();
+          } else if (isDir && e.key === "ArrowRight" && !open) {
+            e.preventDefault();
+            setOpen(true);
+          } else if (isDir && e.key === "ArrowLeft" && open) {
+            e.preventDefault();
+            setOpen(false);
+          } else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+            e.preventDefault();
+            const rect = e.currentTarget.getBoundingClientRect();
+            onMenu(rect.left + 24, rect.bottom, node);
+          }
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
-          onMenu(e, node);
+          onMenu(e.clientX, e.clientY, node);
         }}
-        className={clsx("group flex items-center gap-1 pr-2 py-0.5 cursor-pointer hover:bg-bg-hover", isActive && "bg-bg-hover text-accent", internal && "opacity-60")}
+        className={clsx(
+          "group flex items-center gap-1 pr-2 py-0.5 cursor-pointer hover:bg-bg-hover outline-none",
+          isActive && "bg-bg-hover text-accent font-medium",
+          internal && "opacity-60"
+        )}
         style={{ paddingLeft: 8 + depth * 12 }}
         title={internal && depth === 0 ? `${node.path} (HardKas runtime state: artifacts, accounts, node data)` : node.path}
       >
-        <span className="w-3 text-fg-muted">{isDir ? open ? <ChevronDown size={12} /> : <ChevronRight size={12} /> : null}</span>
-        <Icon size={14} className={clsx(isDir ? (internal ? "text-fg-muted" : "text-warn") : node.name.endsWith(".sil") ? "text-accent" : "text-fg-muted")} />
+        <span className="w-3 text-fg-muted shrink-0">{isDir ? open ? <ChevronDown size={12} /> : <ChevronRight size={12} /> : null}</span>
+        <Icon size={14} className={clsx("shrink-0", isDir ? (internal ? "text-fg-muted" : "text-warn") : node.name.endsWith(".sil") ? "text-accent" : "text-fg-muted")} />
         <span className="truncate flex-1">{node.name}</span>
-        {internal && depth === 0 && isDir && <span className="text-[10px] text-fg-muted">state</span>}
+        {internal && depth === 0 && isDir && <span className="text-[10px] text-fg-muted shrink-0">state</span>}
       </div>
-      {isDir && open && sortProjectFirst(node.children ?? []).map((child) => <Node key={child.path} node={child} depth={depth + 1} onMenu={onMenu} />)}
+      {isDir && open && (
+        <div role="group">
+          {sortProjectFirst(node.children ?? []).map((child) => (
+            <Node key={child.path} node={child} depth={depth + 1} onMenu={onMenu} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -191,20 +229,23 @@ function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }
   const x = Math.min(menu.x, window.innerWidth - 230);
   const y = Math.min(menu.y, window.innerHeight - 40 * items.length);
   return (
-    <ul className="fixed z-50 w-56 rounded border border-border bg-bg-elev shadow-2xl py-1 text-xs" style={{ left: x, top: y }} onClick={(e) => e.stopPropagation()}>
+    <ul role="menu" aria-label={`Actions for ${n.name}`} className="fixed z-50 w-56 rounded border border-border bg-bg-elev shadow-2xl py-1 text-xs" style={{ left: x, top: y }} onClick={(e) => e.stopPropagation()}>
       {items.map((it, i) =>
         it === "sep" ? (
-          <li key={i} className="my-1 border-t border-border" />
+          <li key={i} role="separator" className="my-1 border-t border-border" />
         ) : (
-          <li
-            key={i}
-            onClick={() => {
-              onClose();
-              it.run();
-            }}
-            className={clsx("px-3 py-1.5 flex items-center gap-2 cursor-pointer hover:bg-bg-hover", it.danger ? "text-error" : "text-fg")}
-          >
-            {it.icon} {it.label}
+          <li key={i} role="none">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onClose();
+                it.run();
+              }}
+              className={clsx("w-full text-left px-3 py-1.5 flex items-center gap-2 cursor-pointer hover:bg-bg-hover", it.danger ? "text-error" : "text-fg")}
+            >
+              {it.icon} {it.label}
+            </button>
           </li>
         )
       )}

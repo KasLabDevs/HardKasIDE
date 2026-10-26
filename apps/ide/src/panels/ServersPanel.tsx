@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Coins, Copy, KeyRound, Play, Plus, RefreshCw, RotateCw, Square, UserRound } from "lucide-react";
+import { Check, Coins, Copy, KeyRound, Play, Plus, RefreshCw, RotateCw, Square, UserRound } from "lucide-react";
 import { useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { EnvironmentPlugin } from "@/plugins/environment";
@@ -52,9 +52,9 @@ export function ServersPanel() {
     <div className="text-xs">
       {/* ------------------------------------------------------- environment */}
       <section className="border-b border-border">
-        <div className="px-3 py-1.5 label mb-0">Environment</div>
+        <label htmlFor="servers-env-select" className="px-3 py-1.5 label mb-0">Environment</label>
         <div className="px-3 pb-3 space-y-2">
-          <select className="input" value={target} onChange={(e) => setTarget(e.target.value as typeof target)}>
+          <select id="servers-env-select" className="input" value={target} onChange={(e) => setTarget(e.target.value as typeof target)}>
             {ENVIRONMENTS.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.label} · network {e.networkId}
@@ -74,7 +74,7 @@ export function ServersPanel() {
           <span className="label mb-0 flex items-center gap-2">
             <span className={clsx("w-2 h-2 rounded-full", dot)} /> Local node (Docker)
           </span>
-          <button onClick={() => void env.refreshNode()} className="text-fg-muted hover:text-fg" title="Refresh node status">
+          <button type="button" onClick={() => void env.refreshNode()} className="p-0.5 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer" title="Refresh node status" aria-label="Refresh node status">
             <RefreshCw size={13} className={nodeBusy ? "animate-spin" : ""} />
           </button>
         </div>
@@ -97,7 +97,7 @@ export function ServersPanel() {
               </div>
               {docker?.error && <div className="text-[10px] text-fg-muted font-mono break-all">{docker.error}</div>}
               {target === "localnet" && (
-                <button className="btn-ghost w-full justify-center" onClick={() => setTarget("simulator")}>
+                <button type="button" className="btn-ghost w-full justify-center" onClick={() => setTarget("simulator")}>
                   Switch to Simulator
                 </button>
               )}
@@ -123,13 +123,13 @@ export function ServersPanel() {
             {node?.status && <Row k="status" v={node.status} />}
           </div>
           <div className="grid grid-cols-3 gap-1">
-            <button className="btn-ghost justify-center" disabled={nodeBusy !== null || node?.running === true || dockerMissing} onClick={() => void env.startNode()} title={dockerMissing ? "Docker is required" : "hardkas localnet start --toccata"}>
+            <button type="button" className="btn-ghost justify-center" disabled={nodeBusy !== null || node?.running === true || dockerMissing} onClick={() => void env.startNode()} title={dockerMissing ? "Docker is required" : "hardkas localnet start --toccata"}>
               <Play size={12} /> {nodeBusy === "start" ? "…" : "Start"}
             </button>
-            <button className="btn-ghost justify-center" disabled={nodeBusy !== null || node?.running === false} onClick={() => void env.stopNode()} title="hardkas localnet stop">
+            <button type="button" className="btn-ghost justify-center" disabled={nodeBusy !== null || node?.running === false} onClick={() => void env.stopNode()} title="hardkas localnet stop">
               <Square size={12} /> {nodeBusy === "stop" ? "…" : "Stop"}
             </button>
-            <button className="btn-ghost justify-center" disabled={nodeBusy !== null} onClick={() => void env.restartNode()} title="stop, then start">
+            <button type="button" className="btn-ghost justify-center" disabled={nodeBusy !== null} onClick={() => void env.restartNode()} title="stop, then start">
               <RotateCw size={12} /> {nodeBusy === "restart" ? "…" : "Restart"}
             </button>
           </div>
@@ -140,7 +140,7 @@ export function ServersPanel() {
                 ? "Transactions stay in the in-memory Simulator; this node is only used when the environment is Local node."
                 : "Transactions go to the remote testnet node in hardkas.config.ts; this local node is idle."}
           </div>
-          {error && <div className="text-error break-words">{error}</div>}
+          {error && <div role="alert" className="text-error break-words">{error}</div>}
         </div>
       </section>
 
@@ -150,7 +150,7 @@ export function ServersPanel() {
       <section>
         <div className="flex items-center justify-between px-3 py-1.5">
           <span className="label mb-0">Accounts · {accounts[0]?.balanceNetwork ?? "…"}</span>
-          <button onClick={() => void env.refreshAccounts()} className="text-fg-muted hover:text-fg" title="Refresh balances">
+          <button type="button" onClick={() => void env.refreshAccounts()} className="p-0.5 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer" title="Refresh balances" aria-label="Refresh account balances">
             <RefreshCw size={13} className={accountsBusy ? "animate-spin" : ""} />
           </button>
         </div>
@@ -163,21 +163,22 @@ export function ServersPanel() {
         <div className="px-3 pb-3 space-y-1">
           <div className="flex gap-1">
             <input
+              aria-label="New simnet account name"
               className="input"
               placeholder="new account name (simnet)"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && void create()}
             />
-            <button className="btn-ghost shrink-0" disabled={creating || !newName.trim()} onClick={() => void create()} title="hardkas localnet account create <name>">
+            <button type="button" className="btn-ghost shrink-0" disabled={creating || !newName.trim()} onClick={() => void create()} title="hardkas localnet account create <name>">
               <Plus size={12} /> {creating ? "…" : "Create"}
             </button>
           </div>
           <div className="text-fg-muted">Creates a real simnet key stored in plaintext in .hardkas/accounts.real.json (dev only).</div>
         </div>
-        <div className="px-3 pb-3 text-[10px] text-fg-muted flex items-center justify-between">
+        <div className="px-3 pb-3 text-[10px] text-fg-muted flex items-center justify-between tabular-nums">
           <span>{lastRefresh ? `updated ${new Date(lastRefresh).toLocaleTimeString(undefined, { hour12: false })}` : ""}</span>
-          {notice && <span className="text-accent">{notice}</span>}
+          {notice && <span role="status" aria-live="polite" className="text-accent">{notice}</span>}
         </div>
       </section>
     </div>
@@ -186,18 +187,21 @@ export function ServersPanel() {
 
 function AccountCard({ account, env, say }: { account: AccountInfo; env: EnvironmentPlugin; say: (t: string) => void }) {
   const [funding, setFunding] = useState(false);
+  const [copiedAddr, setCopiedAddr] = useState(false);
   const copy = async (text: string, what: string) => {
     await navigator.clipboard.writeText(text);
+    setCopiedAddr(true);
     say(`${what} of ${account.name} copied`);
+    setTimeout(() => setCopiedAddr(false), 1500);
   };
   const copyKey = async () => {
     if (!account.hasPlainKey) {
-      say("Encrypted keystore: the CLI does not export this key");
+      say("Keystore key not exportable");
       return;
     }
     if (!confirm(`Copy the private key of "${account.name}" to the clipboard? It will not be shown.`)) return;
     const ok = await env.copyPrivateKey(account.name);
-    say(ok ? `Private key of ${account.name} copied (hidden)` : "No plaintext key available");
+    say(ok ? `Private key of ${account.name} copied (KasWare compatible)` : "No key available");
   };
   const fund = async () => {
     setFunding(true);
@@ -214,35 +218,43 @@ function AccountCard({ account, env, say }: { account: AccountInfo; env: Environ
   return (
     <li className="rounded border border-border bg-bg-elev p-2 space-y-1">
       <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5 font-semibold text-fg">
-          <UserRound size={13} className="text-accent" /> {account.name}
-          <span className="text-[10px] font-normal text-fg-muted">{account.kind}</span>
+        <span className="flex items-center gap-1.5 font-semibold text-fg truncate">
+          <UserRound size={13} className="text-accent shrink-0" /> <span className="truncate">{account.name}</span>
+          <span className="text-[10px] font-normal text-fg-muted shrink-0">{account.kind}</span>
         </span>
-        <span className="font-mono text-fg">{formatKas(account.balanceSompi)}</span>
+        <span className="font-mono text-fg tabular-nums shrink-0">{formatKas(account.balanceSompi)}</span>
       </div>
       <div className="flex items-center gap-1 min-w-0">
         <span className="text-fg-muted w-14 shrink-0">address</span>
         <span className="font-mono text-[10px] truncate flex-1" title={account.address}>
           {account.address}
         </span>
-        <button onClick={() => void copy(account.address, "Address")} className="text-fg-muted hover:text-accent" title="Copy address (public)">
-          <Copy size={12} />
+        <button
+          type="button"
+          onClick={() => void copy(account.address, "Address")}
+          className="p-0.5 rounded text-fg-muted hover:text-accent cursor-pointer shrink-0"
+          title="Copy address (public)"
+          aria-label={`Copy address of ${account.name}`}
+        >
+          {copiedAddr ? <Check size={12} className="text-ok" /> : <Copy size={12} />}
         </button>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 min-w-0">
         <span className="text-fg-muted w-14 shrink-0">private</span>
-        <span className="font-mono text-[10px] text-fg-muted flex-1 select-none">•••••••••••••••••••••••••••••••• {account.keystore === "plain" ? "(plaintext dev key)" : account.keystore === "encrypted" ? "(argon2id/AES-GCM keystore)" : ""}</span>
+        <span className="font-mono text-[10px] text-fg-muted flex-1 truncate select-none">•••••••••••••••••••••••••••••••• {account.keystore === "plain" ? "(plaintext dev key)" : account.keystore === "dev-keystore" ? "(dev keystore - KasWare ready)" : account.keystore === "encrypted" ? "(argon2id/AES-GCM keystore)" : ""}</span>
         <button
+          type="button"
           onClick={() => void copyKey()}
-          className={clsx("flex items-center gap-1", account.hasPlainKey ? "text-fg-muted hover:text-warn" : "text-fg-muted/40 cursor-not-allowed")}
-          title={account.hasPlainKey ? "Copy private key to clipboard without showing it" : "Not exportable: encrypted keystore"}
+          aria-label={`Copy private key of ${account.name}`}
+          className={clsx("p-0.5 rounded flex items-center gap-1 shrink-0", account.hasPlainKey ? "text-fg-muted hover:text-warn cursor-pointer" : "text-fg-muted/40 cursor-not-allowed")}
+          title={account.hasPlainKey ? "Copy private key to clipboard (KasWare compatible)" : "Not exportable: encrypted keystore"}
         >
           <KeyRound size={12} />
         </button>
       </div>
-      <div className="flex items-center justify-between text-[10px] text-fg-muted">
+      <div className="flex items-center justify-between text-[10px] text-fg-muted tabular-nums">
         <span>{account.utxoCount !== null ? `${account.utxoCount} utxo` : ""}</span>
-        <button onClick={() => void fund()} disabled={funding} className="flex items-center gap-1 hover:text-accent disabled:opacity-50" title="hardkas localnet fund <name> --amount 1000">
+        <button type="button" onClick={() => void fund()} disabled={funding} className="flex items-center gap-1 hover:text-accent disabled:opacity-50 cursor-pointer" title="Simulator: hardkas accounts fund · Local node: hardkas localnet fund --profile toccata-v2">
           <Coins size={11} /> {funding ? "funding…" : "fund 1000"}
         </button>
       </div>
@@ -254,7 +266,7 @@ function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex gap-2 min-w-0">
       <span className="w-16 shrink-0 text-fg-muted">{k}</span>
-      <span className="font-mono text-[11px] truncate" title={v}>
+      <span className="font-mono text-[11px] truncate tabular-nums" title={v}>
         {v}
       </span>
     </div>

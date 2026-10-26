@@ -110,8 +110,9 @@ export function CompilePanel() {
       </label>
 
       <div>
-        <div className="label">Constructor args</div>
+        <label htmlFor="compile-constructor-args" className="label">Constructor args</label>
         <textarea
+          id="compile-constructor-args"
           className="input font-mono h-28 resize-y"
           placeholder={ARGS_PLACEHOLDER}
           value={args}
@@ -120,30 +121,31 @@ export function CompilePanel() {
           disabled={!isSil}
         />
         <div className="flex gap-1 mt-1">
-          <select className="input" value={pubkeyAccount} onChange={(e) => setPubkeyAccount(e.target.value)} disabled={!isSil}>
+          <select aria-label="Account for public key" className="input" value={pubkeyAccount} onChange={(e) => setPubkeyAccount(e.target.value)} disabled={!isSil}>
             {(accounts.length ? accounts : [{ name: "alice" }]).map((a) => (
               <option key={a.name} value={a.name}>
                 {a.name}
               </option>
             ))}
           </select>
-          <button className="btn-ghost shrink-0" disabled={!isSil} onClick={insertPubkey} title="Append this account's x-only public key as a pubkey constructor argument">
+          <button type="button" className="btn-ghost shrink-0" disabled={!isSil} onClick={insertPubkey} title="Append this account's x-only public key as a pubkey constructor argument">
             <KeyRound size={12} /> add pubkey
           </button>
         </div>
         <div className="text-fg-muted mt-1">
           JSON list of <code>{"{kind, value}"}</code>, one per constructor parameter, in order. A <code>pubkey</code> parameter takes an account's key: pick it above. Saved next to the contract as{" "}
-          <code>{activeFile && isSil ? engine.get<CompilerPlugin>("silverCompiler").argsFileFor(activeFile).split("/").pop() : "<name>.constructor-args.json"}</code>.
+          <code className="break-all">{activeFile && isSil ? engine.get<CompilerPlugin>("silverCompiler").argsFileFor(activeFile).split("/").pop() : "<name>.constructor-args.json"}</code>.
         </div>
-        {argsError && <div className="text-error mt-1">{argsError}</div>}
+        {argsError && <div role="alert" className="text-error mt-1">{argsError}</div>}
       </div>
 
-      <button className="btn-primary w-full justify-center" disabled={!isSil || busy} onClick={() => void compile()}>
-        <Hammer size={14} /> {busy ? "Compiling…" : isSil ? `Compile ${activeFile?.split("/").pop()}` : "Open a .sil file to compile"}
+      <button type="button" className="btn-primary w-full justify-center truncate" disabled={!isSil || busy} onClick={() => void compile()}>
+        <Hammer size={14} className="shrink-0" />
+        <span className="truncate">{busy ? "Compiling…" : isSil ? `Compile ${activeFile?.split("/").pop()}` : "Open a .sil file to compile"}</span>
       </button>
 
       {status && (
-        <div className={status.type === "error" ? "text-error" : status.type === "success" ? "text-ok" : "text-info"}>
+        <div role="status" aria-live="polite" className={status.type === "error" ? "text-error" : status.type === "success" ? "text-ok" : "text-info"}>
           {status.title}
         </div>
       )}
@@ -151,27 +153,27 @@ export function CompilePanel() {
       {result && (
         <div className="space-y-2">
           <div className="label">Last compilation</div>
-          <div className="text-fg-muted truncate" title={result.file}>
+          <div className="text-fg-muted truncate font-mono text-[11px]" title={result.file}>
             {result.file}
           </div>
           {result.ok ? (
             result.contracts.length > 0 ? (
               result.contracts.map((c) => (
                 <div key={c.name} className="rounded border border-border bg-bg-elev p-2 space-y-1">
-                  <div className="font-semibold text-fg">{c.name}</div>
+                  <div className="font-semibold text-fg truncate">{c.name}</div>
                   {c.address && (
                     <div className="font-mono text-[11px] text-fg-muted break-all" title="P2SH address">
                       {c.address}
                     </div>
                   )}
-                  {Array.isArray(c.entries) && <div className="text-fg-muted">{c.entries.length} entry point(s)</div>}
+                  {Array.isArray(c.entries) && <div className="text-fg-muted tabular-nums">{c.entries.length} entry point(s)</div>}
                 </div>
               ))
             ) : (
               <div className="text-fg-muted">Compiled, but no contract list was found in the JSON output. See the terminal for the raw record.</div>
             )
           ) : (
-            <pre className="rounded border border-error/40 bg-bg-elev p-2 text-error whitespace-pre-wrap">{result.errorText}</pre>
+            <pre role="alert" className="rounded border border-error/40 bg-bg-elev p-2 text-error whitespace-pre-wrap break-words overflow-auto max-h-60">{result.errorText}</pre>
           )}
         </div>
       )}

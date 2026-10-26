@@ -73,63 +73,79 @@ export class SilverPlugin extends Plugin {
       const deploys = files.filter((f) => /silverDeploy-/.test(f));
       const spendsFiles = files.filter((f) => /silverSpend-/.test(f));
       const spentOutpoints = new Set<string>();
-      const spends: SpendRecord[] = [];
-      for (const f of spendsFiles) {
-        try {
-          const r = JSON.parse(await api.fs.read(f)) as Record<string, unknown>;
-          const so = r.spentOutpoint as { transactionId: string; index: number } | undefined;
-          if (so) spentOutpoints.add(`${so.transactionId}:${so.index}`);
-          spends.push({
-            recordPath: f,
-            txId: String(r.txId ?? ""),
-            contract: String(r.contract ?? ""),
-            entry: String(r.entry ?? ""),
-            to: String(r.to ?? ""),
-            outputSompi: String(r.outputSompi ?? ""),
-            feeSompi: typeof r.feeSompi === "string" ? r.feeSompi : undefined,
-            status: String(r.status ?? ""),
-            createdAt: typeof r.createdAt === "string" ? r.createdAt : undefined,
-            deployContentHash: (r.deployRecord as { contentHash?: string } | undefined)?.contentHash
-          });
-        } catch {
-          // skip unreadable
-        }
-      }
-      const list: DeployRecord[] = [];
-      for (const f of deploys) {
-        try {
-          const r = JSON.parse(await api.fs.read(f)) as Record<string, unknown>;
-          const outpoint = r.outpoint as { transactionId: string; index: number };
-          const compileRel = (r.compileRecord as { path?: string } | undefined)?.path;
-          let abi: DeployRecord["abi"];
-          if (compileRel) {
-            try {
-              const c = JSON.parse(await api.fs.read(compileRel)) as Record<string, unknown>;
-              abi = parseSilArtifact(c.artifactJson, c.contracts as Array<{ name: string; address?: string }> | undefined).find((x) => x.name === r.contract);
-            } catch {
-              abi = undefined;
-            }
+
+      const rawSpends = await Promise.all(
+        spendsFiles.map(async (f): Promise<SpendRecord | null> => {
+          try {
+            const r = JSON.parse(await api.fs.read(f)) as Record<string, unknown>;
+            const so = r.spentOutpoint as { transactionId: string; index: number } | undefined;
+            if (so) spentOutpoints.add(`${so.transactionId}:${so.index}`);
+            return {
+              recordPath: f,
+              txId: String(r.txId ?? ""),
+              contract: String(r.contract ?? ""),
+              entry: String(r.entry ?? ""),
+              to: String(r.to ?? ""),
+              outputSompi: String(r.outputSompi ?? ""),
+              feeSompi: typeof r.feeSompi === "string" ? r.feeSompi : undefined,
+              status: String(r.status ?? ""),
+              createdAt: typeof r.createdAt === "string" ? r.createdAt : undefined,
+              deployContentHash: (r.deployRecord as { contentHash?: string } | undefined)?.contentHash
+            };
+          } catch {
+            return null;
           }
-          list.push({
-            recordPath: f,
-            contentHash: String(r.contentHash ?? ""),
-            contract: String(r.contract ?? ""),
-            address: String(r.address ?? ""),
-            txId: String(r.txId ?? ""),
-            outpoint,
-            valueSompi: String(r.valueSompi ?? ""),
-            feeSompi: typeof r.feeSompi === "string" ? r.feeSompi : undefined,
-            status: String(r.status ?? ""),
-            networkId: typeof r.networkId === "string" ? r.networkId : undefined,
-            createdAt: typeof r.createdAt === "string" ? r.createdAt : undefined,
-            compileRecordPath: compileRel,
-            abi,
-            spent: outpoint ? spentOutpoints.has(`${outpoint.transactionId}:${outpoint.index}`) : false
-          });
-        } catch {
-          // skip unreadable
+        })
+      );
+      const spends = rawSpends.filter((s): s is SpendRecord => s !== null);
+
+      const compileAbis = new Map<string, Promise<ReturnType<typeof parseSilArtifact>>>();
+      const loadCompileAbis = (compileRel: string) => {
+        let p = compileAbis.get(compileRel);
+        if (!p) {
+          p = api.fs
+            .read(compileRel)
+            .then((txt) => {
+              const c = JSON.parse(txt) as Record<string, unknown>;
+              return parseSilArtifact(c.artifactJson, c.contracts as Array<{ name: string; address?: string }> | undefined);
+            })
+            .catch(() => []);
+          compileAbis.set(compileRel, p);
         }
-      }
+        return p;
+      };
+
+      const rawDeploys = await Promise.all(
+        deploys.map(async (f): Promise<DeployRecord | null> => {
+          try {
+            const r = JSON.parse(await api.fs.read(f)) as Record<string, unknown>;
+            const outpoint = r.outpoint as { transactionId: string; index: number };
+            const compileRel = (r.compileRecord as { path?: string } | undefined)?.path;
+            const abis = compileRel ? await loadCompileAbis(compileRel) : [];
+            const abi = abis.find((x) => x.name === r.contract);
+            return {
+              recordPath: f,
+              contentHash: String(r.contentHash ?? ""),
+              contract: String(r.contract ?? ""),
+              address: String(r.address ?? ""),
+              txId: String(r.txId ?? ""),
+              outpoint,
+              valueSompi: String(r.valueSompi ?? ""),
+              feeSompi: typeof r.feeSompi === "string" ? r.feeSompi : undefined,
+              status: String(r.status ?? ""),
+              networkId: typeof r.networkId === "string" ? r.networkId : undefined,
+              createdAt: typeof r.createdAt === "string" ? r.createdAt : undefined,
+              compileRecordPath: compileRel,
+              abi,
+              spent: outpoint ? spentOutpoints.has(`${outpoint.transactionId}:${outpoint.index}`) : false
+            };
+          } catch {
+            return null;
+          }
+        })
+      );
+      const list = rawDeploys.filter((d): d is DeployRecord => d !== null);
+
       list.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
       spends.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
       useSilver.setState({ deployments: list, spends });

@@ -35,7 +35,7 @@ export class EnvironmentPlugin extends Plugin {
       location: "sidePanel",
       icon: Server,
       order: 15,
-      methods: ["refresh", "refreshNode", "refreshDocker", "refreshAccounts", "startNode", "stopNode", "restartNode", "createAccount", "copyPrivateKey", "fund"],
+      methods: ["refresh", "refreshNode", "refreshDocker", "refreshAccounts", "startNode", "stopNode", "restartNode", "createAccount", "copyPrivateKey", "getPrivateKey", "fund"],
       events: ["nodeChanged", "accountsChanged"]
     });
   }
@@ -82,6 +82,8 @@ export class EnvironmentPlugin extends Plugin {
     const env = useEnv.getState();
     await this.refreshDocker();
     try {
+      // `localnet status` knows the Toccata profile: identity verification, miner, DAA, server version.
+      // `node status` is the generic Docker view; parseNodeStatus understands both shapes.
       const run = await this.console().runHardkas(["localnet", "status", "--json"], { quiet });
       const raw = run.result as Record<string, unknown> | null;
       if (!raw) throw new Error("localnet status returned no JSON");
@@ -96,10 +98,12 @@ export class EnvironmentPlugin extends Plugin {
     }
   }
 
+  /** `localnet start --toccata` starts (or adopts) rusty-kaspad AND creates the dev accounts alice…erin. */
   async startNode(): Promise<void> {
     await this.nodeAction("start", ["localnet", "start", "--toccata", "--json"]);
   }
 
+  /** `localnet stop` stops the node and its CPU miner (plain `node stop` would leave the miner running). */
   async stopNode(): Promise<void> {
     await this.nodeAction("stop", ["localnet", "stop", "--toccata", "--json"]);
   }
@@ -113,6 +117,7 @@ export class EnvironmentPlugin extends Plugin {
     } finally {
       env.setNodeBusy(null);
       await this.refreshNode(true);
+      await this.refreshAccounts();
     }
   }
 
@@ -128,46 +133,60 @@ export class EnvironmentPlugin extends Plugin {
     }
   }
 
+  private accountsSeq = 0;
+
   async refreshAccounts(): Promise<AccountInfo[]> {
+    const seq = ++this.accountsSeq;
     const env = useEnv.getState();
     env.setAccountsBusy(true);
     try {
       const network = networkForTarget(useIde.getState().target);
-      const run = await this.console().runHardkas(["accounts", "list", "--json"], { quiet: true });
+      const [run, devKeyNames] = await Promise.all([
+        this.console().runHardkas(["accounts", "list", "--json"], { quiet: true }),
+        api.devkeys.list().catch(() => [] as string[])
+      ]);
+      if (seq !== this.accountsSeq) return useEnv.getState().accounts;
+      const devKeySet = new Set(devKeyNames);
       const list = Array.isArray(run.result) ? (run.result as Array<{ name: string; kind: string; address: string }>) : [];
-      const plainKeys = await this.readPlainKeys();
-      const accounts: AccountInfo[] = list.map((a) => ({
-        name: a.name,
-        kind: a.kind,
-        address: a.address,
-        balanceSompi: null,
-        utxoCount: null,
-        balanceNetwork: network,
-        hasPlainKey: plainKeys.has(a.name),
-        keystore: plainKeys.has(a.name) ? "plain" : a.kind === "synthetic" ? "encrypted" : "unknown"
-      }));
+      const accounts: AccountInfo[] = list.map((a) => {
+        const canExport = devKeySet.has(a.name);
+        return {
+          name: a.name,
+          kind: a.kind,
+          address: a.address,
+          balanceSompi: null,
+          utxoCount: null,
+          balanceNetwork: network,
+          hasPlainKey: canExport,
+          keystore: canExport ? "dev-keystore" : a.kind === "synthetic" ? "encrypted" : "unknown"
+        };
+      });
       env.setAccounts(accounts);
       this.emit("accountsChanged", accounts);
-      // Balances one by one (the CLI has no batch call); keep the UI responsive.
-      for (const a of accounts) {
-        try {
-          const b = await this.console().runHardkas(["accounts", "balance", a.name, "--network", network, "--json"], { quiet: true });
-          const res = (b.result as { result?: { balanceSompi?: string; utxoCount?: number; address?: string } } | null)?.result;
-          // `accounts list` always reports the synthetic address; `accounts balance` reports the one used on this network.
-          env.patchAccount(a.name, {
-            balanceSompi: res?.balanceSompi ?? "0",
-            utxoCount: res?.utxoCount ?? 0,
-            balanceNetwork: network,
-            address: res?.address ?? a.address
-          });
-        } catch {
-          env.patchAccount(a.name, { balanceSompi: "0", utxoCount: 0, balanceNetwork: network });
-        }
-      }
+      await Promise.all(
+        accounts.map(async (a) => {
+          try {
+            const b = await this.console().runHardkas(["accounts", "balance", a.name, "--network", network, "--json"], { quiet: true });
+            if (seq !== this.accountsSeq) return;
+            const res = (b.result as { result?: { balanceSompi?: string; utxoCount?: number; address?: string } } | null)?.result;
+            env.patchAccount(a.name, {
+              balanceSompi: res?.balanceSompi ?? "0",
+              utxoCount: res?.utxoCount ?? 0,
+              balanceNetwork: network,
+              address: res?.address ?? a.address
+            });
+          } catch {
+            if (seq !== this.accountsSeq) return;
+            env.patchAccount(a.name, { balanceSompi: "0", utxoCount: 0, balanceNetwork: network });
+          }
+        })
+      );
       return useEnv.getState().accounts;
     } finally {
-      env.setAccountsBusy(false);
-      env.touch();
+      if (seq === this.accountsSeq) {
+        env.setAccountsBusy(false);
+        env.touch();
+      }
     }
   }
 
@@ -177,79 +196,87 @@ export class EnvironmentPlugin extends Plugin {
     await this.refreshAccounts();
   }
 
+  /**
+   * Funding depends on the environment:
+   *   Simulator  → `accounts fund` (HardKas' in-memory faucet; marked deprecated but the only simulator faucet)
+   *   Local node → `localnet fund --profile toccata-v2` (mines real simnet blocks to the account)
+   *   Testnet    → no faucet from the IDE
+   */
   async fund(name: string, amountKas: string): Promise<void> {
     const target = useIde.getState().target;
     if (target === "localnet") {
       await this.console().runHardkas(["localnet", "fund", name, "--amount", amountKas, "--profile", "toccata-v2", "--json"]);
+    } else if (target === "simulator") {
+      await this.console().runHardkas(["accounts", "fund", name, "--amount", amountKas]);
     } else {
-      await this.console().runHardkas(["localnet", "fund", name, "--amount", amountKas, "--json"]);
+      throw new Error("No faucet for the public testnet from the IDE; use a testnet faucet and send to the address.");
     }
     await this.refreshAccounts();
   }
 
   /**
-   * Copies the private key to the clipboard without ever rendering it.
-   * Only accounts stored in plaintext by `localnet account create` can be copied;
-   * alice…erin live in argon2id/AES-GCM keystores the CLI does not export.
+   * Copies the raw hex private key to the clipboard without rendering it.
+   * Works for both accounts.real.json and HardKas dev keystores (.hardkas/dev-accounts).
+   * Format is raw 64 hex characters, directly importable into KasWare.
    */
   async copyPrivateKey(name: string): Promise<boolean> {
-    const keys = await this.readPlainKeys();
-    const key = keys.get(name);
+    const key = await this.getPrivateKey(name);
     if (!key) return false;
     await navigator.clipboard.writeText(key);
-    this.console().info(`Private key of ${name} copied to the clipboard (simnet dev account). It was not displayed.`);
+    this.console().info(`Private key of ${name} copied to clipboard (raw hex, KasWare compatible).`);
     return true;
   }
 
-  private async readPlainKeys(): Promise<Map<string, string>> {
-    const map = new Map<string, string>();
+  /** Returns the raw hex private key so the Accounts view can reveal it for KasWare; null if not exportable. */
+  async getPrivateKey(name: string): Promise<string | null> {
     try {
-      const text = await api.fs.read(".hardkas/accounts.real.json");
-      const parsed = JSON.parse(text) as unknown;
-      const entries: Array<Record<string, unknown>> = Array.isArray(parsed)
-        ? (parsed as Array<Record<string, unknown>>)
-        : parsed && typeof parsed === "object" && Array.isArray((parsed as { accounts?: unknown }).accounts)
-          ? ((parsed as { accounts: Array<Record<string, unknown>> }).accounts)
-          : parsed && typeof parsed === "object"
-            ? Object.entries(parsed as Record<string, unknown>).map(([k, v]) => ({ name: k, ...(v as Record<string, unknown>) }))
-            : [];
-      for (const e of entries) {
-        const name = typeof e.name === "string" ? e.name : typeof e.label === "string" ? e.label : null;
-        const key = ["privateKey", "privateKeyHex", "secretKey", "secret"].map((k) => e[k]).find((v) => typeof v === "string") as string | undefined;
-        if (name && key) map.set(name, key);
-      }
+      const dev = await api.devkeys.reveal(name);
+      return dev.privateKey;
     } catch {
-      // no plaintext store: nothing to copy
+      return null;
     }
-    return map;
   }
 }
 
 function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {
+  const container = (raw.container ?? {}) as Record<string, unknown>;
+  const rpc = (raw.rpc ?? {}) as Record<string, unknown>;
   const node = (raw.node ?? {}) as Record<string, unknown>;
   const identity = (raw.identity ?? {}) as Record<string, unknown>;
   const observed = (identity.observed ?? {}) as Record<string, unknown>;
   const server = (observed.server ?? {}) as Record<string, unknown>;
   const expected = (identity.expected ?? {}) as Record<string, unknown>;
   const miner = (raw.miner ?? {}) as Record<string, unknown>;
-  const transports = (node.transports ?? {}) as Record<string, { port?: number; ready?: boolean }>;
-  const running = Boolean(node.running);
-  const rpcReady = Boolean(node.rpcReady ?? node.ready);
+
+  const running = Boolean(container.running ?? node.running);
+  const rpcReady = Boolean(rpc.ready ?? node.rpcReady ?? node.ready);
+
+  const rpcTransports = (rpc.transports ?? {}) as Record<string, { port?: number; ready?: boolean }>;
+  const nodeTransports = (node.transports ?? {}) as Record<string, { port?: number; ready?: boolean }>;
+  const transports = Object.keys(rpcTransports).length > 0 ? rpcTransports : nodeTransports;
+
+  const nodePorts = (node.ports ?? {}) as Record<string, number | undefined>;
+  const ports: NodeStatus["ports"] = {
+    rpc: rpcTransports.grpc?.port ?? nodePorts.rpc,
+    borshRpc: rpcTransports.borsh?.port ?? nodePorts.borshRpc,
+    jsonRpc: rpcTransports.json?.port ?? nodePorts.jsonRpc
+  };
+
   return {
     profile: String(raw.profile ?? "toccata-v2"),
     status: String(raw.status ?? (rpcReady ? "READY" : running ? "STARTING" : "STOPPED")),
     running,
     rpcReady,
-    containerName: (node.containerName as string | undefined) ?? (expected.containerName as string | undefined),
-    image: (node.image as string | undefined) ?? (expected.image as string | undefined),
-    network: (node.network as string | undefined) ?? (expected.network as string | undefined),
-    rpcUrl: node.rpcUrl as string | undefined,
-    ports: node.ports as NodeStatus["ports"],
+    containerName: (container.name as string | undefined) ?? (node.containerName as string | undefined) ?? (expected.containerName as string | undefined),
+    image: (container.image as string | undefined) ?? (node.image as string | undefined) ?? (expected.image as string | undefined),
+    network: (node.network as string | undefined) ?? (expected.network as string | undefined) ?? "simnet",
+    rpcUrl: (rpc.url as string | undefined) ?? (node.rpcUrl as string | undefined),
+    ports,
     serverVersion: (server.serverVersion as string | undefined) ?? (expected.serverVersion as string | undefined),
     isSynced: server.isSynced as boolean | undefined,
     virtualDaaScore: server.virtualDaaScore as string | undefined,
     miner: miner && typeof miner.running === "boolean" ? { running: Boolean(miner.running), status: String(miner.status ?? "") } : undefined,
-    lastError: (node.lastError as string | null | undefined) ?? null,
+    lastError: (rpc.lastError as string | null | undefined) ?? (node.lastError as string | null | undefined) ?? null,
     checkedAt: identity.checkedAt as string | undefined,
     raw: { ...raw, transports }
   };

@@ -1,4 +1,4 @@
-import { Copy, Link2, Wallet } from "lucide-react";
+import { Check, Copy, Link2, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useEnv } from "@/store/env";
 import { useIde } from "@/store/ide";
@@ -31,6 +31,7 @@ export function WalletCard() {
   const [accounts, setAccounts] = useState<string[]>([]);
   const [network, setNetwork] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   useEffect(() => {
     const check = () => setProvider(window.kasware ?? null);
@@ -49,10 +50,14 @@ export function WalletCard() {
     { k: "address prefix", v: networkName === "simnet" ? "kaspasim:" : networkName === "devnet" ? "kaspadev:" : "kaspatest:" }
   ];
 
-  const copy = async (text: string) => {
+  const copy = async (key: string, text: string) => {
     await navigator.clipboard.writeText(text);
-    setMsg("copied");
-    setTimeout(() => setMsg(null), 1500);
+    setCopiedKey(key);
+    setMsg(`Copied ${key}`);
+    setTimeout(() => {
+      setCopiedKey((k) => (k === key ? null : k));
+      setMsg(null);
+    }, 1500);
   };
 
   const connect = async () => {
@@ -96,8 +101,14 @@ export function WalletCard() {
               <span className="font-mono text-[11px] truncate flex-1" title={r.v}>
                 {r.v}
               </span>
-              <button onClick={() => void copy(r.v)} className="text-fg-muted hover:text-accent" title="Copy">
-                <Copy size={11} />
+              <button
+                type="button"
+                onClick={() => void copy(r.k, r.v)}
+                className="p-0.5 rounded text-fg-muted hover:text-accent cursor-pointer shrink-0"
+                title={`Copy ${r.k}`}
+                aria-label={`Copy ${r.k}`}
+              >
+                {copiedKey === r.k ? <Check size={11} className="text-ok" /> : <Copy size={11} />}
               </button>
             </div>
           ))}
@@ -106,10 +117,10 @@ export function WalletCard() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button className="btn-primary flex-1 justify-center" disabled={!provider} onClick={() => void connect()} title={provider ? "kasware.requestAccounts()" : "Open the IDE in Chrome with the KasWare extension to connect"}>
+          <button type="button" className="btn-primary flex-1 justify-center" disabled={!provider} onClick={() => void connect()} title={provider ? "kasware.requestAccounts()" : "Open the IDE in Chrome with the KasWare extension to connect"}>
             <Link2 size={12} /> {accounts.length ? "Connected" : "Connect KasWare"}
           </button>
-          <button className="btn-ghost flex-1 justify-center" disabled={!provider?.switchNetwork} onClick={() => void switchNet()} title={`kasware.switchNetwork("kaspa_${networkName}")`}>
+          <button type="button" className="btn-ghost flex-1 justify-center" disabled={!provider?.switchNetwork} onClick={() => void switchNet()} title={`kasware.switchNetwork("kaspa_${networkName}")`}>
             Switch to {networkName}
           </button>
         </div>
@@ -120,7 +131,7 @@ export function WalletCard() {
           </div>
         )}
         {!provider && <div className="text-[10px] text-fg-muted">No <code>window.kasware</code> here. Open http://localhost:5173 in Chrome with KasWare installed; the IDE will detect it and let you authorise this site.</div>}
-        {msg && <div className="text-[10px] text-accent">{msg}</div>}
+        {msg && <div role="status" aria-live="polite" className="text-[10px] text-accent">{msg}</div>}
       </div>
     </section>
   );
