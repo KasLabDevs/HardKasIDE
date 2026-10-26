@@ -45,6 +45,7 @@ export function CommandPalette() {
       { id: "run", title: "Open Deploy & Run", run: () => ide().setActiveSidePlugin("deployRun") },
       { id: "servers", title: "Open Servers (node & accounts)", run: () => ide().setActiveSidePlugin("environment") },
       { id: "accounts", title: "Open Accounts (keys & balances)", run: () => ide().setActiveSidePlugin("accounts") },
+      { id: "assistant", title: "Open Assistant (chat about Kaspa & SilverScript)", hint: "grounded in docs.kaspa.org", run: () => ide().revealPlugin("assistant", "Assistant") },
       { id: "artifacts", title: "Open Artifacts", run: () => ide().setActiveSidePlugin("artifacts") },
       { id: "files", title: "Open Explorer", run: () => ide().setActiveSidePlugin("files") },
       { id: "node:start", title: "Node: start localnet (rusty-kaspad)", hint: "hardkas localnet start --toccata", run: () => engine.get<EnvironmentPlugin>("environment").startNode() },
