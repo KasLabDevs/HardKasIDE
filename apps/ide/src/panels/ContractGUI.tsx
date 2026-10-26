@@ -9,7 +9,7 @@ import { useIde } from "@/store/ide";
 import { hexToBytes } from "@/utils/kaspaAddress";
 
 /**
- * Remix-style ContractGUI for SilverScript:
+ * Contract GUI for SilverScript:
  *   - compiled contracts → Deploy (fund the P2SH output on localnet)
  *   - deployed instances → one button per entry, typed inputs, account signatures
  */
@@ -91,7 +91,7 @@ export function ContractGUI() {
             className="btn-ghost shrink-0"
             disabled={!atPath}
             onClick={() => void silver.loadDeployRecord(atPath).catch(() => undefined)}
-            title="Load an existing deploy record (Remix 'At Address')"
+            title="Load an existing deploy record ('At address')"
             aria-label="Load deploy record"
           >
             <FolderOpen size={12} />
