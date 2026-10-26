@@ -14,7 +14,10 @@ export function IconRail({ onHome }: Props) {
   const active = useIde((s) => s.activeSidePlugin);
   const setActive = useIde((s) => s.setActiveSidePlugin);
   const docks = useIde((s) => s.docks);
-  const plugins = engine.listByLocation("sidePanel").filter((p) => (docks[p.profile.name] ?? "left") === "left");
+  // Every side-panel plugin gets an icon wherever it is docked, so a panel can never get lost:
+  // clicking it shows it (left column, stacked, right column or editor tab).
+  const plugins = engine.listByLocation("sidePanel");
+  const revealPlugin = useIde((s) => s.revealPlugin);
   const mainViews = engine.listByLocation("mainPanel");
   const openView = useIde((s) => s.openView);
   const activeFile = useIde((s) => s.activeFile);
@@ -34,15 +37,17 @@ export function IconRail({ onHome }: Props) {
       <div className="w-6 border-t border-border my-1" role="separator" />
       {plugins.map((p) => {
         const Icon = p.profile.icon;
-        const isActive = active === p.profile.name;
+        const dock = docks[p.profile.name] ?? "left";
+        const isActive = dock === "left" ? active === p.profile.name : dock === "main" ? activeFile === `view:${p.profile.name}` : false;
+        const where = dock === "left" ? "" : dock === "right" ? " (docked on the right)" : dock === "leftBottom" ? " (docked below the Explorer)" : " (open as a tab)";
         return (
           <button
             key={p.profile.name}
             type="button"
-            title={p.profile.displayName}
-            aria-label={p.profile.displayName}
+            title={`${p.profile.displayName}${where}`}
+            aria-label={`${p.profile.displayName}${where}`}
             aria-pressed={isActive}
-            onClick={() => setActive(p.profile.name)}
+            onClick={() => (dock === "left" ? setActive(p.profile.name) : revealPlugin(p.profile.name, p.profile.displayName))}
             className={clsx(
               "w-10 h-10 grid place-items-center rounded relative cursor-pointer transition-colors",
               isActive ? "text-accent bg-bg-hover" : "text-fg-muted hover:text-fg hover:bg-bg-hover"
@@ -50,6 +55,7 @@ export function IconRail({ onHome }: Props) {
           >
             {isActive && <span className="absolute left-0 top-2 bottom-2 w-0.5 bg-accent rounded-r" />}
             {Icon ? <Icon size={18} /> : <span className="text-xs font-semibold">{p.profile.displayName[0]}</span>}
+            {dock !== "left" && <span className="absolute right-1 bottom-1 w-1.5 h-1.5 rounded-full bg-fg-muted/70" aria-hidden="true" />}
           </button>
         );
       })}

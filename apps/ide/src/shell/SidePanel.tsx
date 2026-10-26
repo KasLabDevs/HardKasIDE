@@ -18,6 +18,8 @@ export function SidePanel() {
   const all = engine.listByLocation("sidePanel");
   const left = all.filter((p) => (docks[p.profile.name] ?? "left") === "left");
   const below = all.filter((p) => docks[p.profile.name] === "leftBottom" && p.view);
+  // If the selected view lives elsewhere (docked right, as a tab…), show the first left view instead of an empty column.
+  const shown = left.some((p) => p.profile.name === active) ? active : (left.find((p) => p.profile.name === "files") ?? left[0])?.profile.name;
 
   return (
     <aside className="h-full bg-bg-panel border-r border-border flex flex-col min-w-0">
@@ -35,7 +37,7 @@ export function SidePanel() {
               {left.map((p) => {
                 const View = p.view;
                 if (!View) return null;
-                const isActive = p.profile.name === active;
+                const isActive = p.profile.name === shown;
                 return (
                   <section key={p.profile.name} className="flex-1 min-h-0 flex-col" style={{ display: isActive ? "flex" : "none" }}>
                     <header className="panel-title flex items-center justify-between">
@@ -50,7 +52,7 @@ export function SidePanel() {
                   </section>
                 );
               })}
-              {left.length > 0 && !left.some((p) => p.profile.name === active) && <div className="p-3 text-xs text-fg-muted">Pick a view in the rail on the left.</div>}
+              {left.length === 0 && <div className="p-3 text-xs text-fg-muted">Every view is docked elsewhere. Click an icon in the rail to show it, or reset the layout from the command palette.</div>}
             </div>
           </Panel>
           {below.map((p) => {

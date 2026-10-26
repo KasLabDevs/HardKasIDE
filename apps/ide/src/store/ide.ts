@@ -154,6 +154,8 @@ interface IdeState {
   /** Opens (or focuses) a main-panel plugin view as a tab. */
   openView(pluginName: string, title: string): void;
   setActiveSidePlugin(name: string): void;
+  /** Puts every panel back where it starts (Assistant on the right, the rest on the left) and shows outline and console. */
+  resetLayout(): void;
   /** Shows a plugin wherever it is docked (left column, stacked, right column or editor tab). */
   revealPlugin(name: string, title?: string): void;
   /** Last plugin revealed in a column that is always visible (lets a view focus itself). */
@@ -195,6 +197,15 @@ export const useIde = create<IdeState>((set, get) => ({
       if (dock === "leftBottom" && pluginName === "files") return s; // the Explorer anchors the left column
       return { docks, activeSidePlugin, outlineOpen: dock === "right" ? true : s.outlineOpen };
     }),
+
+  resetLayout: () => {
+    try {
+      localStorage.removeItem(DOCKS_KEY);
+    } catch {
+      // ignore
+    }
+    set({ docks: { ...DEFAULT_DOCKS }, activeSidePlugin: "files", outlineOpen: true, terminalOpen: true });
+  },
 
   setWorkspace: (workspace) => set({ workspace }),
   setTree: (tree) => set({ tree }),
