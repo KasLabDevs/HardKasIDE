@@ -472,6 +472,33 @@ app.get("/api/system", async (c) => {
   });
 });
 
+// ---------------------------------------------------------------- blocks the local CPU miner found (Explorer)
+
+const MINER_CONTAINER = process.env.HARDKAS_MINER_CONTAINER ?? "hardkas-toccata-miner";
+
+app.get("/api/node/blocks", async (c) => {
+  const limit = Math.min(100, Math.max(1, Number(c.req.query("limit") ?? 25) || 25));
+  const { execFile } = await import("node:child_process");
+  const run = (args: string[]) =>
+    new Promise<{ ok: boolean; out: string; err: string }>((resolve) => {
+      execFile("docker", args, { timeout: 10000, windowsHide: true, maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => resolve({ ok: !error, out: String(stdout), err: String(stderr) }));
+    });
+  const state = await run(["inspect", "-f", "{{.State.Running}}", MINER_CONTAINER]);
+  if (!state.ok) return c.json({ ok: true, exists: false, running: false, blocks: [], windowBlocks: 0, perSecond: 0 });
+  const logs = await run(["logs", "--timestamps", "--tail", "800", MINER_CONTAINER]);
+  // docker logs writes the container's stderr to ours; the miner logs there. "Found a block: <hash>" (the hash can wrap to the next line).
+  const text = `${logs.out}\n${logs.err}`;
+  const found: Array<{ hash: string; at: string }> = [];
+  for (const m of text.matchAll(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+\[[^\]]*\]\s*Found a block:\s*([0-9a-f]{64})/gm)) found.push({ at: m[1], hash: m[2] });
+  const windowBlocks = found.length;
+  let perSecond = 0;
+  if (windowBlocks > 1) {
+    const span = (Date.parse(found[windowBlocks - 1].at) - Date.parse(found[0].at)) / 1000;
+    if (span > 0) perSecond = Number(((windowBlocks - 1) / span).toFixed(2));
+  }
+  return c.json({ ok: true, exists: true, running: state.out.trim() === "true", blocks: found.slice(-limit).reverse(), windowBlocks, perSecond });
+});
+
 app.get("/", (c) =>
   c.json({ name: "hardkas-ide-server", port: PORT, devServer: DEV_SERVER, workspace: getRoot(), hint: "Open the IDE at http://localhost:5173" })
 );

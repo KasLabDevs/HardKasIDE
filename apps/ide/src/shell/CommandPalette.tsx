@@ -42,6 +42,7 @@ export function CommandPalette() {
       { id: "lineage", title: "Show lineage graph", hint: "live artifact provenance", run: () => engine.get<LineagePlugin>("lineage").open() },
       { id: "tests", title: "Run all tests", hint: "vitest, JUnit-style results", run: () => engine.call("tests", "run") },
       { id: "tests:view", title: "Show Tests view", run: () => engine.call("tests", "open") },
+      { id: "history", title: "Show Run history (payments, deploys, contract calls)", run: () => engine.call("runHistory", "open") },
       { id: "outline", title: "Toggle Outline", run: () => ide().setOutlineOpen(!ide().outlineOpen) },
       { id: "layout:reset", title: "Layout: reset panels to their default places", hint: "undo any docking", run: () => ide().resetLayout() },
       { id: "run", title: "Open Deploy & Run", run: () => ide().setActiveSidePlugin("deployRun") },
