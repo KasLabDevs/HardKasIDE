@@ -8,6 +8,7 @@ import type { LineagePlugin } from "@/plugins/lineage";
 import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, envOf, useIde, type ExecutionTarget } from "@/store/ide";
 import { closeAllEditors, closeEditor, confirmAndResetNode, editorCommand, isDirty, isTextFile, newFile, openPalette, saveAll, zoomBy } from "./actions";
 import { HardKasMark } from "./Logo";
+import { WindowControls, isDesktopApp } from "./WindowControls";
 
 type Entry =
   | { type: "item"; label: string; keys?: string; run: () => unknown; disabled?: boolean; checked?: boolean }
@@ -212,12 +213,12 @@ export function TitleBar({ onHome }: Props) {
   }, [activeFile, projectName, openFiles]);
 
   return (
-    <header className="titlebar relative z-40 h-9 shrink-0 flex items-center gap-1 pl-2 pr-2 border-b border-border bg-bg-panel select-none">
-      <span className="w-7 h-7 grid place-items-center shrink-0" title="HardKas IDE">
+    <header data-tauri-drag-region className="titlebar relative z-40 h-9 shrink-0 flex items-center gap-1 pl-2 pr-2 border-b border-border bg-bg-panel select-none">
+      <span data-tauri-drag-region className="w-7 h-7 grid place-items-center shrink-0" title="HardKas IDE">
         <HardKasMark size={20} />
       </span>
       <MenuBar menus={menus} />
-      <div className="flex-1 min-w-0 flex justify-center px-2">
+      <div data-tauri-drag-region className="flex-1 min-w-0 h-full flex items-center justify-center px-2">
         <button
           type="button"
           onClick={openPalette}
@@ -244,6 +245,7 @@ export function TitleBar({ onHome }: Props) {
           <Settings size={15} />
         </button>
       </div>
+      {isDesktopApp() && <WindowControls />}
       {about && <AboutDialog onClose={() => setAbout(false)} />}
     </header>
   );
