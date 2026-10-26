@@ -3,7 +3,7 @@ import { api } from "@/api/client";
 import { Plugin } from "@/engine/engine";
 import { copyText } from "@/utils/clipboard";
 import { ServersPanel } from "@/panels/ServersPanel";
-import { useEnv, type AccountInfo, type NodeStatus } from "@/store/env";
+import { useEnv, type AccountInfo, type NodeOp, type NodeStatus } from "@/store/env";
 import { useIde, userChoseTarget, type ExecutionTarget } from "@/store/ide";
 import type { ConsolePlugin } from "./console";
 
@@ -117,14 +117,30 @@ export class EnvironmentPlugin extends Plugin {
     }
   }
 
+  // ---- node operations: every one shows its steps (store.nodeOp) so nobody stares at stale balances ----
+
+  private stepStopNode = (): OpStep => ({ label: "Stopping the node and its miner", run: async () => this.runCli(["localnet", "stop", "--toccata", "--json"], "Could not stop the node") });
+  private stepStartNode = (): OpStep => ({ label: "Starting rusty-kaspad (Docker)", run: async () => this.runCli(["localnet", "start", "--toccata", "--json"], "Could not start the node") });
+  private stepWaitReady = (): OpStep => ({ label: "Waiting for the node to answer on RPC", run: async (note) => this.waitUntilReady(note) });
+  private stepLoadAccounts = (): OpStep => ({
+    label: "Loading the dev accounts and their balances",
+    run: async () => {
+      await this.refreshAccounts();
+    }
+  });
+
   /** `localnet start --toccata` starts (or adopts) rusty-kaspad AND creates the dev accounts alice…erin. */
   async startNode(): Promise<void> {
-    await this.nodeAction("start", ["localnet", "start", "--toccata", "--json"]);
+    await this.runOp("start", "Starting the local node", [this.stepStartNode(), this.stepWaitReady(), this.stepLoadAccounts()], "The node is ready. Fund an account to mine its first KAS.");
   }
 
   /** `localnet stop` stops the node and its CPU miner (plain `node stop` would leave the miner running). */
   async stopNode(): Promise<void> {
-    await this.nodeAction("stop", ["localnet", "stop", "--toccata", "--json"]);
+    await this.runOp("stop", "Stopping the local node", [this.stepStopNode()], "The node is stopped. Transactions on the Local node will fail until it is started.");
+  }
+
+  async restartNode(): Promise<void> {
+    await this.runOp("restart", "Restarting the local node", [this.stepStopNode(), this.stepStartNode(), this.stepWaitReady(), this.stepLoadAccounts()], "The node is back.");
   }
 
   /**
@@ -133,46 +149,71 @@ export class EnvironmentPlugin extends Plugin {
    * asked the user to confirm: this is destructive.
    */
   async resetNode(): Promise<void> {
-    const env = useEnv.getState();
-    env.setNodeBusy("reset");
-    try {
-      const c = this.console();
-      await c.runHardkas(["localnet", "stop", "--toccata", "--json"]);
-      const wipe = await c.runHardkas(["node", "reset", "--yes"]);
-      if (wipe.status !== "succeeded") throw new Error(`node reset failed (exit ${wipe.exitCode}). The local chain was not wiped.`);
-      await c.runHardkas(["localnet", "start", "--toccata", "--json"]);
-      c.info("Local node reset from scratch: empty chain, dev accounts recreated. Fund an account to mine its first KAS.");
-    } catch (e) {
-      this.console().error(e instanceof Error ? e.message : String(e));
-    } finally {
-      env.setNodeBusy(null);
-      await this.refreshNode(true);
-      await this.refreshAccounts();
+    await this.runOp(
+      "reset",
+      "Resetting the local node from scratch",
+      [
+        this.stepStopNode(),
+        { label: "Wiping all local chain data", run: async () => this.runCli(["node", "reset", "--yes"], "node reset failed: the local chain was not wiped") },
+        { ...this.stepStartNode(), label: "Starting a fresh node" },
+        this.stepWaitReady(),
+        { ...this.stepLoadAccounts(), label: "Recreating the dev accounts (empty)" }
+      ],
+      "Fresh empty chain. Fund an account to mine its first KAS."
+    );
+  }
+
+  /** Runs a hardkas command through the console and throws with `failure` when it does not succeed. */
+  private async runCli(args: string[], failure: string): Promise<void> {
+    const run = await this.console().runHardkas(args);
+    if (run.status !== "succeeded") throw new Error(`${failure} (exit ${run.exitCode}). See the Console for details.`);
+  }
+
+  /** Polls `localnet status` until the node answers RPC (up to ~2 minutes: first start pulls the image and mines). */
+  private async waitUntilReady(note: (text: string) => void): Promise<void> {
+    const deadline = Date.now() + 120_000;
+    let tries = 0;
+    for (;;) {
+      const node = await this.refreshNode(true);
+      if (node?.rpcReady) return;
+      if (Date.now() > deadline) throw new Error("The node did not answer on RPC within 2 minutes. Check the Console and Docker.");
+      tries += 1;
+      note(`attempt ${tries}…`);
+      await new Promise((r) => setTimeout(r, 2000));
     }
   }
 
-  async restartNode(): Promise<void> {
+  /** Executes the steps in order, publishing progress; the Accounts/Servers/Deploy views lock while it runs. */
+  private async runOp(kind: NodeOp["kind"], title: string, steps: OpStep[], next: string): Promise<void> {
     const env = useEnv.getState();
-    env.setNodeBusy("restart");
-    try {
-      await this.console().runHardkas(["localnet", "stop", "--toccata", "--json"]);
-      await this.console().runHardkas(["localnet", "start", "--toccata", "--json"]);
-    } finally {
-      env.setNodeBusy(null);
-      await this.refreshNode(true);
-      await this.refreshAccounts();
+    if (env.nodeOp?.state === "running") return; // one operation at a time
+    env.setNodeBusy(kind);
+    env.setNodeOp({ kind, title, steps: steps.map((s) => ({ label: s.label, status: "pending" })), state: "running", startedAt: Date.now() });
+    let failed: string | null = null;
+    for (let i = 0; i < steps.length; i++) {
+      useEnv.getState().patchNodeOp(i, { status: "running" });
+      try {
+        await steps[i].run((detail) => useEnv.getState().patchNodeOp(i, { detail }));
+        useEnv.getState().patchNodeOp(i, { status: "done", detail: undefined });
+      } catch (e) {
+        failed = e instanceof Error ? e.message : String(e);
+        useEnv.getState().patchNodeOp(i, { status: "error", detail: failed });
+        this.console().error(failed);
+        break;
+      }
     }
-  }
-
-  private async nodeAction(label: string, args: string[]): Promise<void> {
-    const env = useEnv.getState();
-    env.setNodeBusy(label);
-    try {
-      await this.console().runHardkas(args);
-    } finally {
-      env.setNodeBusy(null);
-      await this.refreshNode(true);
+    env.setNodeBusy(null);
+    await this.refreshNode(true); // the real state after the operation, whatever happened
+    useEnv.getState().patchNodeOp(null, undefined, failed ? { state: "error", error: failed } : { state: "done", next });
+    if (failed) {
       await this.refreshAccounts();
+    } else {
+      this.console().info(`${title}: done. ${next}`);
+      // Success notices fade on their own; errors stay until dismissed.
+      setTimeout(() => {
+        const op = useEnv.getState().nodeOp;
+        if (op && op.state === "done" && op.kind === kind) useEnv.getState().setNodeOp(null);
+      }, 6000);
     }
   }
 
@@ -280,6 +321,12 @@ export class EnvironmentPlugin extends Plugin {
       return null;
     }
   }
+}
+
+/** One stage of a node operation: `run` may report short progress notes through `note`. */
+interface OpStep {
+  label: string;
+  run: (note: (text: string) => void) => Promise<void>;
 }
 
 function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {

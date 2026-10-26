@@ -34,6 +34,28 @@ export interface AccountInfo {
   keystore: "plain" | "encrypted" | "synthetic" | "dev-keystore" | "unknown";
 }
 
+/** One visible stage of a node operation (stop, wipe, start, wait for RPC, load accounts…). */
+export interface NodeOpStep {
+  label: string;
+  status: "pending" | "running" | "done" | "error";
+  detail?: string;
+}
+
+/**
+ * A node operation in progress or just finished. While `state` is "running" the Accounts, Servers and
+ * Deploy & Run views show a loading state instead of stale balances and enabled buttons.
+ */
+export interface NodeOp {
+  kind: "start" | "stop" | "restart" | "reset";
+  title: string;
+  steps: NodeOpStep[];
+  state: "running" | "done" | "error";
+  startedAt: number;
+  error?: string;
+  /** Shown when finished: what the user can do next. */
+  next?: string;
+}
+
 export interface DockerStatus {
   installed: boolean;
   running: boolean;
@@ -47,6 +69,10 @@ interface EnvState {
   docker: DockerStatus | null;
   setDocker(d: DockerStatus | null): void;
   nodeBusy: string | null;
+  nodeOp: NodeOp | null;
+  setNodeOp(op: NodeOp | null): void;
+  /** Immutable patch of one step (and optionally the whole op). */
+  patchNodeOp(stepIndex: number | null, step?: Partial<NodeOpStep>, op?: Partial<NodeOp>): void;
   accounts: AccountInfo[];
   accountsBusy: boolean;
   lastRefresh: string | null;
@@ -71,6 +97,14 @@ export const useEnv = create<EnvState>((set) => ({
   error: null,
   setNode: (node) => set({ node }),
   setNodeBusy: (nodeBusy) => set({ nodeBusy }),
+  nodeOp: null,
+  setNodeOp: (nodeOp) => set({ nodeOp }),
+  patchNodeOp: (stepIndex, step, op) =>
+    set((s) => {
+      if (!s.nodeOp) return s;
+      const steps = stepIndex === null || !step ? s.nodeOp.steps : s.nodeOp.steps.map((st, i) => (i === stepIndex ? { ...st, ...step } : st));
+      return { nodeOp: { ...s.nodeOp, ...(op ?? {}), steps } };
+    }),
   setAccounts: (accounts) => set({ accounts }),
   patchAccount: (name, patch) => set((s) => ({ accounts: s.accounts.map((a) => (a.name === name ? { ...a, ...patch } : a)) })),
   setAccountsBusy: (accountsBusy) => set({ accountsBusy }),
