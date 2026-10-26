@@ -32,7 +32,7 @@ export function SettingsPanel() {
       <div>
         <div className="label">About</div>
         <p className="text-fg-muted">
-          HardKas IDE is shaped after Remix IDE (Apache-2.0) for the workbench and after Visual Studio for the project flow. Design notes live in docs/remix-to-hardkas.md.
+          HardKas IDE is a workbench for HardKas projects, with a Visual Studio-style project flow and Eclipse-style views. Design notes live in docs/design-notes.md.
         </p>
       </div>
     </div>

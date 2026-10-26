@@ -1,6 +1,6 @@
 # HardKas IDE plugins
 
-Every feature of the IDE is a plugin on a small engine (`apps/ide/src/engine/engine.ts`), in the spirit of Remix's plugin engine. Plugins have a **profile** (`name`, `displayName`, `location`, `methods`, `events`) and talk to each other only through the engine:
+Every feature of the IDE is a plugin on a small engine (`apps/ide/src/engine/engine.ts`), built around profiles and a message bus. Plugins have a **profile** (`name`, `displayName`, `location`, `methods`, `events`) and talk to each other only through the engine:
 
 ```ts
 await this.call("fileManager", "readFile", "contracts/escrow.sil");

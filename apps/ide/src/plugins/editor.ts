@@ -2,8 +2,8 @@ import type * as Monaco from "monaco-editor";
 import { Plugin } from "@/engine/engine";
 
 /**
- * Editor service. Owns the Monaco instance and exposes the same kind of API
- * Remix's editor plugin exposes: markers, goto line, change events.
+ * Editor service. Owns the Monaco instance and exposes markers, goto line,
+ * insert/trigger helpers and change events to the other plugins.
  */
 
 export interface EditorDiagnostic {
@@ -49,7 +49,7 @@ export class EditorPlugin extends Plugin {
     return this.monaco;
   }
 
-  /** Debounced like Remix (500 ms): drives auto-save and auto-compile. */
+  /** Debounced (500 ms): drives auto-save and auto-compile. */
   notifyChange(path: string): void {
     if (this.changeTimer) clearTimeout(this.changeTimer);
     this.changeTimer = setTimeout(() => this.emit("contentChanged", path), 500);

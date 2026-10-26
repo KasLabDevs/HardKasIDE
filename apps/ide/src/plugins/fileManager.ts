@@ -4,7 +4,7 @@ import { languageForPath, useIde } from "@/store/ide";
 
 /**
  * File manager service: the only plugin that touches the workspace file system.
- * Everyone else calls it (Remix's fileManager pattern).
+ * Everyone else calls it (single owner of the file system).
  */
 export class FileManagerPlugin extends Plugin {
   constructor() {

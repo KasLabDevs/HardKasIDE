@@ -76,7 +76,7 @@ export function Editor() {
         void engine.call("fileManager", "saveCurrentFile");
       });
 
-      // Right-click actions for SilverScript files (like Remix's "Compile" entry in the editor menu).
+      // Right-click actions for SilverScript files (a "Compile" entry in the editor menu).
       const isSil = editor.createContextKey<boolean>("hardkasSilverScript", editor.getModel()?.getLanguageId() === "silverscript");
       editor.onDidChangeModel(() => isSil.set(editor.getModel()?.getLanguageId() === "silverscript"));
       const compileCurrent = async (thenDeploy: boolean) => {

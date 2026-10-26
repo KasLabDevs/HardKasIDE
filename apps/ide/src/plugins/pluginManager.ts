@@ -10,7 +10,7 @@ import { clearGrants } from "./permissions";
 export const REQUIRED_PLUGINS = ["console", "fileManager", "editor", "files", "pluginManager", "vsx"];
 
 /**
- * Plugin manager (Remix's plugin manager + VS Code's extensions view, scaled down):
+ * Plugin manager (a plugin directory plus VS Code's extensions view, scaled down):
  * lists every plugin, activates / deactivates them, installs external ones from a
  * manifest URL, a form, or an npm package, and persists the choices.
  */

@@ -19,7 +19,7 @@ import { Workbench } from "@/shell/Workbench";
 import { useIde } from "@/store/ide";
 
 /**
- * Boot, in the Remix spirit: build the engine, register every plugin, then
+ * Boot: build the engine, register every plugin, then
  * activate them in an explicit order once a workspace is open.
  */
 function createEngine(): Engine {

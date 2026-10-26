@@ -1,5 +1,5 @@
 /**
- * Permission handler for external plugins (Remix's permission-handler idea):
+ * Permission handler for external plugins (per-plugin, per-method grants):
  * an external plugin may call `plugin.method` only if its manifest declares it,
  * or the user granted it once. Grants are remembered per plugin in localStorage.
  */
@@ -57,7 +57,7 @@ export function clearGrants(from: string): void {
   save(g);
 }
 
-/** Asks the user (blocking confirm, like Remix's modal) and remembers the answer. */
+/** Asks the user (blocking confirm) and remembers the answer. */
 export function askPermission(from: string, displayName: string, target: string, method: string): boolean {
   const ok = window.confirm(`Plugin "${displayName}" wants to call ${target}.${method}.\n\nAllow? Your answer is remembered for this plugin.`);
   grant(from, target, method, ok);

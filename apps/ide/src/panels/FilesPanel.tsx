@@ -174,7 +174,7 @@ function Node({ node, depth, onMenu }: { node: TreeNode; depth: number; onMenu: 
   );
 }
 
-/** Right-click menu. Like Remix, entries depend on the file extension (.sil gets the SilverScript actions). */
+/** Right-click menu. Entries depend on the file extension (.sil gets the SilverScript actions). */
 function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }) {
   const engine = useEngine();
   const n = menu.node;
