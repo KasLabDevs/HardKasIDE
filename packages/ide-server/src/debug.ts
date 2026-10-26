@@ -34,7 +34,7 @@ export interface DebugFrame {
 export type DebugEvent =
   | { type: "status"; state: DebugState; message?: string }
   | { type: "output"; stream: "stdout" | "stderr" | "debug"; text: string }
-  | { type: "paused"; reason: string; frames: DebugFrame[] }
+  | { type: "paused"; reason: string; frames: DebugFrame[]; detail?: string }
   | { type: "resumed" }
   | { type: "breakpoints"; file: string; breakpoints: Array<{ line: number; verified: boolean; actual?: number }> }
   | { type: "exit"; code: number | null };
@@ -90,6 +90,7 @@ function describe(o: { type?: string; subtype?: string; value?: unknown; descrip
 
 export class DebugSession extends EventEmitter {
   state: DebugState = "idle";
+  private lastMessage: string | undefined;
   private child: ChildProcess | null = null;
   private ws: WebSocket | null = null;
   private seq = 0;
@@ -107,7 +108,7 @@ export class DebugSession extends EventEmitter {
 
   /** What a client that connects mid-session needs to catch up. */
   snapshot(): DebugEvent[] {
-    const events: DebugEvent[] = [{ type: "status", state: this.state }];
+    const events: DebugEvent[] = [{ type: "status", state: this.state, message: this.lastMessage }];
     events.push(...this.outputLog);
     if (this.state === "paused" && this.lastPaused) events.push(this.lastPaused);
     return events;
@@ -123,6 +124,7 @@ export class DebugSession extends EventEmitter {
 
   private setState(state: DebugState, message?: string) {
     this.state = state;
+    this.lastMessage = message;
     this.emitEvent({ type: "status", state, message });
   }
 
@@ -351,8 +353,13 @@ export class DebugSession extends EventEmitter {
         this.placed.set(file, list);
         const actual = this.toOriginal(script, r.actualLocation?.lineNumber ?? location.lineNumber, r.actualLocation?.columnNumber ?? location.columnNumber);
         out.push({ line, verified: true, actual: actual?.line });
-      } catch {
-        out.push({ line, verified: false });
+      } catch (e) {
+        // Two breakpoints that resolve to the same place (one on a comment above the code, one on the code): V8 refuses
+        // the second, but the line is fine.
+        if (/already exists/i.test(e instanceof Error ? e.message : String(e))) {
+          const actual = this.toOriginal(script, location.lineNumber, location.columnNumber);
+          out.push({ line, verified: true, actual: actual?.line });
+        } else out.push({ line, verified: false });
       }
     }
     return out;
@@ -391,10 +398,15 @@ export class DebugSession extends EventEmitter {
 
   // ------------------------------------------------------------------ pauses
 
-  private async onPaused(p: { reason: string; callFrames: any[]; data?: { scriptId?: string } }) {
+  private async onPaused(p: { reason: string; callFrames: any[]; data?: { scriptId?: string; uncaught?: boolean; description?: string } }) {
     if (p.reason === "instrumentation") {
       const scriptId = p.callFrames[0]?.location?.scriptId ?? p.data?.scriptId;
       if (scriptId) await this.placeForScript(scriptId);
+      await this.send("Debugger.resume").catch(() => undefined);
+      return;
+    }
+    if (!this.ready && (p.reason === "exception" || p.reason === "promiseRejection")) {
+      // Exceptions the runtime throws and catches while starting are not the initial pause and are not ours.
       await this.send("Debugger.resume").catch(() => undefined);
       return;
     }
@@ -418,7 +430,18 @@ export class DebugSession extends EventEmitter {
         scopes: (f.scopeChain as any[]).filter((s) => s.type !== "global").map((s) => ({ type: s.type, name: s.name, objectId: s.object?.objectId }))
       };
     });
-    const event: DebugEvent = { type: "paused", reason: p.reason, frames };
+    // "Pause on exceptions" would stop on every exception the libraries throw and catch themselves: only stop when the
+    // code that threw is in the project, or when nothing will catch it and the project is somewhere in the stack.
+    if (p.reason === "exception" || p.reason === "promiseRejection") {
+      const uncaught = (p.data as { uncaught?: boolean } | undefined)?.uncaught === true;
+      const inProject = frames[0]?.file !== null && frames[0] !== undefined;
+      if (!inProject && !(uncaught && frames.some((f) => f.file !== null))) {
+        await this.send("Debugger.resume").catch(() => undefined);
+        return;
+      }
+    }
+    const detail = typeof (p.data as { description?: string } | undefined)?.description === "string" ? (p.data as { description: string }).description.split("\n")[0] : undefined;
+    const event: DebugEvent = { type: "paused", reason: p.reason, frames, detail };
     this.lastPaused = event;
     this.setState("paused");
     this.emitEvent(event);
@@ -460,7 +483,11 @@ export class DebugSession extends EventEmitter {
 
   async evaluate(frameId: string, expression: string): Promise<{ value: string; type: string; objectId?: string; error?: string }> {
     const r = await this.send("Debugger.evaluateOnCallFrame", { callFrameId: frameId, expression, generatePreview: true, silent: true });
-    if (r.exceptionDetails) return { value: "", type: "error", error: r.exceptionDetails.exception?.description ?? r.exceptionDetails.text ?? "evaluation failed" };
+    if (r.exceptionDetails) {
+      // "ReferenceError: x is not defined" without the stack that follows it.
+      const text: string = r.exceptionDetails.exception?.description ?? r.exceptionDetails.text ?? "evaluation failed";
+      return { value: "", type: "error", error: text.split("\n")[0] };
+    }
     return { value: describe(r.result), type: r.result?.subtype ?? r.result?.type ?? "undefined", objectId: r.result?.objectId };
   }
 }

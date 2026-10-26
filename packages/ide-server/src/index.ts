@@ -463,8 +463,11 @@ app.get("/api/debug/events", (c) =>
     for (const e of debugSession.snapshot()) await send(e);
     const onEvent = (e: unknown) => void send(e);
     debugSession.on("event", onEvent);
+    // A heartbeat lets the IDE notice a stream that died silently (a proxy or the server restarted) and reconnect.
+    const beat = setInterval(() => void stream.writeSSE({ event: "ping", data: "" }).catch(() => undefined), 10_000);
     await new Promise<void>((resolve) => {
       stream.onAbort(() => {
+        clearInterval(beat);
         debugSession.off("event", onEvent);
         resolve();
       });

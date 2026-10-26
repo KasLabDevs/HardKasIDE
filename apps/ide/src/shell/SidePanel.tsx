@@ -32,7 +32,7 @@ export function SidePanel() {
       </div>
       <div className="flex-1 min-h-0">
         <PanelGroup direction="vertical">
-          <Panel minSize={15} defaultSize={below.length ? 55 : 100}>
+          <Panel id="side-main" order={0} minSize={15} defaultSize={below.length ? 55 : 100}>
             <div className="h-full flex flex-col min-h-0">
               {left.map((p) => {
                 const View = p.view;
@@ -58,7 +58,7 @@ export function SidePanel() {
           {below.map((p) => {
             const View = p.view!;
             return (
-              <StackedPanel key={p.profile.name}>
+              <StackedPanel key={p.profile.name} id={`side-${p.profile.name}`}>
                 <section className="h-full flex flex-col min-h-0 border-t border-border">
                   <header className="panel-title flex items-center justify-between">
                     <span>{p.profile.displayName}</span>
@@ -79,11 +79,11 @@ export function SidePanel() {
   );
 }
 
-function StackedPanel({ children }: { children: React.ReactNode }) {
+function StackedPanel({ id, children }: { id: string; children: React.ReactNode }) {
   return (
     <>
       <PanelResizeHandle className="h-px bg-border hover:bg-accent transition-colors" />
-      <Panel minSize={10}>{children}</Panel>
+      <Panel id={id} order={1} minSize={10}>{children}</Panel>
     </>
   );
 }
