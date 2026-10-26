@@ -19,7 +19,6 @@ export function ExplorerCard() {
   const error = useExplorer((s) => s.error);
   const updatedAt = useExplorer((s) => s.updatedAt);
   const mempool = useExplorer((s) => s.mempool);
-  const miner = useExplorer((s) => s.miner);
   const [tab, setTab] = useState<Tab>("chain");
 
   useEffect(() => {
