@@ -38,7 +38,7 @@ export class AssistantPlugin extends Plugin {
   }
 
   open(): void {
-    useIde.getState().setActiveSidePlugin("assistant");
+    useIde.getState().revealPlugin("assistant", "Assistant");
   }
 
   async refreshConfig(): Promise<void> {
