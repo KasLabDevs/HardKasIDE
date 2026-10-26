@@ -11,7 +11,11 @@ export function RightDock() {
   useEngineVersion();
   const docks = useIde((s) => s.docks);
   const outlineOpen = useIde((s) => s.outlineOpen);
-  const plugins = engine.listByLocation("sidePanel").filter((p) => docks[p.profile.name] === "right" && p.view);
+  // The Debug view goes first (Eclipse puts it at the top), the rest keep their usual order.
+  const plugins = engine
+    .listByLocation("sidePanel")
+    .filter((p) => docks[p.profile.name] === "right" && p.view)
+    .sort((a, b) => Number(b.profile.name === "debug") - Number(a.profile.name === "debug"));
 
   return (
     <PanelGroup direction="vertical">

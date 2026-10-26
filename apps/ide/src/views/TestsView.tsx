@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { CheckCircle2, ChevronDown, ChevronRight, CircleDashed, FileCode2, Play, RotateCw, XCircle } from "lucide-react";
+import { Bug, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, FileCode2, Play, RotateCw, XCircle } from "lucide-react";
 import { useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { TestsPlugin } from "@/plugins/tests";
@@ -24,6 +24,9 @@ export function TestsView() {
         <div className="flex items-center gap-2 tabular-nums">
           <button type="button" className="btn-primary" disabled={running} onClick={() => void plugin.run()} title="npx vitest run --reporter=json">
             {running ? <RotateCw size={13} className="animate-spin" /> : <Play size={13} />} {running ? "Running…" : "Run all tests"}
+          </button>
+          <button type="button" className="btn-ghost" disabled={running} onClick={() => void engine.call("debug", "debugAll").catch((e: unknown) => engine.call("console", "error", String(e)))} title="Run all tests under the debugger (breakpoints, stepping)">
+            <Bug size={13} /> Debug
           </button>
           {run && (
             <>
@@ -64,11 +67,18 @@ export function TestsView() {
                 <span className="font-semibold text-fg break-words min-w-0">{selectedTest.fullName}</span>
               </div>
               {selectedTest.durationMs !== null && <div className="text-fg-muted tabular-nums">{selectedTest.durationMs} ms</div>}
-              {selectedTest.location && (
-                <button type="button" className="btn-ghost" onClick={() => void plugin.openTest(selectedTest.location!.file, selectedTest.location!.line)}>
-                  <FileCode2 size={12} /> {selectedTest.location.file}:{selectedTest.location.line}
-                </button>
-              )}
+              <div className="flex flex-wrap gap-2">
+                {selectedTest.location && (
+                  <button type="button" className="btn-ghost" onClick={() => void plugin.openTest(selectedTest.location!.file, selectedTest.location!.line)}>
+                    <FileCode2 size={12} /> {selectedTest.location.file}:{selectedTest.location.line}
+                  </button>
+                )}
+                {selectedTest.location && (
+                  <button type="button" className="btn-ghost" onClick={() => void engine.call("debug", "debugTest", selectedTest.location!.file, selectedTest.title).catch((e: unknown) => engine.call("console", "error", String(e)))} title="Run only this test under the debugger">
+                    <Bug size={12} /> Debug this test
+                  </button>
+                )}
+              </div>
               {selectedTest.failureMessages.length === 0 ? (
                 <div className={selectedTest.status === "passed" ? "text-ok" : "text-fg-muted"}>{selectedTest.status === "passed" ? "Passed." : "No failure message."}</div>
               ) : (

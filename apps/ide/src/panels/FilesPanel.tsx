@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { ChevronDown, ChevronRight, Copy, File, FileCode2, FilePlus2, Folder, FolderOpen, FolderPlus, Hammer, PackageOpen, Pencil, RefreshCw, Rocket, Trash2 } from "lucide-react";
+import { Bug, ChevronDown, ChevronRight, Copy, File, FileCode2, FilePlus2, Folder, FolderOpen, FolderPlus, Hammer, PackageOpen, Pencil, RefreshCw, Rocket, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { TreeNode } from "@/api/client";
 import { useEngine } from "@/engine/context";
@@ -196,6 +196,7 @@ function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }
   }
   if (n.type === "file" && /\.(test|spec)\.[cm]?[jt]sx?$/.test(n.name)) {
     items.push({ label: "Run tests in this file", icon: <Hammer size={13} />, run: () => void engine.call("tests", "runFile", n.path) });
+    items.push({ label: "Debug tests in this file", icon: <Bug size={13} />, run: () => void engine.call("debug", "debugFile", n.path).catch((e: unknown) => engine.call("console", "error", String(e))) });
   }
   if (isDeploy) {
     items.push({

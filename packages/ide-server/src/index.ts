@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AssistantError, kaspaDocs, loadConfig, providerDefaults, publicConfig, saveConfig, streamChat, type ChatRequest } from "./assistant.js";
+import { debugSession } from "./debug.js";
 import { listDevAccountNames, revealDevAccountKey } from "./devkeys.js";
 import * as wsfs from "./fs.js";
 import { FsError } from "./fs.js";
@@ -447,6 +448,80 @@ app.post("/api/assistant/chat", async (c) => {
       await stream.writeSSE({ event: "error", data: JSON.stringify({ code, message: error instanceof Error ? error.message : String(error) }) });
     }
   });
+});
+
+// ---------------------------------------------------------------- test debugger (vitest + Node inspector)
+
+function localOnly(c: { req: { header(name: string): string | undefined } }): boolean {
+  const origin = c.req.header("origin");
+  return !origin || isLocalOrigin(origin);
+}
+
+app.get("/api/debug/events", (c) =>
+  streamSSE(c, async (stream) => {
+    const send = (e: unknown) => stream.writeSSE({ event: "debug", data: JSON.stringify(e) });
+    for (const e of debugSession.snapshot()) await send(e);
+    const onEvent = (e: unknown) => void send(e);
+    debugSession.on("event", onEvent);
+    await new Promise<void>((resolve) => {
+      stream.onAbort(() => {
+        debugSession.off("event", onEvent);
+        resolve();
+      });
+    });
+  })
+);
+
+app.post("/api/debug/start", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as Parameters<typeof debugSession.start>[0];
+  try {
+    await debugSession.start(body);
+    return c.json({ ok: true });
+  } catch (error) {
+    return c.json({ ok: false, code: "DEBUG_START_FAILED", message: error instanceof Error ? error.message : String(error) }, 400);
+  }
+});
+
+app.post("/api/debug/command", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const b = (await c.req.json()) as { cmd?: string; file?: string; lines?: number[]; objectId?: string; frameId?: string; expression?: string; state?: "none" | "uncaught" | "all" };
+  try {
+    switch (b.cmd) {
+      case "setBreakpoints":
+        await debugSession.setBreakpoints(String(b.file), b.lines ?? []);
+        return c.json({ ok: true });
+      case "resume":
+        await debugSession.resume();
+        return c.json({ ok: true });
+      case "stepOver":
+        await debugSession.stepOver();
+        return c.json({ ok: true });
+      case "stepInto":
+        await debugSession.stepInto();
+        return c.json({ ok: true });
+      case "stepOut":
+        await debugSession.stepOut();
+        return c.json({ ok: true });
+      case "pause":
+        await debugSession.pause();
+        return c.json({ ok: true });
+      case "stop":
+        await debugSession.stop();
+        return c.json({ ok: true });
+      case "setPauseOnExceptions":
+        await debugSession.setPauseOnExceptions(b.state ?? "none");
+        return c.json({ ok: true });
+      case "properties":
+        return c.json({ ok: true, variables: await debugSession.properties(String(b.objectId)) });
+      case "evaluate":
+        return c.json({ ok: true, result: await debugSession.evaluate(String(b.frameId), String(b.expression)) });
+      default:
+        return c.json({ ok: false, code: "BAD_REQUEST", message: `unknown command ${b.cmd}` }, 400);
+    }
+  } catch (error) {
+    return c.json({ ok: false, code: "DEBUG_ERROR", message: error instanceof Error ? error.message : String(error) }, 400);
+  }
 });
 
 // ---------------------------------------------------------------- system checks (Docker, Node)
