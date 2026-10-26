@@ -13,10 +13,17 @@ export function EnvBar() {
   const setActiveSidePlugin = useIde((s) => s.setActiveSidePlugin);
   const current = envOf(target);
 
+  const op = useEnv((s) => s.nodeOp);
+  const opRunning = op?.state === "running";
+
   // The node dot only means something when the environment needs the node.
   let dot = "bg-fg-muted";
   let nodeText = `${current.short} · network ${current.networkId}`;
-  if (current.needsNode) {
+  if (opRunning && op) {
+    const step = op.steps.findIndex((s) => s.status === "running");
+    dot = "bg-warn animate-pulse";
+    nodeText = `${op.title}… step ${Math.max(step, 0) + 1}/${op.steps.length}`;
+  } else if (current.needsNode) {
     if (docker && (!docker.installed || !docker.running)) {
       dot = "bg-error";
       nodeText = docker.installed ? "Local node · Docker not running" : "Local node · Docker not installed";
