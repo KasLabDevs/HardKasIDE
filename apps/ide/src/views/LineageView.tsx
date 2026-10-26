@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { LineagePlugin } from "@/plugins/lineage";
 import { shortSchema, useLineage, type ArtifactRow } from "@/store/lineage";
-import { GitGraph } from "./GitGraph";
+import { Timeline } from "./Timeline";
 import { SCHEMA_STYLE } from "./lineageStyle";
 
 /**
@@ -22,13 +22,13 @@ const GAP_X = 70;
 const GAP_Y = 28;
 const NODE_TYPES = { artifact: ArtifactNodeView };
 
-type Mode = "git" | "flow";
+type Mode = "timeline" | "flow";
 const MODE_KEY = "hardkas-ide.lineage.mode";
 function loadMode(): Mode {
   try {
-    return localStorage.getItem(MODE_KEY) === "flow" ? "flow" : "git";
+    return localStorage.getItem(MODE_KEY) === "flow" ? "flow" : "timeline";
   } catch {
-    return "git";
+    return "timeline";
   }
 }
 
@@ -73,13 +73,13 @@ export function LineageView() {
           <button type="button" onClick={() => void plugin.refresh()} className="p-0.5 rounded text-fg-muted hover:text-fg cursor-pointer" title="Refresh" aria-label="Refresh lineage graph">
             <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
           </button>
-          {mode === "git" && (
+          {mode === "timeline" && (
             <input aria-label="Filter artifacts" className="input !py-0.5 !w-44 ml-2" placeholder="filter by id, tx, kind…" value={filter} onChange={(e) => setFilter(e.target.value)} />
           )}
           <div role="group" aria-label="Graph style" className="ml-auto flex rounded border border-border overflow-hidden">
-            {(["git", "flow"] as const).map((m) => (
+            {(["timeline", "flow"] as const).map((m) => (
               <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)} className={clsx("px-2 py-0.5 cursor-pointer", mode === m ? "bg-bg-hover text-fg" : "text-fg-muted hover:text-fg")}>
-                {m === "git" ? "Git graph" : "Flow"}
+                {m === "timeline" ? "Timeline" : "Flow"}
               </button>
             ))}
           </div>
@@ -100,9 +100,9 @@ export function LineageView() {
               </div>
             </div>
           )}
-          {mode === "git" ? (
+          {mode === "timeline" ? (
             <div className="absolute inset-0 overflow-auto" onClick={(e) => e.target === e.currentTarget && select(null)}>
-              <GitGraph artifacts={artifacts} edges={edges} fresh={fresh} replays={replays} selected={selected} filter={filter} onSelect={select} />
+              <Timeline artifacts={artifacts} edges={edges} fresh={fresh} replays={replays} selected={selected} filter={filter} onSelect={select} />
             </div>
           ) : (
             <ReactFlow<ArtifactNode, Edge>

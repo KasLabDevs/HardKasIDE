@@ -4,8 +4,8 @@ import { shortSchema, type ArtifactRow } from "@/store/lineage";
 import { LANE_COLORS, SCHEMA_STYLE } from "./lineageStyle";
 
 /**
- * Lineage as a Git history: every artifact is a commit, newest on top, and the lanes on the left follow how artifacts
- * derive from each other (plan → signed → receipt …), drawn like the VS Code source-control graph.
+ * Lineage as a timeline: every artifact is a row, newest on top, and the lanes on the left follow how artifacts
+ * derive from each other (plan → signed → receipt …), drawn as lanes of branching lines.
  */
 
 const ROW_H = 34;
@@ -27,7 +27,7 @@ interface GraphRow {
   outs: Array<{ lane: number; color: string }>;
 }
 
-export function buildGitGraph(artifacts: ArtifactRow[], edges: Array<{ source: string; target: string }>): { rows: GraphRow[]; lanes: number } {
+export function buildTimeline(artifacts: ArtifactRow[], edges: Array<{ source: string; target: string }>): { rows: GraphRow[]; lanes: number } {
   const byId = new Map(artifacts.map((a) => [a.artifactId, a]));
   const parents = new Map<string, string[]>();
   const children = new Map<string, string[]>();
@@ -127,8 +127,8 @@ interface Props {
   onSelect: (id: string | null) => void;
 }
 
-export function GitGraph({ artifacts, edges, fresh, replays, selected, filter, onSelect }: Props) {
-  const { rows, lanes } = useMemo(() => buildGitGraph(artifacts, edges), [artifacts, edges]);
+export function Timeline({ artifacts, edges, fresh, replays, selected, filter, onSelect }: Props) {
+  const { rows, lanes } = useMemo(() => buildTimeline(artifacts, edges), [artifacts, edges]);
   const width = PAD * 2 + Math.max(1, lanes) * LANE_W;
   const q = filter.trim().toLowerCase();
   // Matches what is on screen too: the kind chip ("submitted", "receipt"…), the id, tx and network.
