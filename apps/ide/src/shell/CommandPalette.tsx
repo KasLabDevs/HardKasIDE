@@ -51,6 +51,14 @@ export function CommandPalette() {
       { id: "node:start", title: "Node: start localnet (rusty-kaspad)", hint: "hardkas localnet start --toccata", run: () => engine.get<EnvironmentPlugin>("environment").startNode() },
       { id: "node:stop", title: "Node: stop localnet", hint: "hardkas localnet stop", run: () => engine.get<EnvironmentPlugin>("environment").stopNode() },
       { id: "node:restart", title: "Node: restart localnet", run: () => engine.get<EnvironmentPlugin>("environment").restartNode() },
+      {
+        id: "node:reset",
+        title: "Node: reset from scratch (wipes the local chain)",
+        hint: "hardkas node reset --yes",
+        run: () => {
+          if (window.confirm("Reset the local node from scratch?\n\nThis DELETES the whole local chain: balances go back to zero and deployed contracts disappear. Artifacts and your files are kept.")) return engine.get<EnvironmentPlugin>("environment").resetNode();
+        }
+      },
       { id: "accounts:refresh", title: "Accounts: refresh balances", run: () => engine.get<EnvironmentPlugin>("environment").refreshAccounts() },
       { id: "target:simulator", title: "Target: simulator", run: () => ide().setTarget("simulator") },
       { id: "target:localnet", title: "Target: localnet (simnet)", run: () => ide().setTarget("localnet") },

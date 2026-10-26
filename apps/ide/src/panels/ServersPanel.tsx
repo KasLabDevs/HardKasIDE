@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Check, Coins, Copy, KeyRound, Play, Plus, RefreshCw, RotateCw, Square, UserRound } from "lucide-react";
+import { Check, Coins, Copy, Eraser, KeyRound, Play, Plus, RefreshCw, RotateCw, Square, UserRound } from "lucide-react";
 import { useState } from "react";
 import { useEngine } from "@/engine/context";
 import { copyText } from "@/utils/clipboard";
@@ -134,6 +134,17 @@ export function ServersPanel() {
               <RotateCw size={12} /> {nodeBusy === "restart" ? "…" : "Restart"}
             </button>
           </div>
+          <button
+            type="button"
+            className="btn-ghost w-full justify-center text-error border-error/40 hover:border-error"
+            disabled={nodeBusy !== null || dockerMissing}
+            onClick={() => {
+              if (window.confirm("Reset the local node from scratch?\n\nThis stops the node and miner and DELETES the whole local chain: balances go back to zero and any contract deployed there disappears. The dev accounts are recreated empty. Artifacts and your files are kept.")) void env.resetNode();
+            }}
+            title="hardkas localnet stop → hardkas node reset --yes → hardkas localnet start"
+          >
+            <Eraser size={12} /> {nodeBusy === "reset" ? "Resetting…" : "Reset from scratch…"}
+          </button>
           <div className="text-fg-muted">
             {target === "localnet"
               ? "Transactions go to this node."

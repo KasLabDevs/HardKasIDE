@@ -4,7 +4,7 @@ import { Plugin } from "@/engine/engine";
 import { copyText } from "@/utils/clipboard";
 import { ServersPanel } from "@/panels/ServersPanel";
 import { useEnv, type AccountInfo, type NodeStatus } from "@/store/env";
-import { useIde, type ExecutionTarget } from "@/store/ide";
+import { useIde, userChoseTarget, type ExecutionTarget } from "@/store/ide";
 import type { ConsolePlugin } from "./console";
 
 /**
@@ -36,7 +36,7 @@ export class EnvironmentPlugin extends Plugin {
       location: "sidePanel",
       icon: Server,
       order: 15,
-      methods: ["refresh", "refreshNode", "refreshDocker", "refreshAccounts", "startNode", "stopNode", "restartNode", "createAccount", "copyPrivateKey", "getPrivateKey", "fund"],
+      methods: ["refresh", "refreshNode", "refreshDocker", "refreshAccounts", "startNode", "stopNode", "restartNode", "resetNode", "createAccount", "copyPrivateKey", "getPrivateKey", "fund"],
       events: ["nodeChanged", "accountsChanged"]
     });
   }
@@ -74,8 +74,26 @@ export class EnvironmentPlugin extends Plugin {
     try {
       const sys = await api.system();
       useEnv.getState().setDocker(sys.docker);
+      this.applyDockerFallback(sys.docker);
     } catch {
       useEnv.getState().setDocker(null);
+    }
+  }
+
+  private notifiedFallback = false;
+
+  /**
+   * The default environment is the Docker local node. If Docker is missing or stopped and the user never
+   * chose an environment themselves, start in the Simulator instead of a broken state, and say why once.
+   * An explicit choice is never overridden.
+   */
+  private applyDockerFallback(docker: { installed: boolean; running: boolean }): void {
+    const ide = useIde.getState();
+    if (userChoseTarget() || ide.target !== "localnet" || (docker.installed && docker.running)) return;
+    useIde.setState({ target: "simulator" });
+    if (!this.notifiedFallback) {
+      this.notifiedFallback = true;
+      this.console().info(`${docker.installed ? "Docker is not running" : "Docker is not installed"}: using the Simulator for now. Start Docker and pick "Local node" to use a real rusty-kaspad.`);
     }
   }
 
@@ -107,6 +125,30 @@ export class EnvironmentPlugin extends Plugin {
   /** `localnet stop` stops the node and its CPU miner (plain `node stop` would leave the miner running). */
   async stopNode(): Promise<void> {
     await this.nodeAction("stop", ["localnet", "stop", "--toccata", "--json"]);
+  }
+
+  /**
+   * Wipes the local chain and starts over: stop node + miner, `node reset --yes` (removes all local chain
+   * data), then `localnet start --toccata` (fresh node, dev accounts recreated, empty). Callers must have
+   * asked the user to confirm: this is destructive.
+   */
+  async resetNode(): Promise<void> {
+    const env = useEnv.getState();
+    env.setNodeBusy("reset");
+    try {
+      const c = this.console();
+      await c.runHardkas(["localnet", "stop", "--toccata", "--json"]);
+      const wipe = await c.runHardkas(["node", "reset", "--yes"]);
+      if (wipe.status !== "succeeded") throw new Error(`node reset failed (exit ${wipe.exitCode}). The local chain was not wiped.`);
+      await c.runHardkas(["localnet", "start", "--toccata", "--json"]);
+      c.info("Local node reset from scratch: empty chain, dev accounts recreated. Fund an account to mine its first KAS.");
+    } catch (e) {
+      this.console().error(e instanceof Error ? e.message : String(e));
+    } finally {
+      env.setNodeBusy(null);
+      await this.refreshNode(true);
+      await this.refreshAccounts();
+    }
   }
 
   async restartNode(): Promise<void> {
@@ -250,8 +292,10 @@ function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {
   const expected = (identity.expected ?? {}) as Record<string, unknown>;
   const miner = (raw.miner ?? {}) as Record<string, unknown>;
 
-  const running = Boolean(container.running ?? node.running);
+  // `localnet status` has two shapes: a full one (container/rpc/ports) and, when the node answers, a short
+  // one where `node.ready` is true and there is no `running` flag. A node that answers RPC is running.
   const rpcReady = Boolean(rpc.ready ?? node.rpcReady ?? node.ready);
+  const running = rpcReady || Boolean(container.running ?? node.running);
 
   const rpcTransports = (rpc.transports ?? {}) as Record<string, { port?: number; ready?: boolean }>;
   const nodeTransports = (node.transports ?? {}) as Record<string, { port?: number; ready?: boolean }>;
@@ -271,12 +315,12 @@ function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {
     rpcReady,
     containerName: (container.name as string | undefined) ?? (node.containerName as string | undefined) ?? (expected.containerName as string | undefined),
     image: (container.image as string | undefined) ?? (node.image as string | undefined) ?? (expected.image as string | undefined),
-    network: (node.network as string | undefined) ?? (expected.network as string | undefined) ?? "simnet",
+    network: (node.network as string | undefined) ?? (node.networkId as string | undefined) ?? (expected.network as string | undefined) ?? "simnet",
     rpcUrl: (rpc.url as string | undefined) ?? (node.rpcUrl as string | undefined),
     ports,
-    serverVersion: (server.serverVersion as string | undefined) ?? (expected.serverVersion as string | undefined),
-    isSynced: server.isSynced as boolean | undefined,
-    virtualDaaScore: server.virtualDaaScore as string | undefined,
+    serverVersion: (server.serverVersion as string | undefined) ?? (node.serverVersion as string | undefined) ?? (expected.serverVersion as string | undefined),
+    isSynced: (server.isSynced as boolean | undefined) ?? (node.isSynced as boolean | undefined),
+    virtualDaaScore: (server.virtualDaaScore as string | undefined) ?? (node.virtualDaaScore as string | undefined),
     miner: miner && typeof miner.running === "boolean" ? { running: Boolean(miner.running), status: String(miner.status ?? "") } : undefined,
     lastError: (rpc.lastError as string | null | undefined) ?? (node.lastError as string | null | undefined) ?? null,
     checkedAt: identity.checkedAt as string | undefined,
