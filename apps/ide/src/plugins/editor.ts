@@ -26,7 +26,7 @@ export class EditorPlugin extends Plugin {
       name: "editor",
       displayName: "Editor",
       location: "none",
-      methods: ["addErrorMarker", "clearErrorMarkers", "gotoLine", "focus", "insertText"],
+      methods: ["addErrorMarker", "clearErrorMarkers", "gotoLine", "focus", "insertText", "trigger"],
       events: ["contentChanged", "editorMounted"]
     });
   }
@@ -112,5 +112,14 @@ export class EditorPlugin extends Plugin {
 
   focus(): void {
     this.editor?.focus();
+  }
+
+  /** Runs a Monaco command by id ("undo", "actions.find", "editor.action.formatDocument"…); used by the Edit and Go menus. */
+  trigger(commandId: string): boolean {
+    const ed = this.editor;
+    if (!ed) return false;
+    ed.focus();
+    ed.trigger("menu", commandId, null);
+    return true;
   }
 }

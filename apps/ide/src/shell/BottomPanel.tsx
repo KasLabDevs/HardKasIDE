@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { Pencil, Plus, ScrollText, TerminalSquare, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useIde } from "@/store/ide";
 import { Console } from "./Console";
 import { XTerminal } from "./XTerminal";
@@ -34,6 +34,15 @@ export function BottomPanel() {
     setTerminals((list) => [...list, t]);
     setActive({ kind: "terminal", id: t.id });
   };
+  // "Terminal → New terminal" in the title bar: open one as soon as this panel is on screen.
+  const pendingTerminal = useIde((s) => s.pendingTerminal);
+  useEffect(() => {
+    if (!useIde.getState().pendingTerminal) return;
+    useIde.getState().clearTerminalRequest();
+    addTerminal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingTerminal]);
+
   const killTerminal = (id: string) => {
     setTerminals((list) => {
       const next = list.filter((t) => t.id !== id);

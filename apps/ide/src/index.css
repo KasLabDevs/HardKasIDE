@@ -135,6 +135,18 @@ a:focus-visible {
   background-color: var(--accent) !important;
 }
 
+/* Title bar: the drag region of a desktop shell (Electron/Tauri/installed PWA); controls stay clickable. */
+.titlebar {
+  -webkit-app-region: drag;
+  padding-left: max(0.5rem, env(titlebar-area-x, 0px));
+}
+.titlebar button,
+.titlebar a,
+.titlebar [role="menu"],
+.titlebar-nodrag {
+  -webkit-app-region: no-drag;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

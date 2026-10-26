@@ -9,6 +9,7 @@ import { IconRail } from "./IconRail";
 import { MainArea } from "./MainArea";
 import { RightDock } from "./RightDock";
 import { SidePanel } from "./SidePanel";
+import { TitleBar } from "./TitleBar";
 import { useEngine, useEngineVersion } from "@/engine/context";
 import { StatusBar } from "./StatusBar";
 
@@ -20,6 +21,7 @@ interface Props {
 export function Workbench({ onHome }: Props) {
   const terminalOpen = useIde((s) => s.terminalOpen);
   const outlineOpen = useIde((s) => s.outlineOpen);
+  const sidebarOpen = useIde((s) => s.sidebarOpen);
   const docks = useIde((s) => s.docks);
   const engine = useEngine();
   useEngineVersion();
@@ -28,14 +30,19 @@ export function Workbench({ onHome }: Props) {
 
   return (
     <div className="h-full flex flex-col">
+      <TitleBar onHome={onHome} />
       <div className="flex-1 min-h-0 flex">
         <IconRail onHome={onHome} />
         <PanelGroup direction="horizontal" className="flex-1 min-w-0">
-          <Panel defaultSize={22} minSize={14} maxSize={45}>
-            <SidePanel />
-          </Panel>
-          <PanelResizeHandle className="w-px bg-border hover:bg-accent transition-colors" />
-          <Panel minSize={30}>
+          {sidebarOpen && (
+            <>
+              <Panel id="side" order={1} defaultSize={22} minSize={14} maxSize={45}>
+                <SidePanel />
+              </Panel>
+              <PanelResizeHandle className="w-px bg-border hover:bg-accent transition-colors" />
+            </>
+          )}
+          <Panel id="main" order={2} minSize={30}>
             <div className="h-full flex flex-col min-w-0">
               <EnvBar />
               <EnvNotice />
@@ -60,7 +67,7 @@ export function Workbench({ onHome }: Props) {
           {showRight && (
             <>
               <PanelResizeHandle className="w-px bg-border hover:bg-accent transition-colors" />
-              <Panel defaultSize={20} minSize={12} maxSize={40}>
+              <Panel id="right" order={3} defaultSize={20} minSize={12} maxSize={40}>
                 <RightDock />
               </Panel>
             </>

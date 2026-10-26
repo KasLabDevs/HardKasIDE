@@ -1,8 +1,7 @@
 import clsx from "clsx";
-import { Home, ListTree, TerminalSquare } from "lucide-react";
+import { Home } from "lucide-react";
 import { useEngine, useEngineVersion } from "@/engine/context";
 import { useIde } from "@/store/ide";
-import { HardKasMark } from "./Logo";
 
 interface Props {
   onHome: () => void;
@@ -21,16 +20,9 @@ export function IconRail({ onHome }: Props) {
   const mainViews = engine.listByLocation("mainPanel");
   const openView = useIde((s) => s.openView);
   const activeFile = useIde((s) => s.activeFile);
-  const outlineOpen = useIde((s) => s.outlineOpen);
-  const setOutlineOpen = useIde((s) => s.setOutlineOpen);
-  const terminalOpen = useIde((s) => s.terminalOpen);
-  const setTerminalOpen = useIde((s) => s.setTerminalOpen);
 
   return (
     <nav aria-label="Workbench navigation" className="w-12 shrink-0 bg-bg-panel border-r border-border flex flex-col items-center py-2 gap-1 select-none">
-      <div className="w-10 h-10 grid place-items-center" title="HardKas IDE">
-        <HardKasMark size={26} />
-      </div>
       <button type="button" title="Home (Switch workspace)" aria-label="Home (Switch workspace)" onClick={onHome} className="w-10 h-10 grid place-items-center rounded cursor-pointer text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors">
         <Home size={18} />
       </button>
@@ -81,29 +73,7 @@ export function IconRail({ onHome }: Props) {
           </button>
         );
       })}
-      {/* layout toggles, pinned to the bottom like VS Code's panel buttons */}
-      <div className="mt-auto flex flex-col items-center gap-1 pt-2 border-t border-border w-full">
-        <button
-          type="button"
-          title={outlineOpen ? "Hide Outline" : "Show Outline"}
-          aria-label={outlineOpen ? "Hide Outline" : "Show Outline"}
-          aria-pressed={outlineOpen}
-          onClick={() => setOutlineOpen(!outlineOpen)}
-          className={clsx("w-10 h-10 grid place-items-center rounded cursor-pointer transition-colors", outlineOpen ? "text-accent bg-bg-hover/60" : "text-fg-muted hover:text-fg hover:bg-bg-hover")}
-        >
-          <ListTree size={18} />
-        </button>
-        <button
-          type="button"
-          title={terminalOpen ? "Hide console / terminal" : "Show console / terminal"}
-          aria-label={terminalOpen ? "Hide console / terminal" : "Show console / terminal"}
-          aria-pressed={terminalOpen}
-          onClick={() => setTerminalOpen(!terminalOpen)}
-          className={clsx("w-10 h-10 grid place-items-center rounded cursor-pointer transition-colors", terminalOpen ? "text-accent bg-bg-hover/60" : "text-fg-muted hover:text-fg hover:bg-bg-hover")}
-        >
-          <TerminalSquare size={18} />
-        </button>
-      </div>
+      {/* the layout toggles (side bar, panel, outline) live in the title bar now, like VS Code */}
     </nav>
   );
 }
