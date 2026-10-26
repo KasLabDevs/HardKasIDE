@@ -8,6 +8,7 @@ A single-purpose IDE for [HardKas](https://github.com/KasLabDevs/HardKas) projec
 - **Project flow** shaped like Visual Studio: a Home screen with New project (from HardKas CLI templates), Open folder and Recents.
 - Projects are real folders on disk with `hardkas.config.ts` and `.hardkas/`, driven through `hardkas <cmd> --json`.
 
+- **Cluster**: start extra local nodes next to the HardKAS node from the Servers view, scale them up and down and watch each one's height and sync. See [docs/cluster.md](docs/cluster.md).
 - **Index view**: browse everything HardKAS indexes (artifacts, events, lineage, transactions), query it with read-only SQL and run integrity checks. See [docs/index-view.md](docs/index-view.md).
 - **Test debugger**: breakpoints, stepping, variables and watches for the project's vitest tests (F5, F9, F10, F11). See [docs/debugging.md](docs/debugging.md).
 - **Desktop app** (`apps/desktop`): a frameless Tauri window around the IDE with a Windows installer; it starts the IDE server itself. See [docs/desktop.md](docs/desktop.md).

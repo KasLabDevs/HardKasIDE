@@ -7,6 +7,7 @@ import type { EnvironmentPlugin } from "@/plugins/environment";
 import { formatKas, useEnv, type AccountInfo } from "@/store/env";
 import { ENVIRONMENTS, envOf, useIde } from "@/store/ide";
 import { OpSteps } from "@/shell/NodeOpProgress";
+import { ClusterCard } from "./ClusterCard";
 import { ExplorerCard } from "./ExplorerCard";
 import { WalletCard } from "./WalletCard";
 
@@ -159,6 +160,8 @@ export function ServersPanel() {
           {error && <div role="alert" className="text-error break-words">{error}</div>}
         </div>
       </section>
+
+      <ClusterCard />
 
       <ExplorerCard />
 
