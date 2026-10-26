@@ -3,8 +3,10 @@ import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { AssistantError, kaspaDocs, loadConfig, providerDefaults, publicConfig, saveConfig, streamChat, type ChatRequest } from "./assistant.js";
 import { listDevAccountNames, revealDevAccountKey } from "./devkeys.js";
 import * as wsfs from "./fs.js";
@@ -499,9 +501,26 @@ app.get("/api/node/blocks", async (c) => {
   return c.json({ ok: true, exists: true, running: state.out.trim() === "true", blocks: found.slice(-limit).reverse(), windowBlocks, perSecond });
 });
 
-app.get("/", (c) =>
-  c.json({ name: "hardkas-ide-server", port: PORT, devServer: DEV_SERVER, workspace: getRoot(), hint: "Open the IDE at http://localhost:5173" })
-);
+const serverInfo = () => ({ name: "hardkas-ide-server", port: PORT, devServer: DEV_SERVER, workspace: getRoot(), ui: UI_READY ? "served from this server" : "not built: run pnpm build, or use the Vite dev server at http://localhost:5173" });
+app.get("/api/info", (c) => c.json(serverInfo()));
+
+// ---------------------------------------------------------------- the IDE itself (production build)
+// `pnpm build` produces apps/ide/dist; when it exists this server serves it, so one process is the whole IDE
+// (this is what the desktop app starts). In development the Vite server on :5173 serves the UI instead.
+
+const UI_DIR = path.resolve(process.env.HARDKAS_IDE_STATIC ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "apps", "ide", "dist"));
+const UI_READY = existsSync(path.join(UI_DIR, "index.html"));
+
+app.get("*", async (c) => {
+  if (c.req.path.startsWith("/api/")) return c.json({ ok: false, code: "NOT_FOUND", message: `No route ${c.req.path}` }, 404);
+  if (!UI_READY) return c.json(serverInfo());
+  const rel = decodeURIComponent(c.req.path);
+  // Real files first; any other path is a client-side route and gets index.html.
+  const file = (rel !== "/" ? await readStatic(UI_DIR, rel) : null) ?? (await readStatic(UI_DIR, "index.html"));
+  if (!file) return c.text("not found", 404);
+  const hashed = /\/assets\//.test(rel);
+  return new Response(file.body, { headers: { "content-type": file.type, "cache-control": hashed ? "public, max-age=31536000, immutable" : "no-cache" } });
+});
 
 // ---------------------------------------------------------------- boot
 
