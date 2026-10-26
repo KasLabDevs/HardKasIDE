@@ -26,7 +26,7 @@ export class EditorPlugin extends Plugin {
       name: "editor",
       displayName: "Editor",
       location: "none",
-      methods: ["addErrorMarker", "clearErrorMarkers", "gotoLine", "focus"],
+      methods: ["addErrorMarker", "clearErrorMarkers", "gotoLine", "focus", "insertText"],
       events: ["contentChanged", "editorMounted"]
     });
   }
@@ -98,6 +98,16 @@ export class EditorPlugin extends Plugin {
     this.editor?.revealLineInCenter(line);
     this.editor?.setPosition({ lineNumber: line, column });
     this.editor?.focus();
+  }
+
+  /** Replaces the selection (or inserts at the cursor) with `text`; used by the Assistant's "Insert" button. */
+  insertText(text: string): boolean {
+    const ed = this.editor;
+    const sel = ed?.getSelection();
+    if (!ed || !sel) return false;
+    ed.executeEdits("assistant", [{ range: sel, text, forceMoveMarkers: true }]);
+    ed.focus();
+    return true;
   }
 
   focus(): void {

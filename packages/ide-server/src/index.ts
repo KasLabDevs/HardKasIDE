@@ -5,6 +5,7 @@ import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import os from "node:os";
 import path from "node:path";
+import { AssistantError, kaspaDocs, loadConfig, providerDefaults, publicConfig, saveConfig, streamChat, type ChatRequest } from "./assistant.js";
 import { listDevAccountNames, revealDevAccountKey } from "./devkeys.js";
 import * as wsfs from "./fs.js";
 import { FsError } from "./fs.js";
@@ -399,6 +400,51 @@ app.post("/api/devkeys/reveal", async (c) => {
   const key = await revealDevAccountKey(body.name);
   c.header("cache-control", "no-store");
   return c.json({ ok: true, ...key });
+});
+
+// ---------------------------------------------------------------- assistant (chat grounded in the Kaspa docs)
+
+app.get("/api/assistant/config", async (c) => c.json({ ok: true, config: publicConfig(await loadConfig()), defaults: providerDefaults() }));
+
+app.put("/api/assistant/config", async (c) => {
+  const origin = c.req.header("origin");
+  if (origin && !isLocalOrigin(origin)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json()) as Parameters<typeof saveConfig>[0];
+  try {
+    return c.json({ ok: true, config: publicConfig(await saveConfig(body)) });
+  } catch (error) {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: error instanceof Error ? error.message : String(error) }, 400);
+  }
+});
+
+app.get("/api/assistant/docs", async (c) => {
+  const mode = (c.req.query("mode") ?? "core") as "off" | "core" | "full";
+  try {
+    const d = await kaspaDocs(mode);
+    return c.json({ ok: true, mode, chars: d?.chars ?? 0, approxTokens: Math.round((d?.chars ?? 0) / 4), fetchedAt: d?.fetchedAt ?? null, stale: d?.stale ?? false, source: "https://docs.kaspa.org/llms.txt" });
+  } catch (error) {
+    return c.json({ ok: false, code: "DOCS_UNREACHABLE", message: error instanceof Error ? error.message : String(error) }, 502);
+  }
+});
+
+app.post("/api/assistant/chat", async (c) => {
+  const origin = c.req.header("origin");
+  if (origin && !isLocalOrigin(origin)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json()) as ChatRequest;
+  return streamSSE(c, async (stream) => {
+    const ac = new AbortController();
+    stream.onAbort(() => ac.abort());
+    try {
+      for await (const ev of streamChat(body, ac.signal)) {
+        await stream.writeSSE({ event: ev.type, data: JSON.stringify(ev) });
+      }
+      await stream.writeSSE({ event: "done", data: "{}" });
+    } catch (error) {
+      if (ac.signal.aborted) return;
+      const code = error instanceof AssistantError ? error.code : "INTERNAL";
+      await stream.writeSSE({ event: "error", data: JSON.stringify({ code, message: error instanceof Error ? error.message : String(error) }) });
+    }
+  });
 });
 
 // ---------------------------------------------------------------- system checks (Docker, Node)

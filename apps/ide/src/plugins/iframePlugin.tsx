@@ -178,6 +178,8 @@ export class IframePlugin extends Plugin {
 function isBlockedExternalCall(plugin: string, method: string, args: unknown[]): boolean {
   if (plugin === "environment" && (method === "copyPrivateKey" || method === "getPrivateKey")) return true;
   if (plugin === "accounts") return true;
+  // The assistant spends the user's API credits and sees the open file: plugins cannot drive it.
+  if (plugin === "assistant") return true;
   if (plugin === "pluginManager") return true;
   if (plugin === "fileManager") {
     for (const arg of args) {
