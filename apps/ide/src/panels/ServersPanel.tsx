@@ -7,6 +7,7 @@ import type { EnvironmentPlugin } from "@/plugins/environment";
 import { formatKas, useEnv, type AccountInfo } from "@/store/env";
 import { ENVIRONMENTS, envOf, useIde } from "@/store/ide";
 import { OpSteps } from "@/shell/NodeOpProgress";
+import { ExplorerCard } from "./ExplorerCard";
 import { WalletCard } from "./WalletCard";
 
 /** Eclipse "Servers"-style view: the node (start/stop/restart) and the accounts with balances. */
@@ -158,6 +159,8 @@ export function ServersPanel() {
           {error && <div role="alert" className="text-error break-words">{error}</div>}
         </div>
       </section>
+
+      <ExplorerCard />
 
       <WalletCard />
 
