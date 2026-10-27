@@ -1,0 +1,23 @@
+{
+  "version": "2.0.0",
+  "type": "hardkas.encryptedKeystore.v2",
+  "kdf": {
+    "algorithm": "argon2id",
+    "memory": 65536,
+    "iterations": 3,
+    "parallelism": 1,
+    "salt": "eLssoSdJ4+fJOX9ljux6DA=="
+  },
+  "cipher": {
+    "algorithm": "aes-256-gcm",
+    "nonce": "nZCdWlb7n+ewp04c",
+    "tag": "TDXJ/xTLyOWGe3AhZeoMgw=="
+  },
+  "encryptedPayload": "pU6gCl/hJCnLvoHSUTuHGeJ9+vlE9pjWYo+4s28jypCyjvgagkazhp/eljXXv7+FKULzQ54NcDtLisdbLvuz7AwosmIWXFoaobMMuryk+ZaZjNWsQJA77er4TmaZpeB4dqAbzYFaeUsBX96UzBLe2hcYasJAGeZVbUegSJ/el2SavsGaLn3ZgDm1m1Qb3YQNLHC5g6liONWtT3jFeRJnvXHHGBqPTrOhl0npnjh4/T+GTJFlcyvuPCbhrAAc/QYGpuyIPraY1i7ISN58oHbZvIdptX8oIng7+7J2lecr+cPlLr/7tMWKeb8/fil4GSaz/QC0ULzBoFp94aP3dsnypO97BHFCC636",
+  "createdAt": "2026-10-27T01:28:30.073Z",
+  "metadata": {
+    "label": "alice",
+    "network": "simnet",
+    "address": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn"
+  }
+}
