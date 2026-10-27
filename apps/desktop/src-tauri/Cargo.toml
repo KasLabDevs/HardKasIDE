@@ -1,6 +1,6 @@
 [package]
 name = "hardkas-ide"
-version = "0.1.0"
+version = "0.2.0"
 description = "HardKas IDE desktop app"
 authors = ["KasLabDevs"]
 edition = "2021"

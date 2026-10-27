@@ -1,3 +1,4 @@
+import { exec } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -291,6 +292,17 @@ export type AgentEvent =
 
 const AGENT_TOOLS_ANTHROPIC = [
   {
+    name: "execute_terminal_command",
+    description: "Run any shell or CLI command directly in the integrated terminal / workspace root (e.g. 'hardkas ...', 'npm install ...', 'npx vitest ...', 'node scripts/...', 'git ...'). Returns stdout, stderr and exit status.",
+    input_schema: {
+      type: "object",
+      properties: {
+        command: { type: "string", description: "The shell command line string to execute in the workspace root" }
+      },
+      required: ["command"]
+    }
+  },
+  {
     name: "write_file",
     description: "Write or update a file in the project workspace (contracts, tests, scripts).",
     input_schema: {
@@ -370,6 +382,37 @@ const AGENT_TOOLS_OPENAI = AGENT_TOOLS_ANTHROPIC.map((t) => ({
 async function executeAgentTool(name: string, args: Record<string, unknown>): Promise<{ ok: boolean; title: string; output: string; error?: string }> {
   try {
     switch (name) {
+      case "execute_terminal_command": {
+        const cmd = String(args.command ?? "").trim();
+        if (!cmd) return { ok: false, title: "Empty terminal command", output: "Command cannot be empty", error: "Command cannot be empty" };
+        const root = wsfs.resolveInRoot("");
+        const isWin = process.platform === "win32";
+        const env = {
+          ...process.env,
+          TERM: "xterm-256color",
+          COLORTERM: "truecolor",
+          HARDKAS_ROOT: root,
+          HARDKAS_IDE: "1",
+          PATH: `${root}${isWin ? "\\node_modules\\.bin;" : "/node_modules/.bin:"}${process.env.PATH ?? ""}`
+        };
+
+        return await new Promise<{ ok: boolean; title: string; output: string; error?: string }>((resolve) => {
+          exec(cmd, { cwd: root, env, maxBuffer: 10 * 1024 * 1024, timeout: 180_000 }, (error, stdout, stderr) => {
+            const combined = ((stdout || "") + "\n" + (stderr || "")).trim();
+            const output = combined.length > 8000 ? combined.slice(0, 8000) + "\n...(truncated)" : combined;
+            const ok = !error;
+            const title = ok
+              ? `Terminal: ${cmd.length > 45 ? cmd.slice(0, 45) + "…" : cmd}`
+              : `Terminal error: ${cmd.length > 40 ? cmd.slice(0, 40) + "…" : cmd}`;
+            resolve({
+              ok,
+              title,
+              output: output || (ok ? "(command completed with no output)" : "(command failed with no output)"),
+              error: error ? (stderr.trim() || error.message) : undefined
+            });
+          });
+        });
+      }
       case "write_file": {
         const p = String(args.path ?? "").replace(/^[/\\]+/, "");
         const content = String(args.content ?? "");
@@ -457,18 +500,19 @@ export async function* streamAgent(req: AgentRequest, signal: AbortSignal): Asyn
 
   const system = [
     "You are the HardKas Autonomous AI Agent, a Principal Kaspa Smart Contract & Web3 Engineer.",
-    "You have real, working tools in the user's IDE workspace: write_file, read_file, list_files, compile_silverscript, run_tests, and fund_account.",
+    "You have real, working tools in the user's IDE workspace: execute_terminal_command, write_file, read_file, list_files, compile_silverscript, run_tests, and fund_account.",
     "",
     "Instructions:",
-    "1. When tasked to create or modify contracts or tests, write complete code using write_file.",
+    "1. When tasked to create or modify contracts, scripts or tests, write complete code using write_file.",
     "2. ALWAYS call compile_silverscript immediately after writing or editing a .sil contract.",
-    "3. If compilation fails with error output, read the error, call write_file to fix the syntax/types, and compile again until it succeeds.",
-    "4. When writing tests, write clean Vitest/HardKas tests in the test/ directory and run them with run_tests.",
-    "5. Be direct, efficient and autonomous. Take initiative to fix errors. When done, output a concise final summary of what was built and verified.",
+    "3. You have full terminal access: use execute_terminal_command to run CLI commands, install packages, execute scripts, and inspect node/contract state.",
+    "4. If compilation or commands fail, inspect the error output, fix the code with write_file, and re-run until it succeeds.",
+    "5. When writing tests, write clean Vitest/HardKas tests in the test/ directory and run them with run_tests or execute_terminal_command.",
+    "6. Be direct, efficient and autonomous. Take initiative to fix errors. When done, output a concise final summary of what was built and verified.",
     docs ? `\n# Kaspa Documentation Reference:\n${docs.text.slice(0, 16000)}` : ""
   ].join("\n");
 
-  const MAX_STEPS = 8;
+  const MAX_STEPS = 16;
   let stepCount = 0;
 
   if (cfg.provider === "anthropic") {
