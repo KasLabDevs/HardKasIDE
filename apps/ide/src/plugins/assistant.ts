@@ -3,7 +3,7 @@ import { api } from "@/api/client";
 import { Plugin } from "@/engine/engine";
 import { AssistantPanel } from "@/panels/AssistantPanel";
 import { useAssistant } from "@/store/assistant";
-import { envOf, useIde } from "@/store/ide";
+import { envOf, languageForPath, useIde } from "@/store/ide";
 
 const SENSITIVE = /(accounts\.real\.json|dev-server-token|dev-accounts|\.env($|\.)|keystore|\.pem$)/i;
 
@@ -130,15 +130,32 @@ export class AssistantPlugin extends Plugin {
           if (event === "thought" && typeof data.text === "string") {
             useAssistant.getState().addAgentThought(data.text);
           } else if (event === "step") {
+            const stepId = String(data.id ?? `step_${Date.now()}`);
+            const toolName = String(data.tool ?? "");
+            const stepStatus = (data.status as "running" | "succeeded" | "failed") || "running";
             useAssistant.getState().upsertAgentStep({
-              id: String(data.id ?? `step_${Date.now()}`),
+              id: stepId,
               title: String(data.title ?? ""),
-              tool: String(data.tool ?? ""),
-              status: (data.status as "running" | "succeeded" | "failed") || "running",
+              tool: toolName,
+              status: stepStatus,
               input: data.input as Record<string, unknown> | undefined,
               output: typeof data.output === "string" ? data.output : undefined,
               error: typeof data.error === "string" ? data.error : undefined
             });
+
+            // Live-reload edited or created files directly into Monaco editor!
+            if (stepStatus === "succeeded" && toolName === "write_file" && data.input && typeof (data.input as any).path === "string") {
+              const editedPath = String((data.input as any).path).replace(/^[\/\\]+/, "");
+              void api.fs.read(editedPath).then((content) => {
+                ide.upsertOpenFile({
+                  path: editedPath,
+                  content,
+                  savedContent: content,
+                  language: languageForPath(editedPath)
+                });
+                ide.setActiveFile(editedPath);
+              }).catch(() => undefined);
+            }
           } else if (event === "done") {
             finalSummary = String(data.summary ?? "");
             succeeded = Boolean(data.ok);
@@ -147,10 +164,20 @@ export class AssistantPlugin extends Plugin {
           }
         }
       );
-      // Refresh workspace filesystem in the IDE so newly created or edited files show up immediately
+      // Refresh workspace filesystem and ensure open files match disk
       try {
         const { tree } = await api.fs.tree();
         ide.setTree(tree);
+        const cur = useIde.getState().activeFile;
+        if (cur && !cur.startsWith("view:")) {
+          const fresh = await api.fs.read(cur);
+          ide.upsertOpenFile({
+            path: cur,
+            content: fresh,
+            savedContent: fresh,
+            language: languageForPath(cur)
+          });
+        }
       } catch {
         // ignore tree refresh failure
       }

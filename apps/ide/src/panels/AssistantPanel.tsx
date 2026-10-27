@@ -41,6 +41,7 @@ const STARTERS = [
 ];
 
 const AGENT_STARTERS = [
+  "Ejecuta en la terminal 'hardkas --version' y comprueba el estado del entorno",
   "Crea un contrato Escrow con refund por timeout en SilverScript y compílalo",
   "Crea un contrato Auction con pujas y su test en Vitest",
   "Compila y verifica todos los contratos en el directorio contracts/",
@@ -274,7 +275,7 @@ function AgentView({
             El agente tiene control autónomo sobre el espacio de trabajo: escribe código, compila con <code className="font-mono text-accent">silverc</code>, ejecuta tests y repara errores automáticamente en bucle cerrado.
           </p>
           <div className="flex flex-wrap gap-1.5 pt-1">
-            {["write_file", "compile_silverscript", "run_tests", "fund_account"].map((t) => (
+            {["execute_terminal_command", "write_file", "compile_silverscript", "run_tests", "fund_account"].map((t) => (
               <span key={t} className="px-1.5 py-0.5 rounded border border-border bg-bg-elev font-mono text-[10px] text-fg-muted">
                 ⚡ {t}
               </span>

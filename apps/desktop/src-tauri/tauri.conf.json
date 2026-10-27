@@ -30,7 +30,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico", "icons/icon.icns"],
     "resources": ["stage/**/*"],
     "shortDescription": "A workbench for HardKas (Kaspa) projects",
     "longDescription": "HardKas IDE: editor, SilverScript compiler, Deploy & Run, artifacts, node explorer and terminals for HardKas projects on Kaspa.",

@@ -43,13 +43,9 @@ export class FileManagerPlugin extends Plugin {
 
   async open(path: string): Promise<void> {
     const state = useIde.getState();
-    const already = state.openFiles.find((f) => f.path === path);
-    if (already) {
-      state.setActiveFile(path);
-    } else {
-      const content = await api.fs.read(path);
-      state.upsertOpenFile({ path, content, savedContent: content, language: languageForPath(path) });
-    }
+    const content = await api.fs.read(path);
+    state.upsertOpenFile({ path, content, savedContent: content, language: languageForPath(path) });
+    state.setActiveFile(path);
     this.emit("currentFileChanged", path);
   }
 
