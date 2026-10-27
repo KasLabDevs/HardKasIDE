@@ -48,7 +48,11 @@ run("npm install --omit=dev --no-audit --no-fund --loglevel=error", serverOut);
 
 step("Copy the Node runtime");
 fs.mkdirSync(path.join(stage, "node"), { recursive: true });
-fs.copyFileSync(process.execPath, path.join(stage, "node", exe));
+const stagedExe = path.join(stage, "node", exe);
+fs.copyFileSync(process.execPath, stagedExe);
+if (process.platform !== "win32") {
+  fs.chmodSync(stagedExe, 0o755);
+}
 
 fs.writeFileSync(path.join(stage, "VERSION.txt"), `HardKas IDE ${pkg.version}\nnode ${process.version}\nbuilt ${new Date().toISOString()}\n`);
 
