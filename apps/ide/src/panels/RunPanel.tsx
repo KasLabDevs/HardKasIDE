@@ -136,19 +136,11 @@ export function RunPanel() {
       </div>
 
       {busy === "fund" && target === "localnet" && (
-        <div className="rounded bg-accent/10 border border-accent/30 p-2 space-y-1">
-          <div className="flex items-center justify-between text-[11px] text-accent">
-            <span className="flex items-center gap-1.5 font-medium">
-              <Pickaxe size={12} className="animate-spin" /> Minando en Docker...
-            </span>
-            <span className="font-mono text-[10px]">Maduración Coinbase</span>
+        <div role="status" className="rounded bg-accent/10 border border-accent/30 p-2 space-y-1">
+          <div className="flex items-center gap-1.5 text-[11px] text-accent font-medium">
+            <Pickaxe size={12} className="animate-spin" /> Funding on the local node…
           </div>
-          <div className="w-full bg-bg rounded-full h-1.5 overflow-hidden">
-            <div className="bg-accent h-1.5 rounded-full animate-pulse w-3/4"></div>
-          </div>
-          <div className="text-[10px] text-fg-muted">
-            rusty-kaspad + cpuminer minando bloques para madurar monedas (~60s)...
-          </div>
+          <div className="text-[10px] text-fg-muted">hardkas localnet fund: the miner mines the coins and waits for the coinbase to mature. Usually under a minute.</div>
         </div>
       )}
 

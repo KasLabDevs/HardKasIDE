@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { AssistantError, kaspaDocs, loadConfig, providerDefaults, publicConfig, saveConfig, streamChat, streamAgent, type ChatRequest, type AgentRequest } from "./assistant.js";
+import { AssistantError, answerConfirm, kaspaDocs, loadConfig, providerDefaults, publicConfig, saveConfig, streamChat, streamAgent, type ChatRequest, type AgentRequest } from "./assistant.js";
 import { debugSession } from "./debug.js";
 import { listDevAccountNames, revealDevAccountKey } from "./devkeys.js";
 import * as wsfs from "./fs.js";
@@ -16,7 +16,7 @@ import * as cluster from "./cluster.js";
 import { ClusterError } from "./cluster.js";
 import * as store from "./store.js";
 import { StoreError } from "./store.js";
-import { createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe } from "./runner.js";
+import { cliInfo, createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe } from "./runner.js";
 import { closeTerminal, defaultShell, listTerminals, openTerminal } from "./terminal.js";
 import { examplesDir, fetchText, installNpmPlugin, listExamples, loadRegistry, pluginsRoot, readStatic, searchNpmPlugins } from "./plugins.js";
 import { installVsx, readIndex, readVsxFile, searchVsx, setVsxEnabled, uninstallVsx } from "./vsx.js";
@@ -69,7 +69,8 @@ function localOnly(c: { req: { header(name: string): string | undefined } }): bo
     }
   }
 
-  return true;
+  // No Origin, Referer or Host at all: not a browser. Nothing local needs this, so refuse.
+  return false;
 }
 
 app.use(
@@ -496,16 +497,28 @@ app.post("/api/assistant/agent", async (c) => {
     const ac = new AbortController();
     stream.onAbort(() => ac.abort());
     try {
+      // streamAgent ends with its own "done" event (summary + ok); a second, empty one would wipe them in the UI.
       for await (const ev of streamAgent(body, ac.signal)) {
         await stream.writeSSE({ event: ev.type, data: JSON.stringify(ev) });
       }
-      await stream.writeSSE({ event: "done", data: "{}" });
     } catch (error) {
       if (ac.signal.aborted) return;
       const code = error instanceof AssistantError ? error.code : "INTERNAL";
       await stream.writeSSE({ event: "error", data: JSON.stringify({ code, message: error instanceof Error ? error.message : String(error) }) });
     }
   });
+});
+
+// The IDE's answer to a "confirm" event of a running agent: approve (once or for the whole run) or decline.
+app.post("/api/assistant/agent/confirm", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json()) as { id?: string; approved?: boolean; allForRun?: boolean };
+  if (typeof body.id !== "string" || typeof body.approved !== "boolean") {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: "id and approved are required" }, 400);
+  }
+  const found = answerConfirm(body.id, { approved: body.approved, allForRun: body.allForRun === true });
+  if (!found) return c.json({ ok: false, code: "NOT_FOUND", message: "no command is waiting for that confirmation" }, 404);
+  return c.json({ ok: true });
 });
 
 // ---------------------------------------------------------------- test debugger (vitest + Node inspector)
@@ -658,20 +671,26 @@ app.get("/api/system", async (c) => {
   });
 });
 
-// ---------------------------------------------------------------- blocks the local CPU miner found (Explorer)
+// ---------------------------------------------------------------- the HardKas CLI the server runs
+
+app.get("/api/cli", async (c) => c.json({ ok: true, cli: await cliInfo(getRoot() ?? process.cwd(), c.req.query("refresh") === "1") }));
+
+// ---------------------------------------------------------------- the local CPU miner (Explorer blocks, start/stop)
 
 const MINER_CONTAINER = process.env.HARDKAS_MINER_CONTAINER ?? "hardkas-toccata-miner";
 
+async function docker(args: string[], timeout = 10000): Promise<{ ok: boolean; out: string; err: string }> {
+  const { execFile } = await import("node:child_process");
+  return new Promise((resolve) => {
+    execFile("docker", args, { timeout, windowsHide: true, maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => resolve({ ok: !error, out: String(stdout), err: String(stderr) }));
+  });
+}
+
 app.get("/api/node/blocks", async (c) => {
   const limit = Math.min(100, Math.max(1, Number(c.req.query("limit") ?? 25) || 25));
-  const { execFile } = await import("node:child_process");
-  const run = (args: string[]) =>
-    new Promise<{ ok: boolean; out: string; err: string }>((resolve) => {
-      execFile("docker", args, { timeout: 10000, windowsHide: true, maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => resolve({ ok: !error, out: String(stdout), err: String(stderr) }));
-    });
-  const state = await run(["inspect", "-f", "{{.State.Running}}", MINER_CONTAINER]);
-  if (!state.ok) return c.json({ ok: true, exists: false, running: false, blocks: [], windowBlocks: 0, perSecond: 0 });
-  const logs = await run(["logs", "--timestamps", "--tail", "800", MINER_CONTAINER]);
+  const state = await docker(["inspect", "-f", "{{.State.Running}}", MINER_CONTAINER]);
+  if (!state.ok) return c.json({ ok: true, exists: false, running: false, blocks: [], windowBlocks: 0, perSecond: 0, routeFull: 0 });
+  const logs = await docker(["logs", "--timestamps", "--tail", "800", MINER_CONTAINER]);
   // docker logs writes the container's stderr to ours; the miner logs there. "Found a block: <hash>" (the hash can wrap to the next line).
   const text = `${logs.out}\n${logs.err}`;
   const found: Array<{ hash: string; at: string }> = [];
@@ -682,7 +701,34 @@ app.get("/api/node/blocks", async (c) => {
     const span = (Date.parse(found[windowBlocks - 1].at) - Date.parse(found[0].at)) / 1000;
     if (span > 0) perSecond = Number(((windowBlocks - 1) / span).toFixed(2));
   }
-  return c.json({ ok: true, exists: true, running: state.out.trim() === "true", blocks: found.slice(-limit).reverse(), windowBlocks, perSecond });
+  // The node rejects blocks it cannot keep up with ("Block was not submitted: route is full"): a flat-out
+  // CPU miner on simnet does this constantly, and transactions then take minutes to confirm.
+  const routeFull = (text.match(/route is full/g) ?? []).length;
+  return c.json({ ok: true, exists: true, running: state.out.trim() === "true", blocks: found.slice(-limit).reverse(), windowBlocks, perSecond, routeFull });
+});
+
+// Start or stop the existing miner container. HardKas creates it on the first `localnet fund` and stops it when
+// funding ends; this just flips that container, so the node gets blocks (or stops being flooded) on demand.
+app.post("/api/node/miner", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { action?: string };
+  if (body.action !== "start" && body.action !== "stop") return c.json({ ok: false, code: "BAD_REQUEST", message: "action must be start or stop" }, 400);
+  const exists = await docker(["inspect", "-f", "{{.State.Running}}", MINER_CONTAINER]);
+  if (!exists.ok) return c.json({ ok: false, code: "NO_MINER", message: `No miner container (${MINER_CONTAINER}) yet: fund an account once and HardKas creates it.` }, 404);
+  const res = body.action === "start" ? await docker(["start", MINER_CONTAINER], 30000) : await docker(["stop", "-t", "2", MINER_CONTAINER], 30000);
+  if (!res.ok) {
+    const message = res.err.trim().split("\n")[0] || `docker ${body.action} failed`;
+    // The miner shares the node container's network namespace. After the node is recreated (stop/start, reset)
+    // the old miner points at a container that no longer exists and can never start again; `localnet fund`
+    // creates a fresh one, so remove the stale container and say so.
+    if (body.action === "start" && /network namespace|No such container/i.test(message)) {
+      await docker(["rm", "-f", MINER_CONTAINER], 30000);
+      return c.json({ ok: false, code: "STALE_MINER", message: "The miner container belonged to a previous node and has been removed. Mine a burst to create a new one." }, 409);
+    }
+    return c.json({ ok: false, code: "DOCKER_ERROR", message }, 500);
+  }
+  const after = await docker(["inspect", "-f", "{{.State.Running}}", MINER_CONTAINER]);
+  return c.json({ ok: true, running: after.out.trim() === "true" });
 });
 
 const serverInfo = () => ({ name: "hardkas-ide-server", port: PORT, devServer: DEV_SERVER, workspace: getRoot(), ui: UI_READY ? "served from this server" : "not built: run pnpm build, or use the Vite dev server at http://localhost:5173" });

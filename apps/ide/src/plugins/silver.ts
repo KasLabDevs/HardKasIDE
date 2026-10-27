@@ -1,8 +1,9 @@
 import { api } from "@/api/client";
 import { Plugin } from "@/engine/engine";
-import { parseSilArtifact, useSilver, type CompiledRecord, type DeployRecord, type SpendRecord } from "@/store/silver";
+import { parseSilArtifact, useSilver, type CompiledRecord, type DeployRecord, type RecordProblem, type SpendRecord } from "@/store/silver";
 import { useIde } from "@/store/ide";
 import { pubkeyFromAddress } from "@/utils/kaspaAddress";
+import { markSpent, newestFirst, parseCompileRecord, parseDeployRecord, parseJsonRecord, parseSpendRecord } from "@/utils/silverRecords";
 import type { CompilationResult } from "./compiler";
 import type { ConsolePlugin } from "./console";
 
@@ -11,12 +12,19 @@ import type { ConsolePlugin } from "./console";
  * contracts): deploy a compiled contract's P2SH output, list deployed instances,
  * call an entry (spend) with typed arguments and account signatures.
  *
- *   hardkas silver deploy <compileRecord> --from <acct> --amount <kas> [--contract] --wait --json
- *   hardkas silver spend  <deployRecord>  --entry <name> --to <addr> --args <file> --wait --json
+ *   hardkas silver deploy <compileRecord> --from <acct> --amount <kas> [--contract] --wait --timeout 600 --json
+ *   hardkas silver spend  <deployRecord>  --entry <name> --to <addr> --args <file> --wait --timeout 600 --json
  *
  * Entry args file: JSON list of {kind, value} and {"kind":"signature","account":"<name>"}.
+ *
+ * The CLI's default confirmation wait is 120 s and it writes no record when it expires, even though the
+ * transaction was sent and confirms later. On simnet with the CPU miner running flat out the node falls
+ * behind ("route is full"), so a spend can take longer than that: the IDE waits up to ten minutes.
  * Constructor `pubkey` args come from an account's address (x-only key), see utils/kaspaAddress.
  */
+/** Seconds `--wait` may take before the CLI gives up (and leaves no record). */
+const CONFIRM_TIMEOUT_S = "600";
+
 export class SilverPlugin extends Plugin {
   private offs: Array<() => void> = [];
 
@@ -66,49 +74,49 @@ export class SilverPlugin extends Plugin {
     return compiled;
   }
 
-  /** Reads every silverDeploy record in the workspace (newest first) and attaches the ABI from its compile record. */
+  /**
+   * Reads every silverDeploy and silverSpend record in the workspace (newest first), attaches each deploy's
+   * ABI from the compile record it points at and marks the deploys a spend consumed. Records the IDE could
+   * not read as expected are kept in `recordProblems` and reported once in the Console.
+   */
   async refreshDeployments(): Promise<DeployRecord[]> {
     const store = useSilver.getState();
     try {
       const files = await api.fs.find(".hardkas/artifacts/silver", ".json");
-      const deploys = files.filter((f) => /silverDeploy-/.test(f));
-      const spendsFiles = files.filter((f) => /silverSpend-/.test(f));
-      const spentOutpoints = new Set<string>();
+      const problems: RecordProblem[] = [];
+      const note = (recordPath: string, list: string[]) => {
+        if (list.length > 0) problems.push({ recordPath, problems: list });
+      };
 
-      const rawSpends = await Promise.all(
-        spendsFiles.map(async (f): Promise<SpendRecord | null> => {
-          try {
-            const r = JSON.parse(await api.fs.read(f)) as Record<string, unknown>;
-            const so = r.spentOutpoint as { transactionId: string; index: number } | undefined;
-            if (so) spentOutpoints.add(`${so.transactionId}:${so.index}`);
-            return {
-              recordPath: f,
-              txId: String(r.txId ?? ""),
-              contract: String(r.contract ?? ""),
-              entry: String(r.entry ?? ""),
-              to: String(r.to ?? ""),
-              outputSompi: String(r.outputSompi ?? ""),
-              feeSompi: typeof r.feeSompi === "string" ? r.feeSompi : undefined,
-              status: String(r.status ?? ""),
-              createdAt: typeof r.createdAt === "string" ? r.createdAt : undefined,
-              deployContentHash: (r.deployRecord as { contentHash?: string } | undefined)?.contentHash
-            };
-          } catch {
-            return null;
-          }
-        })
-      );
-      const spends = rawSpends.filter((s): s is SpendRecord => s !== null);
+      const readRaw = async (f: string): Promise<Record<string, unknown> | null> => {
+        const { raw, problem } = parseJsonRecord(await api.fs.read(f));
+        if (problem) note(f, [problem]);
+        return raw;
+      };
 
+      const spends = (
+        await Promise.all(
+          files.filter((f) => /silverSpend-/.test(f)).map(async (f) => {
+            const raw = await readRaw(f).catch(() => null);
+            if (!raw) return null;
+            const parsed = parseSpendRecord(f, raw);
+            note(f, parsed.problems);
+            return parsed.record;
+          })
+        )
+      ).filter((s): s is SpendRecord => s !== null);
+
+      // One read per compile record, shared by every deploy that points at it.
       const compileAbis = new Map<string, Promise<ReturnType<typeof parseSilArtifact>>>();
       const loadCompileAbis = (compileRel: string) => {
         let p = compileAbis.get(compileRel);
         if (!p) {
-          p = api.fs
-            .read(compileRel)
-            .then((txt) => {
-              const c = JSON.parse(txt) as Record<string, unknown>;
-              return parseSilArtifact(c.artifactJson, c.contracts as Array<{ name: string; address?: string }> | undefined);
+          p = readRaw(compileRel)
+            .then((raw) => {
+              if (!raw) return [];
+              const parsed = parseCompileRecord(compileRel, raw);
+              note(compileRel, parsed.problems);
+              return parsed.record?.contracts ?? [];
             })
             .catch(() => []);
           compileAbis.set(compileRel, p);
@@ -116,40 +124,23 @@ export class SilverPlugin extends Plugin {
         return p;
       };
 
-      const rawDeploys = await Promise.all(
-        deploys.map(async (f): Promise<DeployRecord | null> => {
-          try {
-            const r = JSON.parse(await api.fs.read(f)) as Record<string, unknown>;
-            const outpoint = r.outpoint as { transactionId: string; index: number };
-            const compileRel = (r.compileRecord as { path?: string } | undefined)?.path;
-            const abis = compileRel ? await loadCompileAbis(compileRel) : [];
-            const abi = abis.find((x) => x.name === r.contract);
-            return {
-              recordPath: f,
-              contentHash: String(r.contentHash ?? ""),
-              contract: String(r.contract ?? ""),
-              address: String(r.address ?? ""),
-              txId: String(r.txId ?? ""),
-              outpoint,
-              valueSompi: String(r.valueSompi ?? ""),
-              feeSompi: typeof r.feeSompi === "string" ? r.feeSompi : undefined,
-              status: String(r.status ?? ""),
-              networkId: typeof r.networkId === "string" ? r.networkId : undefined,
-              createdAt: typeof r.createdAt === "string" ? r.createdAt : undefined,
-              compileRecordPath: compileRel,
-              abi,
-              spent: outpoint ? spentOutpoints.has(`${outpoint.transactionId}:${outpoint.index}`) : false
-            };
-          } catch {
-            return null;
-          }
-        })
-      );
-      const list = rawDeploys.filter((d): d is DeployRecord => d !== null);
+      const deploys = (
+        await Promise.all(
+          files.filter((f) => /silverDeploy-/.test(f)).map(async (f): Promise<DeployRecord | null> => {
+            const raw = await readRaw(f).catch(() => null);
+            if (!raw) return null;
+            const parsed = parseDeployRecord(f, raw);
+            note(f, parsed.problems);
+            if (!parsed.record) return null;
+            const abis = parsed.record.compileRecordPath ? await loadCompileAbis(parsed.record.compileRecordPath) : [];
+            return { ...parsed.record, abi: abis.find((x) => x.name === parsed.record!.contract) };
+          })
+        )
+      ).filter((d): d is DeployRecord => d !== null);
 
-      list.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
-      spends.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
-      useSilver.setState({ deployments: list, spends });
+      const list = newestFirst(markSpent(deploys, spends));
+      useSilver.setState({ deployments: list, spends: newestFirst(spends), recordProblems: problems });
+      this.reportProblems(problems);
       this.emit("deploymentsChanged", list);
       return list;
     } catch (e) {
@@ -158,12 +149,24 @@ export class SilverPlugin extends Plugin {
     }
   }
 
+  private reportedProblems = new Set<string>();
+
+  /** Each unreadable record is mentioned once per session; the Deploy & Run view shows the count. */
+  private reportProblems(problems: RecordProblem[]): void {
+    for (const p of problems) {
+      const key = `${p.recordPath}|${p.problems.join("|")}`;
+      if (this.reportedProblems.has(key)) continue;
+      this.reportedProblems.add(key);
+      this.console().warn(`${p.recordPath}: ${p.problems.join("; ")}`);
+    }
+  }
+
   async deploy(input: { compileRecordPath: string; from: string; amountKas: string; contract?: string }): Promise<DeployRecord> {
     const store = useSilver.getState();
     store.setBusy("deploy");
     store.setError(null);
     try {
-      const args = ["silver", "deploy", input.compileRecordPath, "--from", input.from, "--amount", input.amountKas, "--wait", "--json"];
+      const args = ["silver", "deploy", input.compileRecordPath, "--from", input.from, "--amount", input.amountKas, "--wait", "--timeout", CONFIRM_TIMEOUT_S, "--json"];
       if (input.contract) args.push("--contract", input.contract);
       const run = await this.console().runHardkas(args);
       const raw = run.result as Record<string, unknown> | null;
@@ -190,7 +193,7 @@ export class SilverPlugin extends Plugin {
     try {
       const argsFile = `.hardkas/ide/spend-args/${input.deploy.contentHash.slice(0, 16)}-${input.entry}.json`;
       await api.fs.write(argsFile, JSON.stringify(input.args, null, 2));
-      const args = ["silver", "spend", input.deploy.recordPath, "--entry", input.entry, "--to", input.to, "--args", argsFile, "--wait", "--json"];
+      const args = ["silver", "spend", input.deploy.recordPath, "--entry", input.entry, "--to", input.to, "--args", argsFile, "--wait", "--timeout", CONFIRM_TIMEOUT_S, "--json"];
       if (input.sequence) args.push("--sequence", input.sequence);
       const run = await this.console().runHardkas(args);
       const raw = run.result as Record<string, unknown> | null;

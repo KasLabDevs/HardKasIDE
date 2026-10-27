@@ -1,3 +1,4 @@
+import { api } from "@/api/client";
 import { Plugin } from "@/engine/engine";
 import { useEnv } from "@/store/env";
 import { useExplorer, type DagInfo, type MempoolEntry, type MinerInfo, type UtxoRow } from "@/store/explorer";
@@ -112,10 +113,8 @@ export class ExplorerPlugin extends Plugin {
 
   private async readMiner(): Promise<MinerInfo | null> {
     try {
-      const res = await fetch("/api/node/blocks?limit=30", { signal: AbortSignal.timeout(8000) });
-      if (!res.ok) return null;
-      const j = (await res.json()) as MinerInfo & { ok: boolean };
-      return { exists: j.exists, running: j.running, perSecond: j.perSecond, windowBlocks: j.windowBlocks, blocks: j.blocks ?? [] };
+      const j = await api.node.blocks(30);
+      return { exists: j.exists, running: j.running, perSecond: j.perSecond, windowBlocks: j.windowBlocks, routeFull: j.routeFull ?? 0, blocks: j.blocks ?? [] };
     } catch {
       return null;
     }

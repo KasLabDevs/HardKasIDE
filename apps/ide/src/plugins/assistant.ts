@@ -2,10 +2,27 @@ import { Sparkles } from "lucide-react";
 import { api } from "@/api/client";
 import { Plugin } from "@/engine/engine";
 import { AssistantPanel } from "@/panels/AssistantPanel";
+import type { ConsolePlugin } from "@/plugins/console";
 import { useAssistant } from "@/store/assistant";
 import { envOf, languageForPath, useIde } from "@/store/ide";
 
 const SENSITIVE = /(accounts\.real\.json|dev-server-token|dev-accounts|\.env($|\.)|keystore|\.pem$)/i;
+
+/**
+ * Shows a file the agent wrote: opens it when it is not open, reloads it when it is open and clean,
+ * and leaves it alone when it has unsaved edits (the user's buffer always wins over the disk).
+ */
+async function reloadIfClean(path: string): Promise<void> {
+  const open = useIde.getState().openFiles.find((f) => f.path === path);
+  if (open && open.content !== open.savedContent) return;
+  try {
+    const content = await api.fs.read(path);
+    if (open && content === open.savedContent) return;
+    useIde.getState().upsertOpenFile({ path, content, savedContent: content, language: languageForPath(path) });
+  } catch {
+    // deleted meanwhile, or not readable: nothing to show
+  }
+}
 
 /**
  * Chat assistant, model-agnostic and grounded in the official Kaspa docs (docs.kaspa.org/llms.txt).
@@ -24,7 +41,7 @@ export class AssistantPlugin extends Plugin {
       location: "sidePanel",
       icon: Sparkles,
       order: 18,
-      methods: ["open", "stop", "clear", "refreshConfig", "runAgent"],
+      methods: ["open", "stop", "clear", "resetAgent", "refreshConfig", "runAgent", "answerConfirm"],
       events: ["answered", "agentFinished"]
     });
   }
@@ -57,6 +74,25 @@ export class AssistantPlugin extends Plugin {
   clear(): void {
     this.abort?.abort();
     useAssistant.getState().clear();
+  }
+
+  /** Approves or declines the terminal command the agent is waiting on. */
+  async answerConfirm(approved: boolean, allForRun = false): Promise<void> {
+    const st = useAssistant.getState();
+    const pending = st.agentRun?.pendingConfirm;
+    if (!pending) return;
+    st.setAgentConfirm(null);
+    try {
+      await api.assistant.agentConfirm(pending.id, approved, allForRun);
+    } catch (e) {
+      this.engine.get<ConsolePlugin>("console").error(`Could not answer the agent: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /** Clears the agent run; a run still streaming is stopped first so its late events cannot land in the next run. */
+  resetAgent(): void {
+    this.abort?.abort();
+    useAssistant.getState().resetAgentRun();
   }
 
   /** Sends `text` (plus the open file when enabled) and streams the answer into the chat. */
@@ -129,10 +165,15 @@ export class AssistantPlugin extends Plugin {
         (event, data) => {
           if (event === "thought" && typeof data.text === "string") {
             useAssistant.getState().addAgentThought(data.text);
+          } else if (event === "confirm" && typeof data.id === "string" && typeof data.command === "string") {
+            // The run is paused on the server until answerConfirm is called (or Stop aborts it).
+            useAssistant.getState().setAgentConfirm({ id: data.id, command: data.command });
           } else if (event === "step") {
             const stepId = String(data.id ?? `step_${Date.now()}`);
             const toolName = String(data.tool ?? "");
             const stepStatus = (data.status as "running" | "succeeded" | "failed") || "running";
+            const st = useAssistant.getState();
+            if (st.agentRun?.pendingConfirm?.id === `confirm_${stepId}`) st.setAgentConfirm(null);
             useAssistant.getState().upsertAgentStep({
               id: stepId,
               title: String(data.title ?? ""),
@@ -143,18 +184,10 @@ export class AssistantPlugin extends Plugin {
               error: typeof data.error === "string" ? data.error : undefined
             });
 
-            // Live-reload edited or created files directly into Monaco editor!
+            // A file the agent wrote reloads in the editor if it is open and clean; unsaved edits are never replaced.
             if (stepStatus === "succeeded" && toolName === "write_file" && data.input && typeof (data.input as any).path === "string") {
               const editedPath = String((data.input as any).path).replace(/^[\/\\]+/, "");
-              void api.fs.read(editedPath).then((content) => {
-                ide.upsertOpenFile({
-                  path: editedPath,
-                  content,
-                  savedContent: content,
-                  language: languageForPath(editedPath)
-                });
-                ide.setActiveFile(editedPath);
-              }).catch(() => undefined);
+              void reloadIfClean(editedPath);
             }
           } else if (event === "done") {
             finalSummary = String(data.summary ?? "");
@@ -164,19 +197,12 @@ export class AssistantPlugin extends Plugin {
           }
         }
       );
-      // Refresh workspace filesystem and ensure open files match disk
+      // The agent may have created files or run commands that write: refresh the tree and the clean open files.
       try {
         const { tree } = await api.fs.tree();
         ide.setTree(tree);
-        const cur = useIde.getState().activeFile;
-        if (cur && !cur.startsWith("view:")) {
-          const fresh = await api.fs.read(cur);
-          ide.upsertOpenFile({
-            path: cur,
-            content: fresh,
-            savedContent: fresh,
-            language: languageForPath(cur)
-          });
+        for (const f of useIde.getState().openFiles) {
+          if (f.kind !== "view") await reloadIfClean(f.path);
         }
       } catch {
         // ignore tree refresh failure

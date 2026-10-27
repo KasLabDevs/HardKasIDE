@@ -3,12 +3,14 @@ import { Check, ChevronDown, ChevronRight, FileCode2, FileJson, FolderOpen, Lock
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import { useEngine } from "@/engine/context";
+import type { CompilerPlugin } from "@/plugins/compiler";
 import type { SilverPlugin } from "@/plugins/silver";
 import { formatKas, useEnv } from "@/store/env";
 import { useSilver, type DeployRecord, type SilContractAbi, type SilEntry, type SilParam } from "@/store/silver";
 import { useIde } from "@/store/ide";
 import { hexToBytes, pubkeyFromAddress } from "@/utils/kaspaAddress";
 import { generateTypeChain } from "@/utils/typechain";
+import { MinerNotice } from "./MinerNotice";
 
 /**
  * Contract GUI for SilverScript:
@@ -24,6 +26,9 @@ export function ContractGUI() {
   const busy = useSilver((s) => s.busy);
   const error = useSilver((s) => s.error);
   const accounts = useEnv((s) => s.accounts);
+  const node = useEnv((s) => s.node);
+  const cli = useEnv((s) => s.cli);
+  const recordProblems = useSilver((s) => s.recordProblems);
   const target = useIde((s) => s.target);
   const setTarget = useIde((s) => s.setTarget);
   const [from, setFrom] = useState("alice");
@@ -44,11 +49,12 @@ export function ContractGUI() {
       const code = generateTypeChain(c, compiled?.sourcePath);
       const outPath = `contracts/${c.name}.ts`;
       await api.fs.write(outPath, code);
+      await engine.call("fileManager", "refresh");
       await engine.call("fileManager", "open", outPath);
       setSdkNotice(`Generated ${outPath} (TypeChain)`);
       setTimeout(() => setSdkNotice(null), 3500);
     } catch (e) {
-      setSdkNotice(e instanceof Error ? e.message : String(e));
+      useSilver.getState().setError(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -57,6 +63,7 @@ export function ContractGUI() {
     const params = c.constructorParams ?? [];
     if (params.length > 0) {
       const currentVals = constructorValues[c.name] ?? {};
+      // Every constructor value comes from the form: an empty field is an error, never a silent default.
       const args = params.map((p, idx) => {
         if (p.kind === "pubkey") {
           const chosenAccountName = currentVals[p.name] ?? (accounts[idx]?.name ?? accounts[0]?.name ?? "alice");
@@ -64,32 +71,16 @@ export function ContractGUI() {
           const pk = acct ? pubkeyFromAddress(acct.address) : null;
           if (!pk) throw new Error(`Could not derive Schnorr pubkey for account ${chosenAccountName}`);
           return { kind: "bytes", value: pk };
-        } else if (p.kind === "int") {
-          const v = currentVals[p.name] || "1000000000";
-          return { kind: "int", value: Number(v) };
-        } else if (p.kind === "bool") {
-          const v = currentVals[p.name] || "true";
-          return { kind: "bool", value: v === "true" };
-        } else {
-          const v = currentVals[p.name] || "";
-          return { kind: "bytes", value: hexToBytes(v) };
         }
+        return toArg(p, currentVals[p.name] ?? "");
       });
 
-      const sourceBase = (compiled.sourcePath ?? `contracts/${c.name}.sil`).replace(/\.sil$/, "");
-      const argsPath = `${sourceBase}.constructor-args.json`;
-      await api.fs.write(argsPath, JSON.stringify(args, null, 2));
-
-      // Recompile with the valid Schnorr keys
-      const compileRes = await (silver as any).console().runHardkas([
-        "silver", "compile", compiled.sourcePath ?? `contracts/${c.name}.sil`, "--args", argsPath, "--json"
-      ]);
-      const raw = compileRes.result as Record<string, unknown>;
-      if (compileRes.status !== "succeeded" || !raw || typeof raw.recordPath !== "string") {
-        throw new Error("Compilation with constructor arguments failed");
-      }
-      const newRec = await silver.loadCompiled({ file: compiled.sourcePath ?? `contracts/${c.name}.sil`, raw } as any);
-      const recordToDeploy = newRec?.recordPath ?? compiled.recordPath;
+      // Recompile with the constructor arguments through the compiler plugin: it writes the args file next to the
+      // source, refreshes the tree and emits the compile events the other panels listen to.
+      const source = compiled.sourcePath ?? `contracts/${c.name}.sil`;
+      const compileRes = await engine.get<CompilerPlugin>("silverCompiler").compile(source, { args: JSON.stringify(args) });
+      if (!compileRes.ok) throw new Error(compileRes.errorText || "Compilation with constructor arguments failed");
+      const recordToDeploy = useSilver.getState().compiled?.recordPath ?? compiled.recordPath;
       await silver.deploy({ compileRecordPath: recordToDeploy, from, amountKas: amount, contract: compiled.contracts.length > 1 ? c.name : undefined });
       return;
     }
@@ -109,6 +100,14 @@ export function ContractGUI() {
           >
             Switch to Local Node
           </button>
+        </div>
+      )}
+
+      {/* Deploys and spends only confirm while blocks are mined; say so before the user sends one. */}
+      {target === "localnet" && (!node?.miner?.running || busy !== null) && <MinerNotice compact />}
+      {recordProblems.length > 0 && (
+        <div role="status" className="rounded border border-warn/40 bg-warn/10 p-2 text-[11px] text-warn break-words">
+          {recordProblems.length} record{recordProblems.length === 1 ? "" : "s"} under .hardkas/artifacts/silver could not be read as expected (see the Console). A newer HardKas CLI may have changed their format; the IDE was tested with {cli?.pinned ?? "0.12.0-rc.29"}.
         </div>
       )}
 
@@ -216,7 +215,7 @@ export function ContractGUI() {
                   type="button"
                   className="btn-primary flex-1 justify-center truncate"
                   disabled={busy !== null}
-                  onClick={() => void handleDeploy(c).catch(() => undefined)}
+                  onClick={() => void handleDeploy(c).catch((e) => useSilver.getState().setError(e instanceof Error ? e.message : String(e)))}
                   title="Deploy contract to localnet"
                 >
                   <Rocket size={13} className="shrink-0" /> <span className="truncate">{busy === "deploy" ? "Deploying…" : `Deploy ${c.name}`}</span>

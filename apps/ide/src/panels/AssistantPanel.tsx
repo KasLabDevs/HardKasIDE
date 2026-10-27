@@ -10,6 +10,7 @@ import {
   ExternalLink,
   FileCode2,
   FilePlus2,
+  TerminalSquare,
   KeyRound,
   Loader2,
   MessageSquare,
@@ -41,11 +42,11 @@ const STARTERS = [
 ];
 
 const AGENT_STARTERS = [
-  "Ejecuta en la terminal 'hardkas --version' y comprueba el estado del entorno",
-  "Crea un contrato Escrow con refund por timeout en SilverScript y compílalo",
-  "Crea un contrato Auction con pujas y su test en Vitest",
-  "Compila y verifica todos los contratos en el directorio contracts/",
-  "Escribe un contrato Counter con incremento y su test suite"
+  "Run 'hardkas --version' in the terminal and check the state of the environment",
+  "Write an Escrow contract in SilverScript with a refund after a timeout, and compile it",
+  "Write an Auction contract with bids, plus its Vitest test",
+  "Compile and verify every contract in contracts/",
+  "Write a Counter contract with an increment entry and its test suite"
 ];
 
 /** Chat with any LLM about Kaspa and SilverScript, or run an autonomous agent with real workspace tools. */
@@ -57,7 +58,6 @@ export function AssistantPanel() {
   const turns = useAssistant((s) => s.turns);
   const busy = useAssistant((s) => s.busy);
   const agentRun = useAssistant((s) => s.agentRun);
-  const resetAgentRun = useAssistant((s) => s.resetAgentRun);
   const config = useAssistant((s) => s.config);
   const meta = useAssistant((s) => s.meta);
   const includeFile = useAssistant((s) => s.includeFile);
@@ -102,7 +102,7 @@ export function AssistantPanel() {
           {config ? (config.model ? `${config.model}` : "no model") : "…"}
           {meta?.docs ? <span className="ml-1 text-[10px]">· Kaspa docs {meta.docs.mode} (~{Math.round(meta.docs.chars / 4000)}k tok)</span> : config?.docs !== "off" && config ? <span className="ml-1 text-[10px]">· Kaspa docs {config.docs}</span> : null}
         </span>
-        <button type="button" onClick={() => (mode === "agent" ? resetAgentRun() : assistant.clear())} className="p-1 rounded hover:text-fg hover:bg-bg-hover cursor-pointer" title={mode === "agent" ? "Reset agent" : "Clear chat"} aria-label={mode === "agent" ? "Reset agent" : "Clear chat"} disabled={mode === "agent" ? !agentRun : turns.length === 0}>
+        <button type="button" onClick={() => (mode === "agent" ? assistant.resetAgent() : assistant.clear())} className="p-1 rounded hover:text-fg hover:bg-bg-hover cursor-pointer" title={mode === "agent" ? "Reset agent" : "Clear chat"} aria-label={mode === "agent" ? "Reset agent" : "Clear chat"} disabled={mode === "agent" ? !agentRun : turns.length === 0}>
           <Trash2 size={13} />
         </button>
         <button type="button" onClick={() => setSettingsOpen(!settingsOpen)} className={clsx("p-1 rounded cursor-pointer", settingsOpen ? "text-accent bg-bg-hover" : "hover:text-fg hover:bg-bg-hover")} title="Assistant settings" aria-label="Assistant settings" aria-pressed={settingsOpen}>
@@ -140,10 +140,10 @@ export function AssistantPanel() {
         {mode === "agent" && agentRun && (
           <button
             type="button"
-            onClick={() => resetAgentRun()}
+            onClick={() => assistant.resetAgent()}
             className="text-[11px] text-fg-muted hover:text-fg hover:underline cursor-pointer"
           >
-            Nueva tarea
+            New task
           </button>
         )}
       </div>
@@ -156,7 +156,7 @@ export function AssistantPanel() {
             agentRun={agentRun}
             busy={busy}
             onRunStarter={(goal) => void assistant.runAgent(goal)}
-            onReset={() => resetAgentRun()}
+            onReset={() => assistant.resetAgent()}
           />
         ) : (
           <>
@@ -197,7 +197,7 @@ export function AssistantPanel() {
             className="input resize-none min-h-[54px] max-h-40"
             placeholder={
               mode === "agent"
-                ? "Objetivo para el agente autónomo (ej: 'Crea un contrato Escrow y compílalo')… Enter para ejecutar"
+                ? "Goal for the agent (e.g. 'Write an Escrow contract and compile it')…  Enter to run"
                 : "Ask about Kaspa or SilverScript…  (Enter to send, Shift+Enter for a new line)"
             }
             value={input}
@@ -221,7 +221,7 @@ export function AssistantPanel() {
               className={clsx("shrink-0 h-[54px]", mode === "agent" ? "btn-primary bg-accent/90 hover:bg-accent" : "btn-primary")}
               onClick={() => send()}
               disabled={!input.trim()}
-              title={mode === "agent" ? "Ejecutar Agente" : "Send"}
+              title={mode === "agent" ? "Run the agent" : "Send"}
               aria-label={mode === "agent" ? "Run agent goal" : "Send message"}
             >
               {mode === "agent" ? <Wand2 size={14} /> : <Send size={14} />}
@@ -252,6 +252,8 @@ function AgentView({
   const engine = useEngine();
   const [openStepIds, setOpenStepIds] = useState<Record<string, boolean>>({});
 
+  const onConfirm = (approved: boolean, allForRun = false) => engine.get<AssistantPlugin>("assistant").answerConfirm(approved, allForRun);
+
   const toggleStep = (id: string) => {
     setOpenStepIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
@@ -269,10 +271,10 @@ function AgentView({
       <div className="space-y-4 pt-1">
         <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 space-y-2">
           <div className="flex items-center gap-2 text-accent font-semibold text-xs">
-            <Wand2 size={14} /> Modo Agente Autónomo
+            <Wand2 size={14} /> Agent mode
           </div>
           <p className="text-fg-muted leading-relaxed text-[11px]">
-            El agente tiene control autónomo sobre el espacio de trabajo: escribe código, compila con <code className="font-mono text-accent">silverc</code>, ejecuta tests y repara errores automáticamente en bucle cerrado.
+            The agent works on the workspace by itself: it writes files, runs terminal commands, compiles with <code className="font-mono text-accent">silverc</code>, runs the tests and retries on errors. Every step shows up below as it happens, and Stop ends the run.
           </p>
           <div className="flex flex-wrap gap-1.5 pt-1">
             {["execute_terminal_command", "write_file", "compile_silverscript", "run_tests", "fund_account"].map((t) => (
@@ -284,7 +286,7 @@ function AgentView({
         </div>
 
         <div className="space-y-1.5">
-          <div className="text-[11px] font-medium text-fg-muted uppercase tracking-wider">Tareas de inicio sugeridas</div>
+          <div className="text-[11px] font-medium text-fg-muted uppercase tracking-wider">Suggested tasks</div>
           {AGENT_STARTERS.map((s) => (
             <button
               key={s}
@@ -308,32 +310,56 @@ function AgentView({
       <div className="rounded-lg border border-border bg-bg-elev p-3 space-y-2">
         <div className="flex items-start justify-between gap-2">
           <div className="space-y-1 min-w-0 flex-1">
-            <div className="text-[10px] uppercase font-semibold text-fg-muted tracking-wider">Objetivo en curso</div>
+            <div className="text-[10px] uppercase font-semibold text-fg-muted tracking-wider">Goal</div>
             <div className="font-medium text-fg text-xs break-words">{agentRun.goal}</div>
           </div>
           <div className="shrink-0">
             {agentRun.running ? (
               <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/10 border border-accent/30 text-accent text-[11px] font-medium">
-                <Loader2 size={11} className="animate-spin" /> Ejecutando
+                <Loader2 size={11} className="animate-spin" /> Running
               </span>
             ) : agentRun.ok ? (
               <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-ok/10 border border-ok/30 text-ok text-[11px] font-medium">
-                <CheckCircle2 size={11} /> Verificado
+                <CheckCircle2 size={11} /> Finished
               </span>
             ) : (
               <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-error/10 border border-error/30 text-error text-[11px] font-medium">
-                <XCircle size={11} /> Detenido
+                <XCircle size={11} /> Stopped
               </span>
             )}
           </div>
         </div>
       </div>
 
+      {/* A terminal command waiting for approval: the run is paused until one of these buttons is pressed. */}
+      {agentRun.pendingConfirm && (
+        <div role="alertdialog" aria-label="The agent wants to run a terminal command" className="rounded-lg border border-warn/50 bg-warn/5 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-warn font-semibold text-xs">
+            <TerminalSquare size={14} /> Run this command in the workspace?
+          </div>
+          <pre className="font-mono text-[11px] text-fg bg-bg border border-border rounded p-2 whitespace-pre-wrap break-all max-h-32 overflow-auto">{agentRun.pendingConfirm.command}</pre>
+          <p className="text-[10px] text-fg-muted leading-relaxed">
+            The agent proposed it; it may come from a file or a page it read. It runs with your user and the workspace as the current folder.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" className="btn-primary text-xs" onClick={() => void onConfirm(true)}>
+              <Check size={12} /> Run
+            </button>
+            <button type="button" className="btn-ghost text-xs" onClick={() => void onConfirm(true, true)} title="Run this and every later command of this run without asking">
+              Run all in this run
+            </button>
+            <button type="button" className="btn-ghost text-xs text-error" onClick={() => void onConfirm(false)}>
+              <XCircle size={12} /> Skip
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Live Agent Thoughts (if any) */}
       {agentRun.thoughts.length > 0 && (
         <div className="rounded-lg border border-border/80 bg-bg p-2.5 space-y-1 text-fg-muted text-[11px] italic">
           <div className="not-italic font-semibold text-[10px] uppercase tracking-wider text-accent flex items-center gap-1">
-            <span>💭</span> Razonamiento
+            <span>💭</span> Reasoning
           </div>
           {agentRun.thoughts.slice(-2).map((thought, idx) => (
             <div key={idx} className="whitespace-pre-wrap leading-relaxed">
@@ -346,7 +372,7 @@ function AgentView({
       {/* Steps Timeline */}
       <div className="space-y-2">
         <div className="text-[10px] uppercase font-semibold text-fg-muted tracking-wider px-1">
-          Línea de ejecución ({agentRun.steps.length} {agentRun.steps.length === 1 ? "paso" : "pasos"})
+          Steps ({agentRun.steps.length})
         </div>
 
         <div className="space-y-1.5">
@@ -418,7 +444,7 @@ function AgentView({
                           onClick={() => openFile(filePath)}
                           className="flex items-center gap-1 text-[10px] text-accent hover:underline cursor-pointer"
                         >
-                          <FileCode2 size={11} /> Abrir en editor
+                          <FileCode2 size={11} /> Open in editor
                         </button>
                       </div>
                     )}
@@ -451,11 +477,11 @@ function AgentView({
           <div className="flex items-center gap-2 font-semibold">
             {agentRun.ok ? (
               <span className="text-ok flex items-center gap-1.5">
-                <CheckCircle2 size={14} /> Contrato y pruebas verificados
+                <CheckCircle2 size={14} /> The agent finished; check its steps and run the tests yourself
               </span>
             ) : (
               <span className="text-warn flex items-center gap-1.5">
-                <AlertCircle size={14} /> Ejecución finalizada con observaciones
+                <AlertCircle size={14} /> The run ended without finishing the goal
               </span>
             )}
           </div>
@@ -467,7 +493,7 @@ function AgentView({
             onClick={onReset}
             className="btn-primary w-full justify-center mt-1"
           >
-            <Wand2 size={13} /> Iniciar nueva tarea
+            <Wand2 size={13} /> New task
           </button>
         </div>
       )}

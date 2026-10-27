@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>KaspaAuction dApp · Decentralized P2P Covenant Auction</title>
+  <title>KaspaAuction dApp · SilverScript covenant demo</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <script>
@@ -32,13 +32,11 @@
   </script>
   <style>
     body { background-color: #0B0F19; color: #F3F4F6; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    .kaspa-border { border-color: rgba(112, 199, 186, 0.3); }
     .kaspa-glow { box-shadow: 0 0 25px rgba(112, 199, 186, 0.15); }
-    .pulse-glow { animation: pulse 2.5s infinite; }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.85; transform: scale(1.01); }
-    }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button:disabled:hover { background-color: inherit; }
+    input:disabled { opacity: 0.45; cursor: not-allowed; }
+    .mono-break { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; }
   </style>
 </head>
 <body class="min-h-screen flex flex-col antialiased selection:bg-kaspa/30 selection:text-kaspa-light">
@@ -56,22 +54,19 @@
               KaspaAuction
             </span>
             <span class="px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider rounded bg-kaspa/10 border border-kaspa/30 text-kaspa-light">
-              Covenant P2P
+              SilverScript covenant
             </span>
           </div>
-          <p class="text-[11px] text-dark-muted font-mono">UTXO SilverScript Contract on BlockDAG</p>
+          <p class="text-[11px] text-dark-muted font-mono">Demo dApp for the HardKas IDE</p>
         </div>
       </div>
 
       <div class="flex items-center gap-3">
-        <!-- Network Badge -->
+        <!-- Network + mode badge: network comes from contract-config.json, mode from the /api/info probe -->
         <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-dark-border bg-dark-bg/60 text-xs">
-          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-          <span class="w-2 h-2 rounded-full bg-emerald-400 -ml-4"></span>
-          <span id="network-display" class="font-mono text-gray-300">simnet (18210)</span>
+          <span id="mode-display" class="font-mono text-gray-300">detecting…</span>
         </div>
 
-        <!-- Connect Wallet Button -->
         <button id="connect-btn" onclick="connectWallet()" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-kaspa hover:bg-kaspa-light text-dark-bg font-semibold text-xs transition-all shadow-md hover:shadow-kaspa/20 cursor-pointer">
           <i data-lucide="wallet" class="w-4 h-4"></i>
           <span id="connect-label">Connect KasWare</span>
@@ -81,164 +76,196 @@
   </header>
 
   <!-- Main Content -->
-  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
 
-    <!-- Top Alert / Status Banner -->
-    <div id="status-banner" class="rounded-xl border border-kaspa/30 bg-kaspa/5 p-4 flex flex-wrap items-center justify-between gap-4">
-      <div class="flex items-center gap-3">
-        <div class="p-2 rounded-lg bg-kaspa/20 text-kaspa-light">
-          <i data-lucide="shield-check" class="w-5 h-5"></i>
-        </div>
-        <div>
-          <div class="font-semibold text-sm text-gray-100 flex items-center gap-2">
-            Covenant Activo en Mempool/DAG
-            <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono">CONFIRMADO</span>
-          </div>
-          <p id="contract-addr-banner" class="text-xs text-dark-muted font-mono truncate max-w-md sm:max-w-xl">
-            Cargando dirección del contrato...
-          </p>
-        </div>
+    <!-- Read-only notice (hidden in IDE mode) -->
+    <div id="mode-notice" class="hidden rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 flex items-start gap-3">
+      <div class="p-2 rounded-lg bg-amber-500/20 text-amber-300">
+        <i data-lucide="eye" class="w-5 h-5"></i>
       </div>
-      <div class="flex items-center gap-2">
-        <a id="explorer-btn" href="#" target="_blank" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dark-border hover:bg-dark-hover text-xs text-gray-300 transition-colors">
-          <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
-          Ver en DAG Explorer
-        </a>
+      <div class="text-sm text-amber-100">
+        <div class="font-semibold">Read-only</div>
+        <p class="text-xs text-amber-200/80 mt-0.5">
+          Open this page from the IDE (<a href="http://127.0.0.1:7421/dapp/" class="underline font-mono">http://127.0.0.1:7421/dapp/</a>) to call the entries with the dev accounts.
+        </p>
       </div>
     </div>
 
-    <!-- Grid Layout: Left Auction Details, Right Covenant Graph & Bidding -->
+    <!-- Empty state (shown when contract-config.json is missing or has no address) -->
+    <div id="empty-state" class="hidden rounded-xl border border-dark-border bg-dark-card p-5 flex items-start gap-3">
+      <div class="p-2 rounded-lg bg-dark-hover text-gray-300">
+        <i data-lucide="package-open" class="w-5 h-5"></i>
+      </div>
+      <div class="text-sm">
+        <div class="font-semibold text-gray-100">No deployment yet.</div>
+        <p class="text-xs text-dark-muted mt-0.5">
+          Run <code class="font-mono text-gray-200">npm run deploy:auction</code> with the IDE server and the local node running. It writes <code class="font-mono text-gray-200">dapp/contract-config.json</code>, which this page reads.
+        </p>
+      </div>
+    </div>
+
+    <!-- Deployment banner (from contract-config.json) -->
+    <div id="status-banner" class="hidden rounded-xl border border-kaspa/30 bg-kaspa/5 p-4 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-start gap-3 min-w-0">
+        <div class="p-2 rounded-lg bg-kaspa/20 text-kaspa-light">
+          <i data-lucide="shield-check" class="w-5 h-5"></i>
+        </div>
+        <div class="min-w-0">
+          <div class="font-semibold text-sm text-gray-100">
+            <span id="banner-contract">Covenant</span> deployed on <span id="banner-network" class="font-mono"></span>
+          </div>
+          <p class="text-xs text-dark-muted mt-0.5">P2SH address <span id="banner-address" class="mono-break text-gray-300"></span></p>
+          <p class="text-xs text-dark-muted">Deploy tx <span id="banner-txid" class="mono-break text-gray-300"></span></p>
+        </div>
+      </div>
+      <div class="text-[11px] text-dark-muted font-mono text-right">
+        <div>deployed <span id="banner-deployed-at" class="text-gray-300"></span></div>
+        <div>record <span id="banner-record" class="text-gray-300"></span></div>
+      </div>
+    </div>
+
+    <!-- Grid: left = contract + actions + feed, right = how it works -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
-      <!-- Left Column (7 cols): Auction Item & Actions -->
+      <!-- Left Column -->
       <div class="lg:col-span-7 space-y-6">
 
-        <!-- Auction Card -->
+        <!-- Contract card -->
         <div class="rounded-2xl border border-dark-border bg-dark-card p-6 space-y-6 kaspa-glow relative overflow-hidden">
           <div class="absolute -top-12 -right-12 w-48 h-48 bg-kaspa/10 rounded-full blur-3xl pointer-events-none"></div>
 
-          <!-- Item Header -->
           <div class="flex items-start justify-between gap-4">
             <div>
-              <span class="text-xs font-mono text-kaspa uppercase tracking-wider">Lote #001 · SilverScript Covenant</span>
-              <h1 class="text-2xl font-bold text-gray-100 mt-1">Kaspa BlockDAG Genesis Inscription</h1>
-              <p class="text-xs text-dark-muted mt-1">Activo descentralizado custodiado por contrato autónomo en Kaspa.</p>
+              <span class="text-xs font-mono text-kaspa uppercase tracking-wider">contracts/auction.sil</span>
+              <h1 class="text-2xl font-bold text-gray-100 mt-1">KaspaAuction</h1>
+              <p class="text-xs text-dark-muted mt-1">A demo auction covenant: one locked UTXO and three signature-gated entries. Everything below comes from the deploy config, the local node or a transaction you send.</p>
             </div>
-            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 flex items-center gap-1.5">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              Subasta Abierta
-            </span>
           </div>
 
-          <!-- Price & Metrics Banner -->
+          <!-- Constructor arguments and deploy value, all from contract-config.json -->
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 rounded-xl border border-dark-border bg-dark-bg/80">
             <div>
-              <div class="text-[11px] text-dark-muted uppercase font-mono">Puja Más Alta</div>
-              <div id="highest-bid-val" class="text-xl font-extrabold text-kaspa-light font-mono mt-0.5">10.00 KAS</div>
-              <div class="text-[10px] text-gray-400">1,000,000,000 Sompi</div>
+              <div class="text-[11px] text-dark-muted uppercase font-mono">Deployed value</div>
+              <div id="cfg-value" class="text-xl font-extrabold text-kaspa-light font-mono mt-0.5">—</div>
+              <div id="cfg-value-sompi" class="text-[10px] text-gray-400">from the deploy record</div>
             </div>
             <div>
-              <div class="text-[11px] text-dark-muted uppercase font-mono">Reserva Bloqueada</div>
-              <div id="locked-value-val" class="text-xl font-bold text-gray-200 font-mono mt-0.5">5.00 KAS</div>
-              <div class="text-[10px] text-gray-400">P2SH Outpoint</div>
+              <div class="text-[11px] text-dark-muted uppercase font-mono">minBidSompi (constructor)</div>
+              <div id="cfg-minbid" class="text-xl font-bold text-gray-200 font-mono mt-0.5">—</div>
+              <div id="cfg-minbid-sompi" class="text-[10px] text-gray-400">stored in the script, not enforced by any entry</div>
             </div>
-            <div class="col-span-2 sm:col-span-1">
-              <div class="text-[11px] text-dark-muted uppercase font-mono">Postor Ganador</div>
-              <div id="highest-bidder-val" class="text-xs font-mono text-gray-300 truncate mt-1.5" title="Bob">
-                Bob (kaspasim:qryj...)
-              </div>
-              <div class="text-[10px] text-kaspa font-mono">✓ Firma válida</div>
+            <div class="col-span-2 sm:col-span-1 min-w-0">
+              <div class="text-[11px] text-dark-muted uppercase font-mono">Parties (constructor)</div>
+              <div class="text-[10px] text-dark-muted mt-1.5">seller · alice</div>
+              <div id="cfg-seller" class="text-[11px] font-mono text-gray-300 truncate">—</div>
+              <div class="text-[10px] text-dark-muted mt-1">highestBidder · bob</div>
+              <div id="cfg-bidder" class="text-[11px] font-mono text-gray-300 truncate">—</div>
             </div>
           </div>
 
-          <!-- Bid Input Form -->
-          <div class="space-y-3 pt-2">
-            <label class="block text-xs font-semibold text-gray-200">
-              Pujar en la Subasta (KAS)
-            </label>
-            <div class="flex gap-2">
-              <div class="relative flex-1">
-                <input id="bid-input" type="number" step="1" min="11" value="15" class="w-full bg-dark-bg border border-dark-border focus:border-kaspa rounded-xl px-4 py-2.5 text-sm font-mono text-gray-100 outline-none transition-colors" placeholder="Cantidad KAS" />
-                <span class="absolute right-4 top-2.5 text-xs font-mono text-dark-muted">KAS</span>
+          <!-- Covenant status on the node (IDE mode only: hardkas rpc utxos <address> --json) -->
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="text-xs font-semibold text-gray-300 flex items-center gap-2">
+                <i data-lucide="radio" class="w-3.5 h-3.5 text-kaspa"></i>
+                Covenant status on the local node
               </div>
-              <button onclick="placeBid()" class="px-5 py-2.5 rounded-xl bg-kaspa hover:bg-kaspa-light text-dark-bg font-bold text-xs flex items-center gap-2 transition-all shadow-lg hover:shadow-kaspa/20 cursor-pointer shrink-0">
-                <i data-lucide="arrow-up-circle" class="w-4 h-4"></i>
-                Pujar con KasWare
+              <button id="refresh-btn" onclick="refreshStatus()" disabled class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dark-border hover:bg-dark-hover text-xs text-gray-300 transition-colors cursor-pointer">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                <span id="refresh-label">Refresh</span>
               </button>
             </div>
-            <div class="flex items-center justify-between text-[11px] text-dark-muted">
-              <span>Mínimo para superar: <strong id="min-bid-val" class="text-gray-200 font-mono">11 KAS</strong></span>
-              <span>Fee de red: ~0.0002 KAS</span>
+            <div class="grid grid-cols-3 gap-3 p-4 rounded-xl border border-dark-border bg-dark-bg/60">
+              <div>
+                <div class="text-[11px] text-dark-muted uppercase font-mono">Total locked</div>
+                <div id="node-total" class="text-lg font-bold text-gray-100 font-mono mt-0.5">—</div>
+                <div id="node-total-sompi" class="text-[10px] text-gray-400"></div>
+              </div>
+              <div>
+                <div class="text-[11px] text-dark-muted uppercase font-mono">UTXOs at address</div>
+                <div id="node-count" class="text-lg font-bold text-gray-100 font-mono mt-0.5">—</div>
+              </div>
+              <div>
+                <div class="text-[11px] text-dark-muted uppercase font-mono">Deploy output</div>
+                <div id="node-deploy-state" class="text-sm font-semibold text-gray-100 font-mono mt-1">—</div>
+              </div>
+            </div>
+            <p id="node-message" class="text-[11px] text-dark-muted">Detecting mode…</p>
+          </div>
+
+          <!-- Send KAS with KasWare -->
+          <div class="border-t border-dark-border pt-5 space-y-3">
+            <div class="text-xs font-semibold text-gray-300 flex items-center gap-2">
+              <i data-lucide="send" class="w-3.5 h-3.5 text-kaspa"></i>
+              Send KAS to the covenant (KasWare)
+            </div>
+            <p class="text-[11px] text-dark-muted">This adds an output locked by the same script; it is not a bid the contract understands — the auction logic lives in the three entries.</p>
+            <div class="flex gap-2">
+              <div class="relative flex-1">
+                <input id="send-input" type="number" step="any" min="0" value="1" disabled class="w-full bg-dark-bg border border-dark-border focus:border-kaspa rounded-xl px-4 py-2.5 text-sm font-mono text-gray-100 outline-none transition-colors" placeholder="Amount" />
+                <span class="absolute right-4 top-2.5 text-xs font-mono text-dark-muted">KAS</span>
+              </div>
+              <button id="send-btn" onclick="sendToCovenant()" disabled class="px-5 py-2.5 rounded-xl bg-kaspa hover:bg-kaspa-light text-dark-bg font-bold text-xs flex items-center gap-2 transition-all shadow-lg hover:shadow-kaspa/20 cursor-pointer shrink-0">
+                <i data-lucide="arrow-up-circle" class="w-4 h-4"></i>
+                Send with KasWare
+              </button>
             </div>
           </div>
 
-          <!-- Covenant Entrypoint Actions (Settle, Close, Cancel) -->
+          <!-- Entries: real spends through hardkas silver spend (IDE mode only) -->
           <div class="border-t border-dark-border pt-5 space-y-3">
             <div class="text-xs font-semibold text-gray-300 flex items-center gap-2">
               <i data-lucide="git-branch" class="w-3.5 h-3.5 text-kaspa"></i>
-              Acciones de Desbloqueo de Covenant (Entrypoints)
+              Entries (spend the covenant output with a dev account)
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <button onclick="executeEntry('claim')" class="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/15 text-left transition-colors cursor-pointer group">
+              <button id="entry-claim" onclick="executeEntry('claim')" disabled class="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/15 text-left transition-colors cursor-pointer group">
                 <div class="flex items-center justify-between">
                   <span class="font-mono text-xs font-bold text-emerald-400 group-hover:underline">claim()</span>
                   <i data-lucide="award" class="w-3.5 h-3.5 text-emerald-400"></i>
                 </div>
-                <p class="text-[10px] text-dark-muted mt-1">El postor ganador liquida y reclama el lote.</p>
+                <p class="text-[10px] text-dark-muted mt-1">bob (highestBidder) signs; the output goes to bob's address.</p>
               </button>
 
-              <button onclick="executeEntry('close')" class="p-3 rounded-xl border border-kaspa/30 bg-kaspa/5 hover:bg-kaspa/15 text-left transition-colors cursor-pointer group">
+              <button id="entry-close" onclick="executeEntry('close')" disabled class="p-3 rounded-xl border border-kaspa/30 bg-kaspa/5 hover:bg-kaspa/15 text-left transition-colors cursor-pointer group">
                 <div class="flex items-center justify-between">
                   <span class="font-mono text-xs font-bold text-kaspa-light group-hover:underline">close()</span>
                   <i data-lucide="coins" class="w-3.5 h-3.5 text-kaspa-light"></i>
                 </div>
-                <p class="text-[10px] text-dark-muted mt-1">El vendedor finaliza y cobra la puja.</p>
+                <p class="text-[10px] text-dark-muted mt-1">alice (seller) signs; the output goes to alice's address.</p>
               </button>
 
-              <button onclick="executeEntry('cancel')" class="p-3 rounded-xl border border-rose-500/30 bg-rose-500/5 hover:bg-rose-500/15 text-left transition-colors cursor-pointer group">
+              <button id="entry-cancel" onclick="executeEntry('cancel')" disabled class="p-3 rounded-xl border border-rose-500/30 bg-rose-500/5 hover:bg-rose-500/15 text-left transition-colors cursor-pointer group">
                 <div class="flex items-center justify-between">
                   <span class="font-mono text-xs font-bold text-rose-400 group-hover:underline">cancel()</span>
                   <i data-lucide="ban" class="w-3.5 h-3.5 text-rose-400"></i>
                 </div>
-                <p class="text-[10px] text-dark-muted mt-1">El vendedor cancela y recupera el depósito.</p>
+                <p class="text-[10px] text-dark-muted mt-1">alice (seller) signs; the output goes to alice's address.</p>
               </button>
             </div>
+            <p id="entry-reason" class="text-[11px] text-dark-muted"></p>
+            <p id="entry-status" class="hidden text-[11px] font-mono rounded-lg border p-2.5"></p>
           </div>
 
         </div>
 
-        <!-- Activity Feed -->
+        <!-- Activity feed: the deploy from the config, then only real results -->
         <div class="rounded-2xl border border-dark-border bg-dark-card p-5 space-y-3">
           <div class="flex items-center justify-between">
             <h3 class="font-semibold text-xs text-gray-200 flex items-center gap-2">
               <i data-lucide="activity" class="w-3.5 h-3.5 text-kaspa"></i>
-              Historial de Transacciones & Registro On-Chain
+              Activity
             </h3>
-            <span class="text-[10px] text-dark-muted font-mono">Live WebSocket</span>
+            <span class="text-[10px] text-dark-muted font-mono">this page session + the deploy record</span>
           </div>
-          <div id="events-log" class="space-y-2 text-xs font-mono max-h-48 overflow-y-auto pr-1">
-            <div class="p-2.5 rounded-lg border border-dark-border bg-dark-bg/60 flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-                <span class="text-emerald-400">Despliegue Confirmado</span>
-                <span class="text-dark-muted text-[11px]">(5 KAS)</span>
-              </div>
-              <span class="text-dark-muted text-[10px]">DAA #342116</span>
-            </div>
-            <div class="p-2.5 rounded-lg border border-dark-border bg-dark-bg/60 flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-kaspa"></span>
-                <span class="text-gray-200">Puja Inicial de Bob</span>
-                <span class="text-kaspa text-[11px]">(10 KAS)</span>
-              </div>
-              <span class="text-dark-muted text-[10px]">DAA #342120</span>
-            </div>
+          <div id="events-log" class="space-y-2 text-xs font-mono max-h-64 overflow-y-auto pr-1">
+            <p id="events-empty" class="text-dark-muted text-[11px]">Nothing yet.</p>
           </div>
         </div>
 
       </div>
 
-      <!-- Right Column (5 cols): Visual Covenant Flow Inspector -->
+      <!-- Right Column: static documentation of the contract -->
       <div class="lg:col-span-5 space-y-6">
 
         <div class="rounded-2xl border border-dark-border bg-dark-card p-6 space-y-4 kaspa-glow">
@@ -246,46 +273,42 @@
             <div>
               <h2 class="text-sm font-bold text-gray-100 flex items-center gap-2">
                 <i data-lucide="git-fork" class="w-4 h-4 text-kaspa"></i>
-                Visual UTXO Covenant Flow
+                How the covenant works
               </h2>
-              <p class="text-[11px] text-dark-muted mt-0.5">Grafo interactivo del ciclo de vida del contrato</p>
+              <p class="text-[11px] text-dark-muted mt-0.5">Static description of the contract's lifecycle</p>
             </div>
             <span class="px-2 py-0.5 text-[10px] font-mono rounded bg-kaspa/15 text-kaspa-light">
-              SilverScript v0.1.0
+              pragma silverscript ^0.1.0
             </span>
           </div>
 
-          <!-- Flowchart Graphic (SVG Custom Flow) -->
           <div class="space-y-3 font-mono text-xs">
-            
-            <!-- Step 1: Funding -->
+
+            <!-- Step 1: Deploy -->
             <div class="p-3 rounded-xl border border-blue-500/30 bg-blue-500/5 relative">
               <div class="flex items-center justify-between">
-                <span class="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Paso 1: Fondeo / Reserva</span>
-                <span class="text-[10px] text-dark-muted">Alice (Seller)</span>
+                <span class="text-[10px] font-bold text-blue-400 uppercase tracking-wider">1 · Deploy</span>
+                <span class="text-[10px] text-dark-muted">hardkas silver deploy --from alice</span>
               </div>
-              <div class="text-gray-200 font-semibold text-xs mt-1">UTXO de Depósito (5 KAS)</div>
-              <div class="text-[10px] text-dark-muted truncate mt-0.5">kaspasim:qqlpk9rs7yag...</div>
+              <div class="text-gray-200 font-semibold text-xs mt-1">alice funds one P2SH output</div>
+              <div class="text-[10px] text-dark-muted mt-0.5">The compiled script, with the three constructor arguments baked in, becomes the output's locking condition.</div>
             </div>
 
-            <!-- Arrow Down -->
             <div class="flex justify-center text-dark-muted">
               <i data-lucide="arrow-down" class="w-4 h-4 text-kaspa"></i>
             </div>
 
-            <!-- Step 2: Covenant Lock -->
+            <!-- Step 2: Locked -->
             <div class="p-3.5 rounded-xl border border-kaspa/50 bg-kaspa/10 relative shadow-inner">
               <div class="flex items-center justify-between">
-                <span class="text-[10px] font-bold text-kaspa-light uppercase tracking-wider">Paso 2: Bloqueo P2SH</span>
-                <span class="text-[10px] px-1.5 py-0.5 rounded bg-kaspa/20 text-kaspa font-mono">LOCKED</span>
+                <span class="text-[10px] font-bold text-kaspa-light uppercase tracking-wider">2 · Locked at the P2SH address</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-kaspa/20 text-kaspa font-mono">P2SH</span>
               </div>
-              <div class="text-sm font-extrabold text-white mt-1">KaspaAuction.sil</div>
-              <div id="covenant-p2sh-display" class="text-[10px] text-kaspa-light/80 break-all mt-1">
-                kaspasim:pqp4zpz5txk0mxz5lxsrrtwhxrgs9k3znqhy0qhd37la22u4l7eqqhyrunejw
-              </div>
+              <div class="text-sm font-extrabold text-white mt-1">KaspaAuction</div>
+              <div id="covenant-p2sh-display" class="text-[10px] text-kaspa-light/80 break-all mt-1">—</div>
+              <div class="text-[10px] text-dark-muted mt-1">Anyone can send more KAS here; only an entry can spend it.</div>
             </div>
 
-            <!-- Branches Fork -->
             <div class="flex justify-center text-dark-muted">
               <i data-lucide="git-fork" class="w-4 h-4 text-kaspa rotate-180"></i>
             </div>
@@ -294,39 +317,38 @@
             <div class="grid grid-cols-3 gap-2">
               <div class="p-2 rounded-lg border border-dark-border bg-dark-bg text-center">
                 <div class="text-[10px] text-emerald-400 font-bold">claim()</div>
-                <div class="text-[9px] text-dark-muted mt-0.5">winnerSig</div>
+                <div class="text-[9px] text-dark-muted mt-0.5">checkSig(winnerSig, highestBidder)</div>
               </div>
               <div class="p-2 rounded-lg border border-dark-border bg-dark-bg text-center">
                 <div class="text-[10px] text-kaspa font-bold">close()</div>
-                <div class="text-[9px] text-dark-muted mt-0.5">sellerSig</div>
+                <div class="text-[9px] text-dark-muted mt-0.5">checkSig(sellerSig, seller)</div>
               </div>
               <div class="p-2 rounded-lg border border-dark-border bg-dark-bg text-center">
                 <div class="text-[10px] text-rose-400 font-bold">cancel()</div>
-                <div class="text-[9px] text-dark-muted mt-0.5">sellerSig</div>
+                <div class="text-[9px] text-dark-muted mt-0.5">checkSig(sellerSig, seller)</div>
               </div>
             </div>
 
-            <!-- Arrow Down -->
             <div class="flex justify-center text-dark-muted">
               <i data-lucide="arrow-down" class="w-4 h-4 text-kaspa"></i>
             </div>
 
-            <!-- Step 4: Settlement -->
+            <!-- Step 4: Spend -->
             <div class="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5">
               <div class="flex items-center justify-between">
-                <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Paso 4: Liquidación Final</span>
-                <span class="text-[10px] text-emerald-400 font-mono">UTXO GASTADO</span>
+                <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">3 · Spend</span>
+                <span class="text-[10px] text-dark-muted">hardkas silver spend --entry …</span>
               </div>
-              <div class="text-xs font-semibold text-gray-200 mt-1">Fondos Transferidos al Vendedor</div>
-              <div class="text-[10px] text-dark-muted mt-0.5">Activo adjudicado al ganador en el DAG</div>
+              <div class="text-xs font-semibold text-gray-200 mt-1">One entry spends the whole output</div>
+              <div class="text-[10px] text-dark-muted mt-0.5">Each entry only checks a signature. The spend transaction chooses the recipient (<span class="text-gray-300">--to</span>); nothing in the script compares amounts or picks a winner.</div>
             </div>
 
           </div>
 
-          <!-- Code Inspector Snippet -->
+          <!-- Source -->
           <div class="border-t border-dark-border pt-4">
             <div class="flex items-center justify-between text-xs text-dark-muted mb-2 font-mono">
-              <span>Código SilverScript compilado:</span>
+              <span>SilverScript source</span>
               <span class="text-kaspa">contracts/auction.sil</span>
             </div>
             <pre class="rounded-xl border border-dark-border bg-dark-bg p-3 text-[10px] font-mono text-gray-300 overflow-x-auto leading-relaxed">
@@ -351,158 +373,472 @@ contract KaspaAuction(pubkey seller, pubkey highestBidder, int minBidSompi) {
 
   </main>
 
-  <!-- Notification Toast -->
+  <!-- Toast -->
   <div id="toast" class="fixed bottom-6 right-6 max-w-sm w-full bg-dark-card border border-kaspa/40 rounded-xl p-4 shadow-2xl transition-all transform translate-y-32 opacity-0 pointer-events-none flex items-start gap-3 z-50">
     <div id="toast-icon" class="p-1 rounded bg-kaspa/20 text-kaspa-light mt-0.5">
-      <i data-lucide="check-circle" class="w-4 h-4"></i>
+      <i data-lucide="info" class="w-4 h-4"></i>
     </div>
-    <div class="flex-1">
-      <div id="toast-title" class="font-bold text-xs text-gray-100">Transacción Enviada</div>
-      <div id="toast-msg" class="text-xs text-dark-muted mt-0.5">La puja se ha registrado exitosamente.</div>
+    <div class="flex-1 min-w-0">
+      <div id="toast-title" class="font-bold text-xs text-gray-100"></div>
+      <div id="toast-msg" class="text-xs text-dark-muted mt-0.5 break-words"></div>
     </div>
   </div>
 
   <script>
-    // State
-    let config = null;
-    let connectedAddress = null;
-    let currentBid = 10;
+    // ------------------------------------------------------------------ state
+    let config = null;      // dapp/contract-config.json, or null when there is no deployment
+    let mode = 'readonly';  // 'ide' when the IDE server serves this page (same-origin /api/*)
+    let busyEntry = null;   // entry currently being spent
+    let statusBusy = false; // a `rpc utxos` job is running
+    let kaswareAddress = null;
 
-    // Initialize Lucide Icons
+    const ENTRIES = {
+      close:  { signer: 'alice', recipientField: 'sellerAddress' },
+      claim:  { signer: 'bob',   recipientField: 'highestBidderAddress' },
+      cancel: { signer: 'alice', recipientField: 'sellerAddress' }
+    };
+
     lucide.createIcons();
 
-    // Load config
+    const $ = (id) => document.getElementById(id);
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    // ------------------------------------------------------------------ formatting
+    // Sompi values arrive as strings from the CLI; BigInt keeps them exact.
+    function formatKas(sompi) {
+      let n;
+      try { n = BigInt(String(sompi)); } catch { return `${sompi} sompi`; }
+      const neg = n < 0n;
+      if (neg) n = -n;
+      const whole = (n / 100000000n).toString();
+      const frac = (n % 100000000n).toString().padStart(8, '0').replace(/0+$/, '');
+      return `${neg ? '-' : ''}${whole}${frac ? '.' + frac : ''} KAS`;
+    }
+
+    function formatSompi(sompi) {
+      try { return `${BigInt(String(sompi)).toLocaleString('en-US')} sompi`; } catch { return `${sompi} sompi`; }
+    }
+
+    function formatTime(iso) {
+      const d = new Date(iso);
+      return isNaN(d.getTime()) ? String(iso) : d.toLocaleString();
+    }
+
+    // ------------------------------------------------------------------ boot
+    async function init() {
+      const [ide, cfg] = await Promise.all([detectIde(), loadConfig()]);
+      mode = ide ? 'ide' : 'readonly';
+      config = cfg;
+      renderMode();
+      renderConfig();
+      updateControls();
+      if (!config) {
+        renderNodeStatus({ message: 'No deployment to query.' });
+      } else if (mode !== 'ide') {
+        renderNodeStatus({ message: 'Node status is only available in IDE mode.' });
+      } else {
+        refreshStatus();
+      }
+    }
+
+    async function detectIde() {
+      try {
+        const res = await fetch('/api/info', { cache: 'no-store' });
+        if (!res.ok) return null;
+        const info = await res.json();
+        return info && typeof info === 'object' ? info : null;
+      } catch {
+        return null;
+      }
+    }
+
     async function loadConfig() {
       try {
-        const res = await fetch('contract-config.json');
-        config = await res.json();
-        document.getElementById('contract-addr-banner').textContent = `P2SH: ${config.address} · TxID: ${config.txId.slice(0, 16)}...`;
-        document.getElementById('covenant-p2sh-display').textContent = config.address;
-        document.getElementById('highest-bid-val').textContent = `${config.currentHighestBidKas}.00 KAS`;
-        document.getElementById('min-bid-val').textContent = `${config.currentHighestBidKas + 1} KAS`;
-        document.getElementById('bid-input').value = config.currentHighestBidKas + 5;
-        currentBid = config.currentHighestBidKas;
-      } catch (e) {
-        console.warn('Could not load contract-config.json, using fallback values');
+        const res = await fetch('contract-config.json', { cache: 'no-store' });
+        if (!res.ok) return null;
+        const cfg = await res.json();
+        return cfg && typeof cfg.address === 'string' && cfg.address ? cfg : null;
+      } catch {
+        return null;
       }
     }
-    loadConfig();
 
-    // KasWare Wallet Bridge
-    async function connectWallet() {
-      if (typeof window.kasware !== 'undefined') {
-        try {
-          const accounts = await window.kasware.requestAccounts();
-          if (accounts && accounts.length > 0) {
-            connectedAddress = accounts[0];
-            const shortAddr = `${connectedAddress.slice(0, 8)}...${connectedAddress.slice(-6)}`;
-            document.getElementById('connect-label').textContent = shortAddr;
-            document.getElementById('connect-btn').classList.remove('bg-kaspa', 'hover:bg-kaspa-light');
-            document.getElementById('connect-btn').classList.add('bg-dark-hover', 'border', 'border-kaspa/40', 'text-kaspa-light');
-            showToast('KasWare Conectado', `Cuenta activa: ${shortAddr}`, 'success');
-            return;
-          }
-        } catch (e) {
-          showToast('Error de Conexión', e.message || 'Usuario rechazó la conexión', 'error');
-          return;
+    // ------------------------------------------------------------------ rendering
+    function renderMode() {
+      const network = config && config.network ? `${config.network} · ` : '';
+      $('mode-display').textContent = network + (mode === 'ide' ? 'IDE mode' : 'read-only');
+      $('mode-notice').classList.toggle('hidden', mode === 'ide');
+    }
+
+    function renderConfig() {
+      if (!config) {
+        $('empty-state').classList.remove('hidden');
+        $('status-banner').classList.add('hidden');
+        return;
+      }
+      $('empty-state').classList.add('hidden');
+      $('status-banner').classList.remove('hidden');
+
+      $('banner-contract').textContent = config.contractName || 'Covenant';
+      $('banner-network').textContent = config.network || 'unknown network';
+      $('banner-address').textContent = config.address;
+      $('banner-txid').textContent = config.txId || '—';
+      $('banner-deployed-at').textContent = config.deployedAt ? formatTime(config.deployedAt) : '—';
+      $('banner-deployed-at').title = config.deployedAt || '';
+      $('banner-record').textContent = config.deployRecordPath || 'missing';
+
+      $('covenant-p2sh-display').textContent = config.address;
+
+      if (config.valueSompi != null) {
+        $('cfg-value').textContent = formatKas(config.valueSompi);
+        $('cfg-value-sompi').textContent = formatSompi(config.valueSompi);
+      }
+      if (config.minBidSompi != null) {
+        $('cfg-minbid').textContent = formatKas(config.minBidSompi);
+        $('cfg-minbid-sompi').textContent = `${formatSompi(config.minBidSompi)} · stored in the script, not checked by any entry`;
+      }
+      $('cfg-seller').textContent = config.sellerAddress || '—';
+      $('cfg-seller').title = config.sellerAddress || '';
+      $('cfg-bidder').textContent = config.highestBidderAddress || '—';
+      $('cfg-bidder').title = config.highestBidderAddress || '';
+
+      addFeedEntry({
+        tone: 'blue',
+        title: 'Deploy',
+        lines: [
+          ['tx', config.txId || '—'],
+          ['value', config.valueSompi != null ? formatKas(config.valueSompi) : '—'],
+          ['from', 'alice (--from alice)']
+        ],
+        when: config.deployedAt
+      });
+    }
+
+    function updateControls() {
+      const hasConfig = !!config;
+      const canSpend = hasConfig && mode === 'ide' && !busyEntry && !!config.deployRecordPath;
+      for (const entry of Object.keys(ENTRIES)) $(`entry-${entry}`).disabled = !canSpend;
+      $('send-btn').disabled = !hasConfig;
+      $('send-input').disabled = !hasConfig;
+      $('refresh-btn').disabled = !(hasConfig && mode === 'ide') || statusBusy;
+      $('refresh-label').textContent = statusBusy ? 'Querying…' : 'Refresh';
+
+      let reason = '';
+      if (!hasConfig) reason = 'No deployment: the entries need dapp/contract-config.json.';
+      else if (mode !== 'ide') reason = 'Entries are disabled in read-only mode: the spend runs through the IDE server with the dev accounts.';
+      else if (!config.deployRecordPath) reason = 'contract-config.json has no deployRecordPath: re-run npm run deploy:auction';
+      else if (busyEntry) reason = `${busyEntry}() is running; the other entries wait until it finishes.`;
+      else reason = 'Each button writes the signature argument, then runs hardkas silver spend --wait through the IDE server.';
+      $('entry-reason').textContent = reason;
+    }
+
+    function setEntryStatus(kind, text) {
+      const el = $('entry-status');
+      el.textContent = text;
+      el.classList.remove('hidden', 'border-kaspa/40', 'text-kaspa-light', 'border-rose-500/40', 'text-rose-300', 'border-emerald-500/40', 'text-emerald-300');
+      if (kind === 'error') el.classList.add('border-rose-500/40', 'text-rose-300');
+      else if (kind === 'ok') el.classList.add('border-emerald-500/40', 'text-emerald-300');
+      else el.classList.add('border-kaspa/40', 'text-kaspa-light');
+    }
+
+    function renderNodeStatus(s) {
+      $('node-total').textContent = s.totalSompi != null ? formatKas(s.totalSompi) : '—';
+      $('node-total-sompi').textContent = s.totalSompi != null ? formatSompi(s.totalSompi) : '';
+      $('node-count').textContent = s.count != null ? String(s.count) : '—';
+      const deploy = $('node-deploy-state');
+      deploy.classList.remove('text-emerald-300', 'text-rose-300');
+      if (s.deployUnspent === true) { deploy.textContent = 'Deploy output unspent'; deploy.classList.add('text-emerald-300'); }
+      else if (s.deployUnspent === false) { deploy.textContent = 'Deploy output spent'; deploy.classList.add('text-rose-300'); }
+      else deploy.textContent = '—';
+      const msg = $('node-message');
+      msg.textContent = s.message || '';
+      msg.classList.toggle('text-rose-300', !!s.error);
+      msg.classList.toggle('text-dark-muted', !s.error);
+    }
+
+    // ------------------------------------------------------------------ feed
+    function addFeedEntry({ tone, title, lines, when }) {
+      const feed = $('events-log');
+      const empty = $('events-empty');
+      if (empty) empty.remove();
+
+      const tones = {
+        blue: ['border-blue-500/30', 'bg-blue-500/5', 'text-blue-300'],
+        kaspa: ['border-kaspa/30', 'bg-kaspa/10', 'text-kaspa-light'],
+        green: ['border-emerald-500/30', 'bg-emerald-500/5', 'text-emerald-300'],
+        rose: ['border-rose-500/30', 'bg-rose-500/5', 'text-rose-300']
+      }[tone] || ['border-dark-border', 'bg-dark-bg/60', 'text-gray-200'];
+
+      const item = document.createElement('div');
+      item.className = `p-2.5 rounded-lg border ${tones[0]} ${tones[1]} space-y-1`;
+
+      const head = document.createElement('div');
+      head.className = 'flex items-center justify-between gap-2';
+      const titleEl = document.createElement('span');
+      titleEl.className = `font-bold ${tones[2]}`;
+      titleEl.textContent = title;
+      const timeEl = document.createElement('span');
+      timeEl.className = 'text-dark-muted text-[10px] shrink-0';
+      timeEl.textContent = when ? formatTime(when) : '';
+      timeEl.title = when || '';
+      head.append(titleEl, timeEl);
+      item.appendChild(head);
+
+      for (const [label, value] of lines) {
+        const row = document.createElement('div');
+        row.className = 'flex gap-2 text-[11px]';
+        const l = document.createElement('span');
+        l.className = 'text-dark-muted shrink-0 w-12';
+        l.textContent = label;
+        const v = document.createElement('span');
+        v.className = 'text-gray-200 break-all';
+        v.textContent = value;
+        row.append(l, v);
+        item.appendChild(row);
+      }
+      feed.insertBefore(item, feed.firstChild);
+    }
+
+    // ------------------------------------------------------------------ IDE server API
+    // POST /api/run starts `hardkas <args> --json`; GET /api/jobs/:id is polled until the job ends.
+    async function runHardkas(args) {
+      const res = await fetch('/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ args })
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body || !body.ok || !body.job) {
+        throw new Error((body && body.message) || `POST /api/run failed with HTTP ${res.status}`);
+      }
+      const id = body.job.id;
+      for (;;) {
+        await sleep(1000);
+        const poll = await fetch(`/api/jobs/${encodeURIComponent(id)}`, { cache: 'no-store' });
+        const data = await poll.json().catch(() => null);
+        if (!poll.ok || !data || !data.ok || !data.job) {
+          throw new Error((data && data.message) || `GET /api/jobs/${id} failed with HTTP ${poll.status}`);
         }
+        if (data.job.status !== 'running') return data.job;
       }
-
-      // Fallback dev connection for demo when browser extension is not installed
-      connectedAddress = config?.highestBidderAddress || 'kaspasim:qryj23rch0n5rc7klfug58zcrnuc966qljwgzpu3mflqgxu6w2pjg6n575980';
-      const short = `${connectedAddress.slice(0, 8)}...${connectedAddress.slice(-6)}`;
-      document.getElementById('connect-label').textContent = `Bob (Dev: ${short})`;
-      document.getElementById('connect-btn').classList.add('bg-dark-hover', 'border', 'border-kaspa/40', 'text-kaspa-light');
-      showToast('Modo Dev Activo', `Conectado como Bob en simnet`, 'info');
     }
 
-    // Place Bid Action
-    async function placeBid() {
-      const amount = parseFloat(document.getElementById('bid-input').value);
-      if (isNaN(amount) || amount <= currentBid) {
-        showToast('Puja Inválida', `La puja debe ser mayor a ${currentBid} KAS`, 'error');
+    // The CLI's own words first (result.message / result.code), then its stderr, then the exit code.
+    function jobError(job) {
+      const r = job.result && typeof job.result === 'object' ? job.result : null;
+      if (r && typeof r.message === 'string' && r.message) return r.message;
+      if (r && typeof r.code === 'string' && r.code) return r.code;
+      const stderrLine = typeof job.stderr === 'string'
+        ? job.stderr.trim().split('\n').map((l) => l.trim()).filter(Boolean).pop()
+        : '';
+      if (stderrLine) return stderrLine.slice(0, 300);
+      return `exit code ${job.exitCode} — see the IDE console`;
+    }
+
+    // ------------------------------------------------------------------ covenant status
+    async function refreshStatus() {
+      if (!config || mode !== 'ide' || statusBusy) return;
+      statusBusy = true;
+      updateControls();
+      renderNodeStatus({ message: `Running hardkas rpc utxos ${config.address} …` });
+      try {
+        const job = await runHardkas(['rpc', 'utxos', config.address, '--json']);
+        if (job.status !== 'succeeded') throw new Error(jobError(job));
+        const r = job.result && typeof job.result === 'object' ? job.result : {};
+        const utxos = Array.isArray(r.utxos) ? r.utxos : [];
+
+        let total = r.totalSompi;
+        if (total == null) {
+          total = utxos.reduce((sum, u) => { try { return sum + BigInt(String(u.amountSompi)); } catch { return sum; } }, 0n).toString();
+        }
+
+        let deployUnspent = null;
+        if (config.outpoint && config.outpoint.transactionId != null) {
+          const key = `${config.outpoint.transactionId}:${config.outpoint.index}`;
+          deployUnspent = utxos.some((u) => u.outpoint && `${u.outpoint.transactionId}:${u.outpoint.index}` === key);
+        }
+
+        renderNodeStatus({
+          totalSompi: total,
+          count: utxos.length,
+          deployUnspent,
+          message: `Queried at ${new Date().toLocaleTimeString()} via hardkas rpc utxos`
+            + (deployUnspent === null ? ' · contract-config.json has no outpoint, so the deploy output cannot be checked' : '')
+        });
+      } catch (e) {
+        renderNodeStatus({
+          error: true,
+          message: `Could not query the node: ${e.message}. If the local node is not running, start it from the IDE's Servers view.`
+        });
+      } finally {
+        statusBusy = false;
+        updateControls();
+      }
+    }
+
+    // ------------------------------------------------------------------ entries
+    async function executeEntry(entry) {
+      const spec = ENTRIES[entry];
+      if (!spec || !config || mode !== 'ide' || busyEntry) return;
+      if (!config.deployRecordPath) {
+        showToast('Cannot spend', 'contract-config.json has no deployRecordPath: re-run npm run deploy:auction', 'error');
+        return;
+      }
+      const recipient = config[spec.recipientField];
+      if (!recipient) {
+        showToast('Cannot spend', `contract-config.json has no ${spec.recipientField}`, 'error');
         return;
       }
 
-      showToast('Enviando Transacción', `Enviando puja de ${amount} KAS al Covenant...`, 'info');
-
-      // If KasWare exists, prompt wallet
-      if (typeof window.kasware !== 'undefined' && config) {
-        try {
-          const tx = await window.kasware.sendKaspa(config.address, amount * 100000000);
-          handleBidSuccess(amount, tx?.txid || 'simulated-tx');
-          return;
-        } catch (e) {
-          showToast('Fallo en KasWare', e.message || 'Transacción cancelada', 'error');
-          return;
+      busyEntry = entry;
+      updateControls();
+      const argsPath = `.hardkas/ide/dapp/${entry}-args.json`;
+      try {
+        setEntryStatus('busy', `Writing ${argsPath} (signature by ${spec.signer})…`);
+        const put = await fetch('/api/fs/file', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: argsPath, content: JSON.stringify([{ kind: 'signature', account: spec.signer }]) })
+        });
+        const putBody = await put.json().catch(() => null);
+        if (!put.ok || !putBody || !putBody.ok) {
+          throw new Error(`could not write ${argsPath}: ${(putBody && putBody.message) || `HTTP ${put.status}`}`);
         }
+
+        setEntryStatus('busy', `Running hardkas silver spend --entry ${entry} — waiting for a block (the local node needs mined blocks; mine them from the IDE's Servers view if nothing confirms).`);
+        const job = await runHardkas([
+          'silver', 'spend', config.deployRecordPath,
+          '--entry', entry,
+          '--to', recipient,
+          '--args', argsPath,
+          '--wait', '--timeout', '600',
+          '--json'
+        ]);
+        const result = job.result && typeof job.result === 'object' ? job.result : {};
+        if (job.status !== 'succeeded') throw new Error(jobError(job));
+        if (!result.txId) throw new Error('silver spend exited 0 but returned no txId — see the IDE console');
+
+        const lines = [
+          ['tx', String(result.txId)],
+          ['to', `${spec.recipientField === 'sellerAddress' ? 'alice' : 'bob'} · ${recipient}`]
+        ];
+        if (result.outputSompi != null) lines.push(['output', formatKas(result.outputSompi)]);
+        if (result.feeSompi != null) lines.push(['fee', formatKas(result.feeSompi)]);
+        if (result.recordPath) lines.push(['record', String(result.recordPath)]);
+        addFeedEntry({
+          tone: entry === 'cancel' ? 'rose' : entry === 'claim' ? 'green' : 'kaspa',
+          title: `${entry}() spent the covenant`,
+          lines,
+          when: new Date().toISOString()
+        });
+        setEntryStatus('ok', `${entry}() confirmed in tx ${result.txId}`);
+        showToast(`${entry}() confirmed`, `tx ${result.txId}`, 'success');
+        refreshStatus();
+      } catch (e) {
+        setEntryStatus('error', `${entry}() failed: ${e.message}`);
+        showToast(`${entry}() failed`, e.message, 'error');
+      } finally {
+        busyEntry = null;
+        updateControls();
       }
-
-      // Simulated localnet execution
-      setTimeout(() => {
-        handleBidSuccess(amount, 'kaspa-covenant-bid-' + Math.random().toString(36).slice(2, 9));
-      }, 900);
     }
 
-    function handleBidSuccess(amount, txId) {
-      currentBid = amount;
-      document.getElementById('highest-bid-val').textContent = `${amount}.00 KAS`;
-      document.getElementById('min-bid-val').textContent = `${amount + 1} KAS`;
-      document.getElementById('bid-input').value = amount + 5;
-      
-      const feed = document.getElementById('events-log');
-      const item = document.createElement('div');
-      item.className = 'p-2.5 rounded-lg border border-kaspa/30 bg-kaspa/10 flex items-center justify-between';
-      item.innerHTML = `
-        <div class="flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full bg-kaspa-light animate-ping"></span>
-          <span class="text-kaspa-light font-bold">Nueva Puja Más Alta</span>
-          <span class="text-white">(${amount} KAS)</span>
-        </div>
-        <span class="text-dark-muted text-[10px]">Tx: ${txId.slice(0, 10)}...</span>
-      `;
-      feed.insertBefore(item, feed.firstChild);
-
-      showToast('¡Puja Confirmada!', `Has superado la puja con ${amount} KAS.`, 'success');
-    }
-
-    // Execute Contract Entrypoints
-    async function executeEntry(entryName) {
-      showToast(`Ejecutando ${entryName}()`, `Validando firmas OP_CHECKSIG con el nodo...`, 'info');
-      setTimeout(() => {
-        if (entryName === 'close') {
-          showToast('Subasta Cerrada', 'Alice (vendedor) ha cobrado la puja ganadora.', 'success');
-        } else if (entryName === 'claim') {
-          showToast('Lote Liquidado', 'Bob (ganador) ha reclamado la custodia del activo.', 'success');
-        } else {
-          showToast('Subasta Cancelada', 'Depósito reembolsado a la cuenta de reserva.', 'info');
+    // ------------------------------------------------------------------ KasWare
+    async function connectWallet() {
+      if (typeof window.kasware === 'undefined') {
+        showToast('KasWare is not installed in this browser', 'Connect only works with the KasWare extension.', 'error');
+        return;
+      }
+      try {
+        const accounts = await window.kasware.requestAccounts();
+        if (!accounts || accounts.length === 0) {
+          showToast('KasWare returned no accounts', '', 'error');
+          return;
         }
-      }, 1000);
+        kaswareAddress = accounts[0];
+        const short = `${kaswareAddress.slice(0, 12)}…${kaswareAddress.slice(-6)}`;
+        $('connect-label').textContent = short;
+        const btn = $('connect-btn');
+        btn.classList.remove('bg-kaspa', 'hover:bg-kaspa-light', 'text-dark-bg');
+        btn.classList.add('bg-dark-hover', 'border', 'border-kaspa/40', 'text-kaspa-light');
+        btn.title = kaswareAddress;
+        showToast('KasWare connected', kaswareAddress, 'success');
+      } catch (e) {
+        showToast('KasWare connection failed', e && e.message ? e.message : String(e), 'error');
+      }
     }
 
-    // Toast Helper
-    function showToast(title, msg, type = 'info') {
-      const toast = document.getElementById('toast');
-      const icon = document.getElementById('toast-icon');
-      document.getElementById('toast-title').textContent = title;
-      document.getElementById('toast-msg').textContent = msg;
+    async function sendToCovenant() {
+      if (!config) return;
+      if (typeof window.kasware === 'undefined') {
+        showToast('KasWare is not installed in this browser', 'Install the KasWare extension to send KAS from this page.', 'error');
+        return;
+      }
+      const amount = Number($('send-input').value);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        showToast('Invalid amount', 'Enter an amount in KAS greater than 0.', 'error');
+        return;
+      }
+      const sompi = Math.round(amount * 100000000);
+      try {
+        const tx = await window.kasware.sendKaspa(config.address, sompi);
+        const txId = extractTxId(tx);
+        addFeedEntry({
+          tone: 'kaspa',
+          title: 'KAS sent to the covenant address (KasWare)',
+          lines: [
+            ['tx', txId || 'KasWare returned no tx id'],
+            ['amount', `${formatKas(sompi)} (requested)`],
+            ['to', config.address]
+          ],
+          when: new Date().toISOString()
+        });
+        showToast('Sent with KasWare', txId ? `tx ${txId}` : 'KasWare returned no tx id', 'success');
+        if (mode === 'ide') refreshStatus();
+      } catch (e) {
+        showToast('KasWare did not send', e && e.message ? e.message : String(e), 'error');
+      }
+    }
 
+    // KasWare versions differ: sendKaspa returns a tx id string, a JSON string, or an object.
+    function extractTxId(tx) {
+      if (!tx) return '';
+      if (typeof tx === 'object') return String(tx.txid || tx.txId || tx.id || '');
+      const s = String(tx).trim();
+      if (s.startsWith('{')) {
+        try { const o = JSON.parse(s); return String(o.txid || o.txId || o.id || s); } catch { return s; }
+      }
+      return s;
+    }
+
+    // ------------------------------------------------------------------ toast
+    let toastTimer = null;
+    function showToast(title, msg, type = 'info') {
+      const toast = $('toast');
+      const icon = $('toast-icon');
+      $('toast-title').textContent = title;
+      $('toast-msg').textContent = msg || '';
+
+      const base = 'fixed bottom-6 right-6 max-w-sm w-full bg-dark-card rounded-xl p-4 shadow-2xl transition-all transform translate-y-0 opacity-100 flex items-start gap-3 z-50 border';
       if (type === 'error') {
-        toast.className = 'fixed bottom-6 right-6 max-w-sm w-full bg-dark-card border border-rose-500/50 rounded-xl p-4 shadow-2xl transition-all transform translate-y-0 opacity-100 flex items-start gap-3 z-50';
+        toast.className = `${base} border-rose-500/50`;
         icon.className = 'p-1 rounded bg-rose-500/20 text-rose-400 mt-0.5';
       } else if (type === 'success') {
-        toast.className = 'fixed bottom-6 right-6 max-w-sm w-full bg-dark-card border border-emerald-500/50 rounded-xl p-4 shadow-2xl transition-all transform translate-y-0 opacity-100 flex items-start gap-3 z-50';
+        toast.className = `${base} border-emerald-500/50`;
         icon.className = 'p-1 rounded bg-emerald-500/20 text-emerald-400 mt-0.5';
       } else {
-        toast.className = 'fixed bottom-6 right-6 max-w-sm w-full bg-dark-card border border-kaspa/50 rounded-xl p-4 shadow-2xl transition-all transform translate-y-0 opacity-100 flex items-start gap-3 z-50';
+        toast.className = `${base} border-kaspa/50`;
         icon.className = 'p-1 rounded bg-kaspa/20 text-kaspa-light mt-0.5';
       }
 
-      setTimeout(() => {
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
         toast.classList.remove('translate-y-0', 'opacity-100');
-        toast.classList.add('translate-y-32', 'opacity-0');
-      }, 4000);
+        toast.classList.add('translate-y-32', 'opacity-0', 'pointer-events-none');
+      }, type === 'error' ? 7000 : 4500);
     }
+
+    init();
   </script>
 </body>
 </html>

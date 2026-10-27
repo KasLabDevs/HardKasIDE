@@ -1,8 +1,9 @@
+import clsx from "clsx";
 import { Cpu, Droplets, FolderOpen, ListTree, TerminalSquare } from "lucide-react";
 import { useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { EnvironmentPlugin } from "@/plugins/environment";
-import { useEnv } from "@/store/env";
+import { cliMismatch, useEnv } from "@/store/env";
 import { envOf, useIde } from "@/store/ide";
 
 export function StatusBar() {
@@ -17,6 +18,7 @@ export function StatusBar() {
   const setOutlineOpen = useIde((s) => s.setOutlineOpen);
   const accounts = useEnv((s) => s.accounts);
   const node = useEnv((s) => s.node);
+  const cli = useEnv((s) => s.cli);
   const [funding, setFunding] = useState(false);
 
   const quickFund = async () => {
@@ -48,7 +50,7 @@ export function StatusBar() {
           onClick={() => void quickFund()}
           disabled={funding || !node?.rpcReady}
           className="flex items-center gap-1 text-accent hover:text-fg shrink-0 cursor-pointer rounded px-1.5 py-0.5 hover:bg-bg-hover transition-colors border border-accent/20 bg-accent/5 disabled:opacity-50 disabled:cursor-not-allowed"
-          title={node?.rpcReady ? "Fondeo rápido de 100 KAS en simnet" : "Inicia el nodo local para fondear"}
+          title={node?.rpcReady ? `Fund ${accounts[0]?.name ?? "alice"} with 100 KAS on simnet (hardkas localnet fund)` : "Start the local node to fund accounts"}
         >
           <Droplets size={11} className={funding ? "animate-bounce text-accent" : ""} />
           <span>{funding ? "Funding…" : "Airdrop +100 KAS"}</span>
@@ -68,7 +70,13 @@ export function StatusBar() {
       <button type="button" onClick={() => setOutlineOpen(!outlineOpen)} className="flex items-center gap-1 hover:text-fg shrink-0 cursor-pointer rounded px-1 hover:bg-bg-hover transition-colors" title="Toggle outline">
         <ListTree size={12} /> {outlineOpen ? "hide" : "show"} outline
       </button>
-      <span className="shrink-0 hidden sm:inline tabular-nums">HardKas IDE 0.1 · CLI 0.12.0-rc.29</span>
+      <span
+        className={clsx("shrink-0 hidden sm:inline tabular-nums", cliMismatch(cli) && "text-warn")}
+        title={cli ? (cliMismatch(cli) ? `hardkas ${cli.version} from ${cli.source}; this IDE was tested with ${cli.pinned}` : `hardkas ${cli.version ?? "?"} from ${cli.source} (${cli.command})`) : "Asking the server which hardkas it runs…"}
+      >
+        HardKas IDE {__APP_VERSION__} · CLI {cli ? (cli.version ?? "not found") : "…"}
+        {cliMismatch(cli) ? ` (tested with ${cli!.pinned})` : ""}
+      </span>
     </footer>
   );
 }

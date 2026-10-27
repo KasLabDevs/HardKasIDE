@@ -43,9 +43,11 @@ export interface DeployRecord {
   networkId?: string;
   createdAt?: string;
   compileRecordPath?: string;
+  /** CLI that wrote the record (`hardkasVersion`). */
+  hardkasVersion?: string;
   /** Filled when the compile record could be read: entries to call. */
   abi?: SilContractAbi;
-  /** Set once a spend confirmed it is gone. */
+  /** Set once a spend record consumed its outpoint. */
   spent?: boolean;
 }
 
@@ -60,12 +62,23 @@ export interface SpendRecord {
   status: string;
   createdAt?: string;
   deployContentHash?: string;
+  /** The deploy output this spend consumed. */
+  spentOutpoint?: { transactionId: string; index: number };
+  hardkasVersion?: string;
+}
+
+/** A record file the IDE could not read as expected: shown once in the Console, never silently dropped. */
+export interface RecordProblem {
+  recordPath: string;
+  problems: string[];
 }
 
 interface SilverState {
   compiled: CompiledRecord | null;
   deployments: DeployRecord[];
   spends: SpendRecord[];
+  /** Record files under .hardkas/artifacts/silver that did not parse cleanly (unknown schema, missing fields). */
+  recordProblems: RecordProblem[];
   busy: string | null;
   error: string | null;
   setCompiled(c: CompiledRecord | null): void;
@@ -80,6 +93,7 @@ export const useSilver = create<SilverState>((set) => ({
   compiled: null,
   deployments: [],
   spends: [],
+  recordProblems: [],
   busy: null,
   error: null,
   setCompiled: (compiled) => set({ compiled }),

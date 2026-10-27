@@ -63,9 +63,9 @@ export function EnvBar() {
         {current.needsNode && node?.virtualDaaScore && <span className="tabular-nums">· DAA {node.virtualDaaScore}</span>}
       </button>
       {current.needsNode && (!node?.running || !node?.rpcReady) ? (
-        <span className="flex items-center gap-1.5 text-fg-muted/60 text-[10px] select-none" title="Inicia el nodo local para cargar las cuentas y sus balances">
+        <span className="flex items-center gap-1.5 text-fg-muted/60 text-[10px] select-none" title="Start the local node to load the accounts and their balances">
           <Users size={11} className="opacity-50" />
-          <span>cuentas inactivas (nodo apagado)</span>
+          <span>accounts unavailable (node stopped)</span>
         </span>
       ) : (
         <button
