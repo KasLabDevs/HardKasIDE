@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { AssistantError, kaspaDocs, loadConfig, providerDefaults, publicConfig, saveConfig, streamChat, type ChatRequest } from "./assistant.js";
+import { AssistantError, kaspaDocs, loadConfig, providerDefaults, publicConfig, saveConfig, streamChat, streamAgent, type ChatRequest, type AgentRequest } from "./assistant.js";
 import { debugSession } from "./debug.js";
 import { listDevAccountNames, revealDevAccountKey } from "./devkeys.js";
 import * as wsfs from "./fs.js";
@@ -49,6 +49,29 @@ function isLocalOrigin(origin: string | undefined): boolean {
   }
 }
 
+function localOnly(c: { req: { header(name: string): string | undefined } }): boolean {
+  const secFetchSite = c.req.header("sec-fetch-site");
+  if (secFetchSite === "cross-site") return false;
+
+  const origin = c.req.header("origin");
+  if (origin) return isLocalOrigin(origin);
+
+  const referer = c.req.header("referer");
+  if (referer) return isLocalOrigin(referer);
+
+  const host = c.req.header("host");
+  if (host) {
+    try {
+      const url = new URL(`http://${host}`);
+      return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    } catch {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 app.use(
   "/api/*",
   cors({
@@ -60,6 +83,16 @@ app.use(
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
   })
 );
+
+app.use("/api/*", async (c, next) => {
+  const method = c.req.method.toUpperCase();
+  if (["POST", "PUT", "DELETE", "PATCH"].includes(method)) {
+    if (!localOnly(c)) {
+      return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin or host" }, 403);
+    }
+  }
+  await next();
+});
 
 app.onError((error, c) => {
   if (error instanceof ClusterError) {
@@ -229,8 +262,7 @@ app.get("/api/terminal", (c) => c.json({ ok: true, shell: defaultShell().file, t
 app.get(
   "/api/terminal/ws",
   upgradeWebSocket((c) => {
-    const origin = c.req.header("origin");
-    const allowedOrigin = isLocalOrigin(origin);
+    const allowedOrigin = localOnly(c);
     const cols = Math.min(Math.max(Number(c.req.query("cols") ?? 100) || 100, 10), 500);
     const rows = Math.min(Math.max(Number(c.req.query("rows") ?? 30) || 30, 5), 200);
     const rawCwd = c.req.query("cwd") || undefined;
@@ -403,8 +435,7 @@ app.get("/api/devkeys", async (c) => c.json({ ok: true, names: await listDevAcco
 
 app.post("/api/devkeys/reveal", async (c) => {
   // Private keys: only the IDE page itself (local origin, JSON body => CORS preflight) may ask.
-  const origin = c.req.header("origin");
-  if (origin && !isLocalOrigin(origin)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
   if (!(c.req.header("content-type") ?? "").includes("application/json")) {
     return c.json({ ok: false, code: "BAD_REQUEST", message: "JSON body required" }, 400);
   }
@@ -420,8 +451,7 @@ app.post("/api/devkeys/reveal", async (c) => {
 app.get("/api/assistant/config", async (c) => c.json({ ok: true, config: publicConfig(await loadConfig()), defaults: providerDefaults() }));
 
 app.put("/api/assistant/config", async (c) => {
-  const origin = c.req.header("origin");
-  if (origin && !isLocalOrigin(origin)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
   const body = (await c.req.json()) as Parameters<typeof saveConfig>[0];
   try {
     return c.json({ ok: true, config: publicConfig(await saveConfig(body)) });
@@ -441,8 +471,7 @@ app.get("/api/assistant/docs", async (c) => {
 });
 
 app.post("/api/assistant/chat", async (c) => {
-  const origin = c.req.header("origin");
-  if (origin && !isLocalOrigin(origin)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
   const body = (await c.req.json()) as ChatRequest;
   return streamSSE(c, async (stream) => {
     const ac = new AbortController();
@@ -460,12 +489,26 @@ app.post("/api/assistant/chat", async (c) => {
   });
 });
 
-// ---------------------------------------------------------------- test debugger (vitest + Node inspector)
+app.post("/api/assistant/agent", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json()) as AgentRequest;
+  return streamSSE(c, async (stream) => {
+    const ac = new AbortController();
+    stream.onAbort(() => ac.abort());
+    try {
+      for await (const ev of streamAgent(body, ac.signal)) {
+        await stream.writeSSE({ event: ev.type, data: JSON.stringify(ev) });
+      }
+      await stream.writeSSE({ event: "done", data: "{}" });
+    } catch (error) {
+      if (ac.signal.aborted) return;
+      const code = error instanceof AssistantError ? error.code : "INTERNAL";
+      await stream.writeSSE({ event: "error", data: JSON.stringify({ code, message: error instanceof Error ? error.message : String(error) }) });
+    }
+  });
+});
 
-function localOnly(c: { req: { header(name: string): string | undefined } }): boolean {
-  const origin = c.req.header("origin");
-  return !origin || isLocalOrigin(origin);
-}
+// ---------------------------------------------------------------- test debugger (vitest + Node inspector)
 
 app.get("/api/debug/events", (c) =>
   streamSSE(c, async (stream) => {
@@ -651,6 +694,18 @@ app.get("/api/info", (c) => c.json(serverInfo()));
 
 const UI_DIR = path.resolve(process.env.HARDKAS_IDE_STATIC ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "apps", "ide", "dist"));
 const UI_READY = existsSync(path.join(UI_DIR, "index.html"));
+
+app.get("/dapp", async (c) => c.redirect("/dapp/"));
+app.get("/dapp/*", async (c) => {
+  const root = getRoot();
+  if (!root) return c.text("no workspace open", 404);
+  let rel = c.req.path.replace(/^\/dapp\/?/, "");
+  if (!rel) rel = "index.html";
+  const dappDir = path.join(root, "dapp");
+  const file = (await readStatic(dappDir, rel)) ?? (await readStatic(dappDir, "index.html"));
+  if (!file) return c.text("not found in workspace dapp/", 404);
+  return new Response(file.body, { headers: { "content-type": file.type, "cache-control": "no-cache" } });
+});
 
 app.get("*", async (c) => {
   if (c.req.path.startsWith("/api/")) return c.json({ ok: false, code: "NOT_FOUND", message: `No route ${c.req.path}` }, 404);

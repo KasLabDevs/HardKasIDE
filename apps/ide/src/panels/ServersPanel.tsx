@@ -1,6 +1,6 @@
 import clsx from "clsx";
-import { Check, Coins, Copy, Eraser, KeyRound, Play, Plus, RefreshCw, RotateCw, Square, UserRound } from "lucide-react";
-import { useState } from "react";
+import { Check, Coins, Copy, Eraser, KeyRound, Pickaxe, Play, Plus, RefreshCw, RotateCw, Square, UserRound } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
 import { copyText } from "@/utils/clipboard";
 import type { EnvironmentPlugin } from "@/plugins/environment";
@@ -27,10 +27,18 @@ export function ServersPanel() {
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    };
+  }, []);
 
   const say = (text: string) => {
     setNotice(text);
-    setTimeout(() => setNotice(null), 2500);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => setNotice(null), 2500);
   };
 
   const create = async () => {
@@ -175,28 +183,52 @@ export function ServersPanel() {
             <RefreshCw size={13} className={accountsBusy ? "animate-spin" : ""} />
           </button>
         </div>
-        <ul className="px-3 pb-2 space-y-2">
-          {accounts.length === 0 && <li className="text-fg-muted">No accounts. Run hardkas init, or create one below.</li>}
-          {accounts.map((a) => (
-            <AccountCard key={a.name} account={a} env={env} say={say} />
-          ))}
-        </ul>
-        <div className="px-3 pb-3 space-y-1">
-          <div className="flex gap-1">
-            <input
-              aria-label="New simnet account name"
-              className="input"
-              placeholder="new account name (simnet)"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void create()}
-            />
-            <button type="button" className="btn-ghost shrink-0" disabled={creating || !newName.trim()} onClick={() => void create()} title="hardkas localnet account create <name>">
-              <Plus size={12} /> {creating ? "…" : "Create"}
+        {target === "localnet" && (!node?.running || !node?.rpcReady) ? (
+          <div className="p-3 mx-3 my-2 rounded bg-bg-panel border border-border text-center space-y-2">
+            <div className="w-8 h-8 mx-auto rounded-full bg-warn/10 text-warn flex items-center justify-center">
+              <UserRound size={16} />
+            </div>
+            <div>
+              <div className="font-medium text-fg text-xs">Nodo local detenido</div>
+              <p className="text-fg-muted text-[11px] mt-1 leading-relaxed">
+                Las cuentas y balances de simnet están ocultas mientras el nodo <code>rusty-kaspad</code> esté apagado.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void env.startNode()}
+              disabled={Boolean(nodeBusy)}
+              className="btn-primary w-full flex items-center justify-center gap-1.5 text-xs py-1.5 shadow-sm"
+            >
+              <Play size={13} /> Iniciar nodo local
             </button>
           </div>
-          <div className="text-fg-muted">Creates a real simnet key stored in plaintext in .hardkas/accounts.real.json (dev only).</div>
-        </div>
+        ) : (
+          <>
+            <ul className="px-3 pb-2 space-y-2">
+              {accounts.length === 0 && <li className="text-fg-muted">No accounts. Run hardkas init, or create one below.</li>}
+              {accounts.map((a) => (
+                <AccountCard key={a.name} account={a} env={env} say={say} />
+              ))}
+            </ul>
+            <div className="px-3 pb-3 space-y-1">
+              <div className="flex gap-1">
+                <input
+                  aria-label="New simnet account name"
+                  className="input"
+                  placeholder="new account name (simnet)"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void create()}
+                />
+                <button type="button" className="btn-ghost shrink-0" disabled={creating || !newName.trim()} onClick={() => void create()} title="hardkas localnet account create <name>">
+                  <Plus size={12} /> {creating ? "…" : "Create"}
+                </button>
+              </div>
+              <div className="text-fg-muted">Creates a real simnet key stored in plaintext in .hardkas/accounts.real.json (dev only).</div>
+            </div>
+          </>
+        )}
         <div className="px-3 pb-3 text-[10px] text-fg-muted flex items-center justify-between tabular-nums">
           <span>{lastRefresh ? `updated ${new Date(lastRefresh).toLocaleTimeString(undefined, { hour12: false })}` : ""}</span>
           {notice && <span role="status" aria-live="polite" className="text-accent">{notice}</span>}
@@ -209,11 +241,21 @@ export function ServersPanel() {
 function AccountCard({ account, env, say }: { account: AccountInfo; env: EnvironmentPlugin; say: (t: string) => void }) {
   const [funding, setFunding] = useState(false);
   const [copiedAddr, setCopiedAddr] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const target = useIde((s) => s.target);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
   const copy = async (text: string, what: string) => {
     await copyText(text);
     setCopiedAddr(true);
     say(`${what} of ${account.name} copied`);
-    setTimeout(() => setCopiedAddr(false), 1500);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopiedAddr(false), 1500);
   };
   const copyKey = async () => {
     if (!account.hasPlainKey) {
@@ -228,7 +270,7 @@ function AccountCard({ account, env, say }: { account: AccountInfo; env: Environ
     setFunding(true);
     try {
       await env.fund(account.name, "1000");
-      say(`${account.name} funded`);
+      say(`${account.name} funded with 1000 KAS`);
     } catch (e) {
       say(e instanceof Error ? e.message : String(e));
     } finally {
@@ -237,7 +279,7 @@ function AccountCard({ account, env, say }: { account: AccountInfo; env: Environ
   };
 
   return (
-    <li className="rounded border border-border bg-bg-elev p-2 space-y-1">
+    <li className="rounded border border-border bg-bg-elev p-2 space-y-1.5">
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5 font-semibold text-fg truncate">
           <UserRound size={13} className="text-accent shrink-0" /> <span className="truncate">{account.name}</span>
@@ -273,6 +315,22 @@ function AccountCard({ account, env, say }: { account: AccountInfo; env: Environ
           <KeyRound size={12} />
         </button>
       </div>
+      {funding && target === "localnet" && (
+        <div className="rounded bg-accent/10 border border-accent/30 p-2 space-y-1">
+          <div className="flex items-center justify-between text-[11px] text-accent">
+            <span className="flex items-center gap-1.5 font-medium">
+              <Pickaxe size={12} className="animate-spin" /> Minando en Docker...
+            </span>
+            <span className="font-mono text-[10px]">Maduración Coinbase</span>
+          </div>
+          <div className="w-full bg-bg rounded-full h-1.5 overflow-hidden">
+            <div className="bg-accent h-1.5 rounded-full animate-pulse w-3/4"></div>
+          </div>
+          <div className="text-[10px] text-fg-muted">
+            rusty-kaspad + cpuminer generando bloques para maduración de monedas (~60s)...
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between text-[10px] text-fg-muted tabular-nums">
         <span>{account.utxoCount !== null ? `${account.utxoCount} utxo` : ""}</span>
         <button type="button" onClick={() => void fund()} disabled={funding} className="flex items-center gap-1 hover:text-accent disabled:opacity-50 cursor-pointer" title="Simulator: hardkas accounts fund · Local node: hardkas localnet fund --profile toccata-v2">

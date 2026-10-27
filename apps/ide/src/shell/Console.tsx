@@ -1,8 +1,10 @@
 import clsx from "clsx";
-import { ChevronDown, ChevronRight, Eraser } from "lucide-react";
+import { ChevronDown, ChevronRight, Eraser, Wand2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
+import type { AssistantPlugin } from "@/plugins/assistant";
 import type { ConsolePlugin } from "@/plugins/console";
+import { useAssistant } from "@/store/assistant";
 import { useIde, type JournalBlock } from "@/store/ide";
 
 /**
@@ -85,6 +87,7 @@ export function Console() {
 }
 
 function Block({ block }: { block: JournalBlock }) {
+  const engine = useEngine();
   const [open, setOpen] = useState(false);
   const color = {
     log: "text-fg",
@@ -112,6 +115,28 @@ function Block({ block }: { block: JournalBlock }) {
       </div>
     );
   }
+
+  if (block.kind === "error") {
+    return (
+      <div className="group flex items-start justify-between gap-2 text-error whitespace-pre-wrap break-words leading-relaxed py-0.5">
+        <div className="flex-1 min-w-0">{block.text}</div>
+        <button
+          type="button"
+          onClick={() => {
+            useIde.getState().revealPlugin("assistant", "Assistant");
+            useAssistant.getState().setMode("agent");
+            const assistant = engine.get<AssistantPlugin>("assistant");
+            void assistant.runAgent(`Arregla el siguiente error:\n${block.text}`);
+          }}
+          className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded border border-error/40 bg-error/10 text-error hover:bg-error/20 text-[10px] cursor-pointer"
+          title="Analizar y arreglar con el Agente Autónomo"
+        >
+          <Wand2 size={11} /> Fix with AI
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className={clsx("whitespace-pre-wrap break-words leading-relaxed", color)}>
       {block.kind === "command" && <span className="text-fg-muted mr-1">$</span>}
