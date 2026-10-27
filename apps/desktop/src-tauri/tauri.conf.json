@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm --dir ../../.. dev",
     "devUrl": "http://localhost:5173",
-    "frontendDist": "../dist"
+    "frontendDist": "../splash"
   },
   "app": {
     "windows": [
