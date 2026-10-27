@@ -208,6 +208,40 @@ export const api = {
           }
         }
       }
+    },
+    /** Streams an autonomous agent run; resolves when it ends. Events: step, thought, done, error. */
+    agent: async (
+      body: { goal: string; context?: unknown },
+      signal: AbortSignal,
+      onEvent: (event: string, data: Record<string, unknown>) => void
+    ): Promise<void> => {
+      const res = await fetch("/api/assistant/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
+      if (!res.ok || !res.body) throw new IdeApiError("HTTP_ERROR", `Agent request failed (${res.status})`, res.status);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.search(/\r?\n\r?\n/)) >= 0) {
+          const block = buffer.slice(0, idx);
+          buffer = buffer.slice(idx).replace(/^\r?\n\r?\n/, "");
+          let event = "message";
+          const data: string[] = [];
+          for (const line of block.split(/\r?\n/)) {
+            if (line.startsWith("event:")) event = line.slice(6).trim();
+            else if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+          }
+          if (data.length === 0) continue;
+          try {
+            onEvent(event, JSON.parse(data.join("\n")) as Record<string, unknown>);
+          } catch {
+            // ignore malformed event
+          }
+        }
+      }
     }
   },
   system: () =>

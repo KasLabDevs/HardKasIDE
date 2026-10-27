@@ -1,7 +1,9 @@
-import { Hammer, KeyRound } from "lucide-react";
+import { GitFork, Hammer, KeyRound, Wand2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useEngine } from "@/engine/context";
+import type { AssistantPlugin } from "@/plugins/assistant";
 import type { CompilationResult, CompilerPlugin } from "@/plugins/compiler";
+import { useAssistant } from "@/store/assistant";
 import { useEnv } from "@/store/env";
 import { useIde } from "@/store/ide";
 import { bytesToHex, pubkeyFromAddress } from "@/utils/kaspaAddress";
@@ -157,23 +159,46 @@ export function CompilePanel() {
             {result.file}
           </div>
           {result.ok ? (
-            result.contracts.length > 0 ? (
-              result.contracts.map((c) => (
-                <div key={c.name} className="rounded border border-border bg-bg-elev p-2 space-y-1">
-                  <div className="font-semibold text-fg truncate">{c.name}</div>
-                  {c.address && (
-                    <div className="font-mono text-[11px] text-fg-muted break-all" title="P2SH address">
-                      {c.address}
-                    </div>
-                  )}
-                  {Array.isArray(c.entries) && <div className="text-fg-muted tabular-nums">{c.entries.length} entry point(s)</div>}
-                </div>
-              ))
-            ) : (
-              <div className="text-fg-muted">Compiled, but no contract list was found in the JSON output. See the terminal for the raw record.</div>
-            )
+            <>
+              {result.contracts.length > 0 ? (
+                result.contracts.map((c) => (
+                  <div key={c.name} className="rounded border border-border bg-bg-elev p-2 space-y-1">
+                    <div className="font-semibold text-fg truncate">{c.name}</div>
+                    {c.address && (
+                      <div className="font-mono text-[11px] text-fg-muted break-all" title="P2SH address">
+                        {c.address}
+                      </div>
+                    )}
+                    {Array.isArray(c.entries) && <div className="text-fg-muted tabular-nums">{c.entries.length} entry point(s)</div>}
+                  </div>
+                ))
+              ) : (
+                <div className="text-fg-muted">Compiled, but no contract list was found in the JSON output. See the terminal for the raw record.</div>
+              )}
+              <button
+                type="button"
+                onClick={() => void engine.call("covenant", "open")}
+                className="btn-ghost w-full justify-center text-accent text-xs mt-1 cursor-pointer border border-accent/30 bg-accent/5 hover:bg-accent/10"
+              >
+                <GitFork size={13} /> Ver en Covenant Graph
+              </button>
+            </>
           ) : (
-            <pre role="alert" className="rounded border border-error/40 bg-bg-elev p-2 text-error whitespace-pre-wrap break-words overflow-auto max-h-60">{result.errorText}</pre>
+            <div className="space-y-1.5">
+              <pre role="alert" className="rounded border border-error/40 bg-bg-elev p-2 text-error whitespace-pre-wrap break-words overflow-auto max-h-60">{result.errorText}</pre>
+              <button
+                type="button"
+                onClick={() => {
+                  useIde.getState().revealPlugin("assistant", "Assistant");
+                  useAssistant.getState().setMode("agent");
+                  const assistant = engine.get<AssistantPlugin>("assistant");
+                  void assistant.runAgent(`Arregla el siguiente error de compilación en ${result.file}:\n${result.errorText}`);
+                }}
+                className="btn-primary w-full justify-center bg-accent/90 hover:bg-accent text-xs cursor-pointer shadow-sm"
+              >
+                <Wand2 size={13} /> Fix with AI (Autocorregir)
+              </button>
+            </div>
           )}
         </div>
       )}

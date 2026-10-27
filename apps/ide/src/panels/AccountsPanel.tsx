@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Check, Coins, Copy, Eye, EyeOff, KeyRound, Plus, RefreshCw, UserRound } from "lucide-react";
+import { Check, Coins, Copy, Eye, EyeOff, KeyRound, Pickaxe, Play, Plus, RefreshCw, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
 import { copyText } from "@/utils/clipboard";
@@ -14,7 +14,10 @@ export function AccountsPanel() {
   const env = engine.get<EnvironmentPlugin>("environment");
   const accounts = useEnv((s) => s.accounts);
   const busy = useEnv((s) => s.accountsBusy);
+  const node = useEnv((s) => s.node);
+  const nodeBusy = useEnv((s) => s.nodeBusy);
   const target = useIde((s) => s.target);
+  const isNodeDown = target === "localnet" && (!node?.running || !node?.rpcReady);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -60,32 +63,56 @@ export function AccountsPanel() {
           <RefreshCw size={13} className={busy ? "animate-spin" : ""} />
         </button>
       </div>
-      <ul className="p-3 space-y-3">
-        {accounts.length === 0 && (
-          <li className="text-fg-muted text-center py-4">{busy ? "Loading accounts…" : "No accounts yet. Run hardkas init, or create one below."}</li>
-        )}
-        {accounts.map((a) => (
-          <AccountItem key={a.name} account={a} env={env} say={say} />
-        ))}
-      </ul>
-      <div className="px-3 pb-3 space-y-1">
-        <div className="flex gap-1">
-          <input aria-label="New account name" className="input" placeholder="new account name" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void create()} />
-          <button type="button" className="btn-ghost shrink-0" disabled={creating || !newName.trim()} onClick={() => void create()}>
-            <Plus size={12} /> {creating ? "…" : "Create"}
+      {isNodeDown ? (
+        <div className="p-6 text-center space-y-3">
+          <div className="w-10 h-10 mx-auto rounded-full bg-warn/10 text-warn flex items-center justify-center">
+            <UserRound size={20} />
+          </div>
+          <div>
+            <div className="font-semibold text-fg text-sm">Nodo local detenido</div>
+            <p className="text-fg-muted text-xs mt-1.5 max-w-[280px] mx-auto leading-relaxed">
+              Las cuentas de desarrollo y sus balances de simnet están inactivas mientras el nodo <code>rusty-kaspad</code> esté apagado.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void env.startNode()}
+            disabled={Boolean(nodeBusy)}
+            className="btn-primary mx-auto flex items-center justify-center gap-1.5 text-xs py-1.5 px-4 shadow-sm"
+          >
+            <Play size={14} /> Iniciar nodo local
           </button>
         </div>
-        <div className="text-fg-muted text-[11px]">Created accounts store a plaintext simnet key in .hardkas/accounts.real.json (dev only, never use on mainnet).</div>
-      </div>
-      <div className="mx-3 mb-3 p-2 rounded bg-bg-elev border border-border/80 text-[11px] space-y-1">
-        <div className="font-medium text-fg flex items-center justify-between">
-          <span>KasWare Wallet Import</span>
-          <span className="text-[9px] px-1 py-0.5 rounded bg-accent/15 text-accent font-mono">Simnet</span>
-        </div>
-        <p className="text-fg-muted text-[10px] leading-relaxed">
-          To use an account in KasWare: copy its private key (64 hex characters), open the KasWare extension on the <strong>Kaspa Simnet</strong> network (see the Wallet card in Servers for the RPC settings) and choose <em>Import Account &rarr; Private Key</em>. These are dev keys protected by a public password: simnet only, never real funds.
-        </p>
-      </div>
+      ) : (
+        <>
+          <ul className="p-3 space-y-3">
+            {accounts.length === 0 && (
+              <li className="text-fg-muted text-center py-4">{busy ? "Loading accounts…" : "No accounts yet. Run hardkas init, or create one below."}</li>
+            )}
+            {accounts.map((a) => (
+              <AccountItem key={a.name} account={a} env={env} say={say} />
+            ))}
+          </ul>
+          <div className="px-3 pb-3 space-y-1">
+            <div className="flex gap-1">
+              <input aria-label="New account name" className="input" placeholder="new account name" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void create()} />
+              <button type="button" className="btn-ghost shrink-0" disabled={creating || !newName.trim()} onClick={() => void create()}>
+                <Plus size={12} /> {creating ? "…" : "Create"}
+              </button>
+            </div>
+            <div className="text-fg-muted text-[11px]">Created accounts store a plaintext simnet key in .hardkas/accounts.real.json (dev only, never use on mainnet).</div>
+          </div>
+          <div className="mx-3 mb-3 p-2 rounded bg-bg-elev border border-border/80 text-[11px] space-y-1">
+            <div className="font-medium text-fg flex items-center justify-between">
+              <span>KasWare Wallet Import</span>
+              <span className="text-[9px] px-1 py-0.5 rounded bg-accent/15 text-accent font-mono">Simnet</span>
+            </div>
+            <p className="text-fg-muted text-[10px] leading-relaxed">
+              To use an account in KasWare: copy its private key (64 hex characters), open the KasWare extension on the <strong>Kaspa Simnet</strong> network (see the Wallet card in Servers for the RPC settings) and choose <em>Import Account &rarr; Private Key</em>. These are dev keys protected by a public password: simnet only, never real funds.
+            </p>
+          </div>
+        </>
+      )}
       <div role="status" aria-live="polite" className="px-3 pb-3 text-[11px] text-accent min-h-4">
         {notice}
       </div>
@@ -108,6 +135,7 @@ function CopyField({ label, value, mono = true, onCopy, copied }: { label: strin
 }
 
 function AccountItem({ account, env, say }: { account: AccountInfo; env: EnvironmentPlugin; say: (t: string) => void }) {
+  const target = useIde((s) => s.target);
   const [copied, setCopied] = useState<"pub" | "priv" | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
   const [funding, setFunding] = useState(false);
@@ -206,6 +234,23 @@ function AccountItem({ account, env, say }: { account: AccountInfo; env: Environ
           </div>
         )}
       </div>
+
+      {funding && target === "localnet" && (
+        <div className="rounded bg-accent/10 border border-accent/30 p-2 space-y-1">
+          <div className="flex items-center justify-between text-[11px] text-accent">
+            <span className="flex items-center gap-1.5 font-medium">
+              <Pickaxe size={12} className="animate-spin" /> Minando en Docker...
+            </span>
+            <span className="font-mono text-[10px]">Maduración Coinbase</span>
+          </div>
+          <div className="w-full bg-bg rounded-full h-1.5 overflow-hidden">
+            <div className="bg-accent h-1.5 rounded-full animate-pulse w-3/4"></div>
+          </div>
+          <div className="text-[10px] text-fg-muted">
+            rusty-kaspad + cpuminer generando bloques para maduración de monedas (~60s)...
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center justify-between text-[10px] text-fg-muted tabular-nums">
         <span>{account.utxoCount !== null ? `${account.utxoCount} utxo` : ""}</span>

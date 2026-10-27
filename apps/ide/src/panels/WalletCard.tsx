@@ -1,5 +1,5 @@
 import { Check, Copy, Link2, Wallet } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { copyText } from "@/utils/clipboard";
 import { useEnv } from "@/store/env";
 import { useIde } from "@/store/ide";
@@ -33,6 +33,13 @@ export function WalletCard() {
   const [network, setNetwork] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const check = () => setProvider(window.kasware ?? null);
@@ -55,7 +62,8 @@ export function WalletCard() {
     await copyText(text);
     setCopiedKey(key);
     setMsg(`Copied ${key}`);
-    setTimeout(() => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => {
       setCopiedKey((k) => (k === key ? null : k));
       setMsg(null);
     }, 1500);

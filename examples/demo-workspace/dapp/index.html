@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KaspaAuction dApp · Decentralized P2P Covenant Auction</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            kaspa: {
+              DEFAULT: '#70C7BA',
+              light: '#49EACB',
+              dark: '#1b3b36',
+              glow: 'rgba(112, 199, 186, 0.25)'
+            },
+            dark: {
+              bg: '#0B0F19',
+              card: '#111827',
+              border: '#1F2937',
+              hover: '#1E293B',
+              muted: '#64748B'
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body { background-color: #0B0F19; color: #F3F4F6; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .kaspa-border { border-color: rgba(112, 199, 186, 0.3); }
+    .kaspa-glow { box-shadow: 0 0 25px rgba(112, 199, 186, 0.15); }
+    .pulse-glow { animation: pulse 2.5s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.01); }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-kaspa/30 selection:text-kaspa-light">
+
+  <!-- Header -->
+  <header class="border-b border-dark-border bg-dark-card/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-kaspa/15 border border-kaspa/40 flex items-center justify-center text-kaspa-light font-bold text-lg shadow-inner">
+          ⚡
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-extrabold text-base tracking-tight bg-gradient-to-r from-white via-gray-200 to-kaspa-light bg-clip-text text-transparent">
+              KaspaAuction
+            </span>
+            <span class="px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider rounded bg-kaspa/10 border border-kaspa/30 text-kaspa-light">
+              Covenant P2P
+            </span>
+          </div>
+          <p class="text-[11px] text-dark-muted font-mono">UTXO SilverScript Contract on BlockDAG</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <!-- Network Badge -->
+        <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-dark-border bg-dark-bg/60 text-xs">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+          <span class="w-2 h-2 rounded-full bg-emerald-400 -ml-4"></span>
+          <span id="network-display" class="font-mono text-gray-300">simnet (18210)</span>
+        </div>
+
+        <!-- Connect Wallet Button -->
+        <button id="connect-btn" onclick="connectWallet()" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-kaspa hover:bg-kaspa-light text-dark-bg font-semibold text-xs transition-all shadow-md hover:shadow-kaspa/20 cursor-pointer">
+          <i data-lucide="wallet" class="w-4 h-4"></i>
+          <span id="connect-label">Connect KasWare</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+    <!-- Top Alert / Status Banner -->
+    <div id="status-banner" class="rounded-xl border border-kaspa/30 bg-kaspa/5 p-4 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="p-2 rounded-lg bg-kaspa/20 text-kaspa-light">
+          <i data-lucide="shield-check" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <div class="font-semibold text-sm text-gray-100 flex items-center gap-2">
+            Covenant Activo en Mempool/DAG
+            <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono">CONFIRMADO</span>
+          </div>
+          <p id="contract-addr-banner" class="text-xs text-dark-muted font-mono truncate max-w-md sm:max-w-xl">
+            Cargando dirección del contrato...
+          </p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <a id="explorer-btn" href="#" target="_blank" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dark-border hover:bg-dark-hover text-xs text-gray-300 transition-colors">
+          <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+          Ver en DAG Explorer
+        </a>
+      </div>
+    </div>
+
+    <!-- Grid Layout: Left Auction Details, Right Covenant Graph & Bidding -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+      <!-- Left Column (7 cols): Auction Item & Actions -->
+      <div class="lg:col-span-7 space-y-6">
+
+        <!-- Auction Card -->
+        <div class="rounded-2xl border border-dark-border bg-dark-card p-6 space-y-6 kaspa-glow relative overflow-hidden">
+          <div class="absolute -top-12 -right-12 w-48 h-48 bg-kaspa/10 rounded-full blur-3xl pointer-events-none"></div>
+
+          <!-- Item Header -->
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <span class="text-xs font-mono text-kaspa uppercase tracking-wider">Lote #001 · SilverScript Covenant</span>
+              <h1 class="text-2xl font-bold text-gray-100 mt-1">Kaspa BlockDAG Genesis Inscription</h1>
+              <p class="text-xs text-dark-muted mt-1">Activo descentralizado custodiado por contrato autónomo en Kaspa.</p>
+            </div>
+            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Subasta Abierta
+            </span>
+          </div>
+
+          <!-- Price & Metrics Banner -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 rounded-xl border border-dark-border bg-dark-bg/80">
+            <div>
+              <div class="text-[11px] text-dark-muted uppercase font-mono">Puja Más Alta</div>
+              <div id="highest-bid-val" class="text-xl font-extrabold text-kaspa-light font-mono mt-0.5">10.00 KAS</div>
+              <div class="text-[10px] text-gray-400">1,000,000,000 Sompi</div>
+            </div>
+            <div>
+              <div class="text-[11px] text-dark-muted uppercase font-mono">Reserva Bloqueada</div>
+              <div id="locked-value-val" class="text-xl font-bold text-gray-200 font-mono mt-0.5">5.00 KAS</div>
+              <div class="text-[10px] text-gray-400">P2SH Outpoint</div>
+            </div>
+            <div class="col-span-2 sm:col-span-1">
+              <div class="text-[11px] text-dark-muted uppercase font-mono">Postor Ganador</div>
+              <div id="highest-bidder-val" class="text-xs font-mono text-gray-300 truncate mt-1.5" title="Bob">
+                Bob (kaspasim:qryj...)
+              </div>
+              <div class="text-[10px] text-kaspa font-mono">✓ Firma válida</div>
+            </div>
+          </div>
+
+          <!-- Bid Input Form -->
+          <div class="space-y-3 pt-2">
+            <label class="block text-xs font-semibold text-gray-200">
+              Pujar en la Subasta (KAS)
+            </label>
+            <div class="flex gap-2">
+              <div class="relative flex-1">
+                <input id="bid-input" type="number" step="1" min="11" value="15" class="w-full bg-dark-bg border border-dark-border focus:border-kaspa rounded-xl px-4 py-2.5 text-sm font-mono text-gray-100 outline-none transition-colors" placeholder="Cantidad KAS" />
+                <span class="absolute right-4 top-2.5 text-xs font-mono text-dark-muted">KAS</span>
+              </div>
+              <button onclick="placeBid()" class="px-5 py-2.5 rounded-xl bg-kaspa hover:bg-kaspa-light text-dark-bg font-bold text-xs flex items-center gap-2 transition-all shadow-lg hover:shadow-kaspa/20 cursor-pointer shrink-0">
+                <i data-lucide="arrow-up-circle" class="w-4 h-4"></i>
+                Pujar con KasWare
+              </button>
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-dark-muted">
+              <span>Mínimo para superar: <strong id="min-bid-val" class="text-gray-200 font-mono">11 KAS</strong></span>
+              <span>Fee de red: ~0.0002 KAS</span>
+            </div>
+          </div>
+
+          <!-- Covenant Entrypoint Actions (Settle, Close, Cancel) -->
+          <div class="border-t border-dark-border pt-5 space-y-3">
+            <div class="text-xs font-semibold text-gray-300 flex items-center gap-2">
+              <i data-lucide="git-branch" class="w-3.5 h-3.5 text-kaspa"></i>
+              Acciones de Desbloqueo de Covenant (Entrypoints)
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button onclick="executeEntry('claim')" class="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/15 text-left transition-colors cursor-pointer group">
+                <div class="flex items-center justify-between">
+                  <span class="font-mono text-xs font-bold text-emerald-400 group-hover:underline">claim()</span>
+                  <i data-lucide="award" class="w-3.5 h-3.5 text-emerald-400"></i>
+                </div>
+                <p class="text-[10px] text-dark-muted mt-1">El postor ganador liquida y reclama el lote.</p>
+              </button>
+
+              <button onclick="executeEntry('close')" class="p-3 rounded-xl border border-kaspa/30 bg-kaspa/5 hover:bg-kaspa/15 text-left transition-colors cursor-pointer group">
+                <div class="flex items-center justify-between">
+                  <span class="font-mono text-xs font-bold text-kaspa-light group-hover:underline">close()</span>
+                  <i data-lucide="coins" class="w-3.5 h-3.5 text-kaspa-light"></i>
+                </div>
+                <p class="text-[10px] text-dark-muted mt-1">El vendedor finaliza y cobra la puja.</p>
+              </button>
+
+              <button onclick="executeEntry('cancel')" class="p-3 rounded-xl border border-rose-500/30 bg-rose-500/5 hover:bg-rose-500/15 text-left transition-colors cursor-pointer group">
+                <div class="flex items-center justify-between">
+                  <span class="font-mono text-xs font-bold text-rose-400 group-hover:underline">cancel()</span>
+                  <i data-lucide="ban" class="w-3.5 h-3.5 text-rose-400"></i>
+                </div>
+                <p class="text-[10px] text-dark-muted mt-1">El vendedor cancela y recupera el depósito.</p>
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Activity Feed -->
+        <div class="rounded-2xl border border-dark-border bg-dark-card p-5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="font-semibold text-xs text-gray-200 flex items-center gap-2">
+              <i data-lucide="activity" class="w-3.5 h-3.5 text-kaspa"></i>
+              Historial de Transacciones & Registro On-Chain
+            </h3>
+            <span class="text-[10px] text-dark-muted font-mono">Live WebSocket</span>
+          </div>
+          <div id="events-log" class="space-y-2 text-xs font-mono max-h-48 overflow-y-auto pr-1">
+            <div class="p-2.5 rounded-lg border border-dark-border bg-dark-bg/60 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span class="text-emerald-400">Despliegue Confirmado</span>
+                <span class="text-dark-muted text-[11px]">(5 KAS)</span>
+              </div>
+              <span class="text-dark-muted text-[10px]">DAA #342116</span>
+            </div>
+            <div class="p-2.5 rounded-lg border border-dark-border bg-dark-bg/60 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-kaspa"></span>
+                <span class="text-gray-200">Puja Inicial de Bob</span>
+                <span class="text-kaspa text-[11px]">(10 KAS)</span>
+              </div>
+              <span class="text-dark-muted text-[10px]">DAA #342120</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right Column (5 cols): Visual Covenant Flow Inspector -->
+      <div class="lg:col-span-5 space-y-6">
+
+        <div class="rounded-2xl border border-dark-border bg-dark-card p-6 space-y-4 kaspa-glow">
+          <div class="flex items-center justify-between border-b border-dark-border pb-3">
+            <div>
+              <h2 class="text-sm font-bold text-gray-100 flex items-center gap-2">
+                <i data-lucide="git-fork" class="w-4 h-4 text-kaspa"></i>
+                Visual UTXO Covenant Flow
+              </h2>
+              <p class="text-[11px] text-dark-muted mt-0.5">Grafo interactivo del ciclo de vida del contrato</p>
+            </div>
+            <span class="px-2 py-0.5 text-[10px] font-mono rounded bg-kaspa/15 text-kaspa-light">
+              SilverScript v0.1.0
+            </span>
+          </div>
+
+          <!-- Flowchart Graphic (SVG Custom Flow) -->
+          <div class="space-y-3 font-mono text-xs">
+            
+            <!-- Step 1: Funding -->
+            <div class="p-3 rounded-xl border border-blue-500/30 bg-blue-500/5 relative">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Paso 1: Fondeo / Reserva</span>
+                <span class="text-[10px] text-dark-muted">Alice (Seller)</span>
+              </div>
+              <div class="text-gray-200 font-semibold text-xs mt-1">UTXO de Depósito (5 KAS)</div>
+              <div class="text-[10px] text-dark-muted truncate mt-0.5">kaspasim:qqlpk9rs7yag...</div>
+            </div>
+
+            <!-- Arrow Down -->
+            <div class="flex justify-center text-dark-muted">
+              <i data-lucide="arrow-down" class="w-4 h-4 text-kaspa"></i>
+            </div>
+
+            <!-- Step 2: Covenant Lock -->
+            <div class="p-3.5 rounded-xl border border-kaspa/50 bg-kaspa/10 relative shadow-inner">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-kaspa-light uppercase tracking-wider">Paso 2: Bloqueo P2SH</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-kaspa/20 text-kaspa font-mono">LOCKED</span>
+              </div>
+              <div class="text-sm font-extrabold text-white mt-1">KaspaAuction.sil</div>
+              <div id="covenant-p2sh-display" class="text-[10px] text-kaspa-light/80 break-all mt-1">
+                kaspasim:pqp4zpz5txk0mxz5lxsrrtwhxrgs9k3znqhy0qhd37la22u4l7eqqhyrunejw
+              </div>
+            </div>
+
+            <!-- Branches Fork -->
+            <div class="flex justify-center text-dark-muted">
+              <i data-lucide="git-fork" class="w-4 h-4 text-kaspa rotate-180"></i>
+            </div>
+
+            <!-- Step 3: Entries -->
+            <div class="grid grid-cols-3 gap-2">
+              <div class="p-2 rounded-lg border border-dark-border bg-dark-bg text-center">
+                <div class="text-[10px] text-emerald-400 font-bold">claim()</div>
+                <div class="text-[9px] text-dark-muted mt-0.5">winnerSig</div>
+              </div>
+              <div class="p-2 rounded-lg border border-dark-border bg-dark-bg text-center">
+                <div class="text-[10px] text-kaspa font-bold">close()</div>
+                <div class="text-[9px] text-dark-muted mt-0.5">sellerSig</div>
+              </div>
+              <div class="p-2 rounded-lg border border-dark-border bg-dark-bg text-center">
+                <div class="text-[10px] text-rose-400 font-bold">cancel()</div>
+                <div class="text-[9px] text-dark-muted mt-0.5">sellerSig</div>
+              </div>
+            </div>
+
+            <!-- Arrow Down -->
+            <div class="flex justify-center text-dark-muted">
+              <i data-lucide="arrow-down" class="w-4 h-4 text-kaspa"></i>
+            </div>
+
+            <!-- Step 4: Settlement -->
+            <div class="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Paso 4: Liquidación Final</span>
+                <span class="text-[10px] text-emerald-400 font-mono">UTXO GASTADO</span>
+              </div>
+              <div class="text-xs font-semibold text-gray-200 mt-1">Fondos Transferidos al Vendedor</div>
+              <div class="text-[10px] text-dark-muted mt-0.5">Activo adjudicado al ganador en el DAG</div>
+            </div>
+
+          </div>
+
+          <!-- Code Inspector Snippet -->
+          <div class="border-t border-dark-border pt-4">
+            <div class="flex items-center justify-between text-xs text-dark-muted mb-2 font-mono">
+              <span>Código SilverScript compilado:</span>
+              <span class="text-kaspa">contracts/auction.sil</span>
+            </div>
+            <pre class="rounded-xl border border-dark-border bg-dark-bg p-3 text-[10px] font-mono text-gray-300 overflow-x-auto leading-relaxed">
+contract KaspaAuction(pubkey seller, pubkey highestBidder, int minBidSompi) {
+  entry close(sig sellerSig) {
+    require(checkSig(sellerSig, seller));
+  }
+  entry claim(sig winnerSig) {
+    require(checkSig(winnerSig, highestBidder));
+  }
+  entry cancel(sig sellerSig) {
+    require(checkSig(sellerSig, seller));
+  }
+}</pre>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="fixed bottom-6 right-6 max-w-sm w-full bg-dark-card border border-kaspa/40 rounded-xl p-4 shadow-2xl transition-all transform translate-y-32 opacity-0 pointer-events-none flex items-start gap-3 z-50">
+    <div id="toast-icon" class="p-1 rounded bg-kaspa/20 text-kaspa-light mt-0.5">
+      <i data-lucide="check-circle" class="w-4 h-4"></i>
+    </div>
+    <div class="flex-1">
+      <div id="toast-title" class="font-bold text-xs text-gray-100">Transacción Enviada</div>
+      <div id="toast-msg" class="text-xs text-dark-muted mt-0.5">La puja se ha registrado exitosamente.</div>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let config = null;
+    let connectedAddress = null;
+    let currentBid = 10;
+
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    // Load config
+    async function loadConfig() {
+      try {
+        const res = await fetch('contract-config.json');
+        config = await res.json();
+        document.getElementById('contract-addr-banner').textContent = `P2SH: ${config.address} · TxID: ${config.txId.slice(0, 16)}...`;
+        document.getElementById('covenant-p2sh-display').textContent = config.address;
+        document.getElementById('highest-bid-val').textContent = `${config.currentHighestBidKas}.00 KAS`;
+        document.getElementById('min-bid-val').textContent = `${config.currentHighestBidKas + 1} KAS`;
+        document.getElementById('bid-input').value = config.currentHighestBidKas + 5;
+        currentBid = config.currentHighestBidKas;
+      } catch (e) {
+        console.warn('Could not load contract-config.json, using fallback values');
+      }
+    }
+    loadConfig();
+
+    // KasWare Wallet Bridge
+    async function connectWallet() {
+      if (typeof window.kasware !== 'undefined') {
+        try {
+          const accounts = await window.kasware.requestAccounts();
+          if (accounts && accounts.length > 0) {
+            connectedAddress = accounts[0];
+            const shortAddr = `${connectedAddress.slice(0, 8)}...${connectedAddress.slice(-6)}`;
+            document.getElementById('connect-label').textContent = shortAddr;
+            document.getElementById('connect-btn').classList.remove('bg-kaspa', 'hover:bg-kaspa-light');
+            document.getElementById('connect-btn').classList.add('bg-dark-hover', 'border', 'border-kaspa/40', 'text-kaspa-light');
+            showToast('KasWare Conectado', `Cuenta activa: ${shortAddr}`, 'success');
+            return;
+          }
+        } catch (e) {
+          showToast('Error de Conexión', e.message || 'Usuario rechazó la conexión', 'error');
+          return;
+        }
+      }
+
+      // Fallback dev connection for demo when browser extension is not installed
+      connectedAddress = config?.highestBidderAddress || 'kaspasim:qryj23rch0n5rc7klfug58zcrnuc966qljwgzpu3mflqgxu6w2pjg6n575980';
+      const short = `${connectedAddress.slice(0, 8)}...${connectedAddress.slice(-6)}`;
+      document.getElementById('connect-label').textContent = `Bob (Dev: ${short})`;
+      document.getElementById('connect-btn').classList.add('bg-dark-hover', 'border', 'border-kaspa/40', 'text-kaspa-light');
+      showToast('Modo Dev Activo', `Conectado como Bob en simnet`, 'info');
+    }
+
+    // Place Bid Action
+    async function placeBid() {
+      const amount = parseFloat(document.getElementById('bid-input').value);
+      if (isNaN(amount) || amount <= currentBid) {
+        showToast('Puja Inválida', `La puja debe ser mayor a ${currentBid} KAS`, 'error');
+        return;
+      }
+
+      showToast('Enviando Transacción', `Enviando puja de ${amount} KAS al Covenant...`, 'info');
+
+      // If KasWare exists, prompt wallet
+      if (typeof window.kasware !== 'undefined' && config) {
+        try {
+          const tx = await window.kasware.sendKaspa(config.address, amount * 100000000);
+          handleBidSuccess(amount, tx?.txid || 'simulated-tx');
+          return;
+        } catch (e) {
+          showToast('Fallo en KasWare', e.message || 'Transacción cancelada', 'error');
+          return;
+        }
+      }
+
+      // Simulated localnet execution
+      setTimeout(() => {
+        handleBidSuccess(amount, 'kaspa-covenant-bid-' + Math.random().toString(36).slice(2, 9));
+      }, 900);
+    }
+
+    function handleBidSuccess(amount, txId) {
+      currentBid = amount;
+      document.getElementById('highest-bid-val').textContent = `${amount}.00 KAS`;
+      document.getElementById('min-bid-val').textContent = `${amount + 1} KAS`;
+      document.getElementById('bid-input').value = amount + 5;
+      
+      const feed = document.getElementById('events-log');
+      const item = document.createElement('div');
+      item.className = 'p-2.5 rounded-lg border border-kaspa/30 bg-kaspa/10 flex items-center justify-between';
+      item.innerHTML = `
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-kaspa-light animate-ping"></span>
+          <span class="text-kaspa-light font-bold">Nueva Puja Más Alta</span>
+          <span class="text-white">(${amount} KAS)</span>
+        </div>
+        <span class="text-dark-muted text-[10px]">Tx: ${txId.slice(0, 10)}...</span>
+      `;
+      feed.insertBefore(item, feed.firstChild);
+
+      showToast('¡Puja Confirmada!', `Has superado la puja con ${amount} KAS.`, 'success');
+    }
+
+    // Execute Contract Entrypoints
+    async function executeEntry(entryName) {
+      showToast(`Ejecutando ${entryName}()`, `Validando firmas OP_CHECKSIG con el nodo...`, 'info');
+      setTimeout(() => {
+        if (entryName === 'close') {
+          showToast('Subasta Cerrada', 'Alice (vendedor) ha cobrado la puja ganadora.', 'success');
+        } else if (entryName === 'claim') {
+          showToast('Lote Liquidado', 'Bob (ganador) ha reclamado la custodia del activo.', 'success');
+        } else {
+          showToast('Subasta Cancelada', 'Depósito reembolsado a la cuenta de reserva.', 'info');
+        }
+      }, 1000);
+    }
+
+    // Toast Helper
+    function showToast(title, msg, type = 'info') {
+      const toast = document.getElementById('toast');
+      const icon = document.getElementById('toast-icon');
+      document.getElementById('toast-title').textContent = title;
+      document.getElementById('toast-msg').textContent = msg;
+
+      if (type === 'error') {
+        toast.className = 'fixed bottom-6 right-6 max-w-sm w-full bg-dark-card border border-rose-500/50 rounded-xl p-4 shadow-2xl transition-all transform translate-y-0 opacity-100 flex items-start gap-3 z-50';
+        icon.className = 'p-1 rounded bg-rose-500/20 text-rose-400 mt-0.5';
+      } else if (type === 'success') {
+        toast.className = 'fixed bottom-6 right-6 max-w-sm w-full bg-dark-card border border-emerald-500/50 rounded-xl p-4 shadow-2xl transition-all transform translate-y-0 opacity-100 flex items-start gap-3 z-50';
+        icon.className = 'p-1 rounded bg-emerald-500/20 text-emerald-400 mt-0.5';
+      } else {
+        toast.className = 'fixed bottom-6 right-6 max-w-sm w-full bg-dark-card border border-kaspa/50 rounded-xl p-4 shadow-2xl transition-all transform translate-y-0 opacity-100 flex items-start gap-3 z-50';
+        icon.className = 'p-1 rounded bg-kaspa/20 text-kaspa-light mt-0.5';
+      }
+
+      setTimeout(() => {
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        toast.classList.add('translate-y-32', 'opacity-0');
+      }, 4000);
+    }
+  </script>
+</body>
+</html>

@@ -24,8 +24,8 @@ export class AssistantPlugin extends Plugin {
       location: "sidePanel",
       icon: Sparkles,
       order: 18,
-      methods: ["open", "stop", "clear", "refreshConfig"],
-      events: ["answered"]
+      methods: ["open", "stop", "clear", "refreshConfig", "runAgent"],
+      events: ["answered", "agentFinished"]
     });
   }
 
@@ -99,6 +99,69 @@ export class AssistantPlugin extends Plugin {
       useAssistant.getState().setBusy(false);
       this.abort = null;
       this.emit("answered");
+    }
+  }
+
+  /** Runs the autonomous agent for a given goal. Executes tools, handles self-healing, and updates steps. */
+  async runAgent(goal: string): Promise<void> {
+    const st = useAssistant.getState();
+    const g = goal.trim();
+    if (!g || st.busy) return;
+
+    st.startAgentRun(g);
+
+    const ide = useIde.getState();
+    const active = ide.openFiles.find((f) => f.path === ide.activeFile);
+    const file = st.includeFile && active && active.kind !== "view" && !SENSITIVE.test(active.path) ? { path: active.path, content: active.content } : null;
+
+    this.abort = new AbortController();
+    let failed: string | undefined;
+    let finalSummary: string | null = null;
+    let succeeded = false;
+
+    try {
+      await api.assistant.agent(
+        {
+          goal: g,
+          context: { workspace: ide.workspace?.name ?? undefined, environment: `${envOf(ide.target).label} (network ${envOf(ide.target).networkId})`, file }
+        },
+        this.abort.signal,
+        (event, data) => {
+          if (event === "thought" && typeof data.text === "string") {
+            useAssistant.getState().addAgentThought(data.text);
+          } else if (event === "step") {
+            useAssistant.getState().upsertAgentStep({
+              id: String(data.id ?? `step_${Date.now()}`),
+              title: String(data.title ?? ""),
+              tool: String(data.tool ?? ""),
+              status: (data.status as "running" | "succeeded" | "failed") || "running",
+              input: data.input as Record<string, unknown> | undefined,
+              output: typeof data.output === "string" ? data.output : undefined,
+              error: typeof data.error === "string" ? data.error : undefined
+            });
+          } else if (event === "done") {
+            finalSummary = String(data.summary ?? "");
+            succeeded = Boolean(data.ok);
+          } else if (event === "error") {
+            failed = String(data.message ?? "Agent execution failed.");
+          }
+        }
+      );
+      // Refresh workspace filesystem in the IDE so newly created or edited files show up immediately
+      try {
+        const { tree } = await api.fs.tree();
+        ide.setTree(tree);
+      } catch {
+        // ignore tree refresh failure
+      }
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === "AbortError")) {
+        failed = e instanceof Error ? e.message : String(e);
+      }
+    } finally {
+      useAssistant.getState().finishAgentRun(finalSummary || failed || (this.abort?.signal.aborted ? "Agent run stopped by user." : "Agent finished."), succeeded && !failed);
+      this.abort = null;
+      this.emit("agentFinished");
     }
   }
 }

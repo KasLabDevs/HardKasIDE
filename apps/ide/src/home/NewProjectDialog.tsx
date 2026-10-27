@@ -71,7 +71,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6" onClick={phase === "running" ? undefined : onClose}>
+    <div role="presentation" className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6" onClick={phase === "running" ? undefined : onClose}>
       <div
         role="dialog"
         aria-modal="true"

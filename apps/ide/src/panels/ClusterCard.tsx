@@ -135,6 +135,13 @@ function NodeRow({ node: n, reference, samples, busy, cluster, logOpen, logText 
   const progress = progressOf(n, reference);
   const syncing = running && answering && n.inSync === false;
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   const dot = !running ? "bg-fg-muted" : !answering ? "bg-warn animate-pulse" : n.inSync === false ? "bg-warn animate-pulse" : "bg-ok";
   const stateText = !running ? n.state : !answering ? "starting…" : n.role === "hardkas" ? "reference" : n.inSync ? "in sync" : "syncing";
@@ -204,7 +211,8 @@ function NodeRow({ node: n, reference, samples, busy, cluster, logOpen, logText 
               onClick={() =>
                 void copyText(n.chain!.sink).then(() => {
                   setCopied(true);
-                  setTimeout(() => setCopied(false), 1200);
+                  if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+                  copyTimerRef.current = setTimeout(() => setCopied(false), 1200);
                 })
               }
             >

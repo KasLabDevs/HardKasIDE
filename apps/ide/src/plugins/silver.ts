@@ -43,7 +43,7 @@ export class SilverPlugin extends Plugin {
     this.offs = [];
   }
 
-  private console(): ConsolePlugin {
+  console(): ConsolePlugin {
     return this.engine.get<ConsolePlugin>("console");
   }
 
@@ -53,7 +53,8 @@ export class SilverPlugin extends Plugin {
     const absPath = typeof raw?.recordPath === "string" ? raw.recordPath : null;
     const recordPath = absPath ? this.toRelative(absPath) : null;
     if (!recordPath) return null;
-    const contracts = parseSilArtifact(raw?.artifactJson, raw?.contracts as Array<{ name: string; address?: string }> | undefined);
+    const sourceText = (raw?.source as { text?: string } | undefined)?.text;
+    const contracts = parseSilArtifact(raw?.artifactJson, raw?.contracts as Array<{ name: string; address?: string }> | undefined, sourceText);
     const compiled: CompiledRecord = {
       recordPath,
       contentHash: String(raw?.contentHash ?? ""),

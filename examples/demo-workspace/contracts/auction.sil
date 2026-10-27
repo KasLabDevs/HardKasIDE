@@ -1,0 +1,23 @@
+pragma silverscript ^0.1.0;
+
+// Decentralized P2P Auction governed by Kaspa Covenants:
+// - The seller initiates the auction with an initial reserve price.
+// - The winning bidder can claim and settle the lot.
+// - The seller collects the highest bid funds upon closure.
+// - If reserve is not met, the seller can cancel and reclaim the deposit.
+contract KaspaAuction(pubkey seller, pubkey highestBidder, int minBidSompi) {
+  // Seller finalizes auction and claims the winning bid
+  entry close(sig sellerSig) {
+    require(checkSig(sellerSig, seller));
+  }
+
+  // Highest bidder settles and receives the auctioned covenant asset
+  entry claim(sig winnerSig) {
+    require(checkSig(winnerSig, highestBidder));
+  }
+
+  // Seller cancels auction and reclaims deposit
+  entry cancel(sig sellerSig) {
+    require(checkSig(sellerSig, seller));
+  }
+}

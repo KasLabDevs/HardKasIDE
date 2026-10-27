@@ -1,4 +1,4 @@
-import { CheckCircle2, Coins, FileJson, History, Play, RadioTower, RefreshCw, Send, Signature, Zap } from "lucide-react";
+import { CheckCircle2, Coins, FileJson, History, Pickaxe, Play, RadioTower, RefreshCw, Send, Signature, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { Account, PlanOutcome, RunPlugin, SendOutcome, SignOutcome, TxStatus } from "@/plugins/run";
@@ -131,9 +131,26 @@ export function RunPanel() {
           <RadioTower size={14} /> Localnet status
         </button>
         <button type="button" className="btn-ghost flex-1 justify-center truncate" disabled={busy !== null} onClick={() => void guard("fund", async () => void (await run.localnetFund(from, "1000")))}>
-          <Coins size={14} className="shrink-0" /> <span className="truncate">Fund {from}</span>
+          <Coins size={14} className="shrink-0" /> <span className="truncate">{busy === "fund" ? "Funding…" : `Fund ${from}`}</span>
         </button>
       </div>
+
+      {busy === "fund" && target === "localnet" && (
+        <div className="rounded bg-accent/10 border border-accent/30 p-2 space-y-1">
+          <div className="flex items-center justify-between text-[11px] text-accent">
+            <span className="flex items-center gap-1.5 font-medium">
+              <Pickaxe size={12} className="animate-spin" /> Minando en Docker...
+            </span>
+            <span className="font-mono text-[10px]">Maduración Coinbase</span>
+          </div>
+          <div className="w-full bg-bg rounded-full h-1.5 overflow-hidden">
+            <div className="bg-accent h-1.5 rounded-full animate-pulse w-3/4"></div>
+          </div>
+          <div className="text-[10px] text-fg-muted">
+            rusty-kaspad + cpuminer minando bloques para madurar monedas (~60s)...
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2">
         <div className="label flex items-center justify-between">

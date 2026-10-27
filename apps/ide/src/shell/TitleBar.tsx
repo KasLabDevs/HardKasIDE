@@ -120,6 +120,7 @@ export function TitleBar({ onHome }: Props) {
           item("Run history", () => engine.call("runHistory", "open")),
           item("Index (artifacts, events, SQL)", () => engine.call("queryIndex", "open")),
           item("Lineage graph", () => engine.get<LineagePlugin>("lineage").open()),
+          item("Covenant graph", () => engine.call("covenant", "open")),
           item("Plugin manager", reveal("pluginManager", "Plugin manager")),
           sep,
           heading("Layout"),
@@ -425,7 +426,7 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="titlebar-nodrag fixed inset-0 z-50 bg-black/50 grid place-items-center" onClick={onClose}>
+    <div role="presentation" className="titlebar-nodrag fixed inset-0 z-50 bg-black/50 grid place-items-center" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="About HardKas IDE" className="w-full max-w-sm rounded-lg border border-border bg-bg-elev p-5 shadow-2xl space-y-3 text-xs" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3">
           <HardKasMark size={36} />
