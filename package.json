@@ -1,7 +1,7 @@
 {
   "name": "hardkas-ide",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "HardKas IDE: a workbench for HardKas (Kaspa) projects, with Visual Studio-style project creation.",
   "license": "MIT",
   "type": "module",
