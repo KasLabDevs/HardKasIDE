@@ -40,6 +40,7 @@ export function CommandPalette() {
       { id: "compile", title: "Compile current SilverScript file", keys: "Ctrl+Enter", hint: "hardkas silver compile", run: () => engine.get<CompilerPlugin>("silverCompiler").compileCurrent() },
       { id: "save", title: "Save file", keys: "Ctrl+S", run: () => engine.call("fileManager", "saveCurrentFile") },
       { id: "lineage", title: "Show lineage graph", hint: "live artifact provenance", run: () => engine.get<LineagePlugin>("lineage").open() },
+      { id: "covenant", title: "Show Covenant graph", hint: "visual UTXO & contract execution flow", run: () => engine.call("covenant", "open") },
       { id: "tests", title: "Run all tests", hint: "vitest, JUnit-style results", run: () => engine.call("tests", "run") },
       { id: "tests:view", title: "Show Tests view", run: () => engine.call("tests", "open") },
       { id: "debug:file", title: "Debug: debug the tests in the open file", keys: "F5", hint: "breakpoints, stepping", run: () => (activeFile ? engine.call("debug", "debugFile", activeFile) : engine.call("debug", "debugAll")) },
@@ -130,7 +131,7 @@ export function CommandPalette() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center pt-20" onClick={() => setOpen(false)}>
+    <div role="presentation" className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center pt-20" onClick={() => setOpen(false)}>
       <div
         role="dialog"
         aria-modal="true"

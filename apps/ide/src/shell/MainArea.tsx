@@ -4,6 +4,7 @@ import { Editor } from "@/editor/Editor";
 import { useEngine, useEngineVersion } from "@/engine/context";
 import { useIde, VIEW_PREFIX } from "@/store/ide";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { DockControls } from "./DockControls";
 import { HardKasMark } from "./Logo";
 
 /** Tabs + content: files open in the Monaco editor, "view:<plugin>" tabs render a main-panel plugin view. */
@@ -73,6 +74,12 @@ export function MainArea() {
             </div>
           );
         })}
+        {viewName && activeView && (
+          <div className="ml-auto flex items-center gap-1.5 px-3 border-l border-border bg-bg-panel shrink-0 select-none">
+            <span className="text-[10px] text-fg-muted uppercase tracking-wider">Position:</span>
+            <DockControls pluginName={viewName} displayName={activeView.profile.displayName} />
+          </div>
+        )}
       </div>
       <div className="flex-1 min-h-0 relative">
         {/* The editor stays mounted (and hidden) while a view tab or empty state is active, so Monaco keeps its models. */}

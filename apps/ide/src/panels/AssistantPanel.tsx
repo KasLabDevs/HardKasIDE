@@ -1,11 +1,32 @@
 import clsx from "clsx";
-import { BookOpen, Check, Copy, ExternalLink, FilePlus2, KeyRound, Send, Settings2, Square, Trash2, TextCursorInput } from "lucide-react";
+import {
+  AlertCircle,
+  BookOpen,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  FileCode2,
+  FilePlus2,
+  KeyRound,
+  Loader2,
+  MessageSquare,
+  Send,
+  Settings2,
+  Square,
+  TextCursorInput,
+  Trash2,
+  Wand2,
+  XCircle
+} from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { api, IdeApiError } from "@/api/client";
 import { useEngine } from "@/engine/context";
 import type { AssistantPlugin } from "@/plugins/assistant";
 import type { EditorPlugin } from "@/plugins/editor";
-import { useAssistant, type ChatTurn } from "@/store/assistant";
+import { useAssistant, type ChatTurn, type AgentRun } from "@/store/assistant";
 import { envOf, useIde } from "@/store/ide";
 import { copyText } from "@/utils/clipboard";
 
@@ -19,12 +40,23 @@ const STARTERS = [
   "How do I fund and spend a covenant output on simnet with HardKas?"
 ];
 
-/** Chat with any LLM about Kaspa and SilverScript, grounded in docs.kaspa.org. Chat only: you decide what to run or paste. */
+const AGENT_STARTERS = [
+  "Crea un contrato Escrow con refund por timeout en SilverScript y compílalo",
+  "Crea un contrato Auction con pujas y su test en Vitest",
+  "Compila y verifica todos los contratos en el directorio contracts/",
+  "Escribe un contrato Counter con incremento y su test suite"
+];
+
+/** Chat with any LLM about Kaspa and SilverScript, or run an autonomous agent with real workspace tools. */
 export function AssistantPanel() {
   const engine = useEngine();
   const assistant = engine.get<AssistantPlugin>("assistant");
+  const mode = useAssistant((s) => s.mode);
+  const setMode = useAssistant((s) => s.setMode);
   const turns = useAssistant((s) => s.turns);
   const busy = useAssistant((s) => s.busy);
+  const agentRun = useAssistant((s) => s.agentRun);
+  const resetAgentRun = useAssistant((s) => s.resetAgentRun);
   const config = useAssistant((s) => s.config);
   const meta = useAssistant((s) => s.meta);
   const includeFile = useAssistant((s) => s.includeFile);
@@ -37,14 +69,18 @@ export function AssistantPanel() {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
-  }, [turns]);
+  }, [turns, agentRun?.steps, agentRun?.thoughts, agentRun?.summary]);
 
   const notReady = config && !config.model ? "Pick a model in the settings." : config && !config.hasKey && config.provider === "anthropic" ? "Add your API key to start (gear icon)." : null;
 
   const send = (text = input) => {
     if (!text.trim() || busy) return;
     setInput("");
-    void assistant.ask(text);
+    if (mode === "agent") {
+      void assistant.runAgent(text);
+    } else {
+      void assistant.ask(text);
+    }
   };
 
   /** The Research GPT cannot be called from here (no API, no framing): hand it the question with its context. */
@@ -65,7 +101,7 @@ export function AssistantPanel() {
           {config ? (config.model ? `${config.model}` : "no model") : "…"}
           {meta?.docs ? <span className="ml-1 text-[10px]">· Kaspa docs {meta.docs.mode} (~{Math.round(meta.docs.chars / 4000)}k tok)</span> : config?.docs !== "off" && config ? <span className="ml-1 text-[10px]">· Kaspa docs {config.docs}</span> : null}
         </span>
-        <button type="button" onClick={() => assistant.clear()} className="p-1 rounded hover:text-fg hover:bg-bg-hover cursor-pointer" title="Clear chat" aria-label="Clear chat" disabled={turns.length === 0}>
+        <button type="button" onClick={() => (mode === "agent" ? resetAgentRun() : assistant.clear())} className="p-1 rounded hover:text-fg hover:bg-bg-hover cursor-pointer" title={mode === "agent" ? "Reset agent" : "Clear chat"} aria-label={mode === "agent" ? "Reset agent" : "Clear chat"} disabled={mode === "agent" ? !agentRun : turns.length === 0}>
           <Trash2 size={13} />
         </button>
         <button type="button" onClick={() => setSettingsOpen(!settingsOpen)} className={clsx("p-1 rounded cursor-pointer", settingsOpen ? "text-accent bg-bg-hover" : "hover:text-fg hover:bg-bg-hover")} title="Assistant settings" aria-label="Assistant settings" aria-pressed={settingsOpen}>
@@ -73,31 +109,80 @@ export function AssistantPanel() {
         </button>
       </div>
 
+      {/* Mode Switcher */}
+      <div className="shrink-0 flex items-center justify-between px-3 py-1 border-b border-border bg-bg-elev/40">
+        <div className="inline-flex rounded p-0.5 bg-bg border border-border">
+          <button
+            type="button"
+            onClick={() => setMode("chat")}
+            className={clsx(
+              "flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium transition-colors cursor-pointer",
+              mode === "chat" ? "bg-bg-elev text-accent font-semibold shadow-sm" : "text-fg-muted hover:text-fg"
+            )}
+          >
+            <MessageSquare size={12} />
+            Chat
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("agent")}
+            className={clsx(
+              "flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium transition-colors cursor-pointer",
+              mode === "agent" ? "bg-accent/15 text-accent font-semibold shadow-sm" : "text-fg-muted hover:text-fg"
+            )}
+          >
+            <Wand2 size={12} />
+            Agent Mode
+            <span className="text-[9px] px-1 py-0.2 rounded bg-accent/20 text-accent font-mono uppercase tracking-wider">Beta</span>
+          </button>
+        </div>
+        {mode === "agent" && agentRun && (
+          <button
+            type="button"
+            onClick={() => resetAgentRun()}
+            className="text-[11px] text-fg-muted hover:text-fg hover:underline cursor-pointer"
+          >
+            Nueva tarea
+          </button>
+        )}
+      </div>
+
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
 
       <div className="flex-1 min-h-0 overflow-auto px-3 py-2 space-y-3">
-        {turns.length === 0 && (
-          <div className="space-y-3 pt-2">
-            <div className="text-fg-muted leading-relaxed">
-              Ask about Kaspa, Toccata and SilverScript. Answers are grounded in the official docs at <a className="text-accent hover:underline" href={DOCS_FOR_AI} target="_blank" rel="noreferrer">docs.kaspa.org</a>, and the open file is shared as context. It only chats: nothing runs unless you copy it.
-            </div>
-            {notReady && (
-              <button type="button" className="btn-primary w-full justify-center" onClick={() => setSettingsOpen(true)}>
-                <KeyRound size={13} /> {notReady}
-              </button>
+        {mode === "agent" ? (
+          <AgentView
+            agentRun={agentRun}
+            busy={busy}
+            onRunStarter={(goal) => void assistant.runAgent(goal)}
+            onReset={() => resetAgentRun()}
+          />
+        ) : (
+          <>
+            {turns.length === 0 && (
+              <div className="space-y-3 pt-2">
+                <div className="text-fg-muted leading-relaxed">
+                  Ask about Kaspa, Toccata and SilverScript. Answers are grounded in the official docs at <a className="text-accent hover:underline" href={DOCS_FOR_AI} target="_blank" rel="noreferrer">docs.kaspa.org</a>, and the open file is shared as context. It only chats: nothing runs unless you copy it.
+                </div>
+                {notReady && (
+                  <button type="button" className="btn-primary w-full justify-center" onClick={() => setSettingsOpen(true)}>
+                    <KeyRound size={13} /> {notReady}
+                  </button>
+                )}
+                <div className="space-y-1">
+                  {STARTERS.map((s) => (
+                    <button key={s} type="button" onClick={() => send(s)} disabled={busy} className="w-full text-left rounded border border-border bg-bg-elev px-2 py-1.5 text-fg-muted hover:text-fg hover:border-accent/50 cursor-pointer disabled:opacity-50">
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
-            <div className="space-y-1">
-              {STARTERS.map((s) => (
-                <button key={s} type="button" onClick={() => send(s)} disabled={busy} className="w-full text-left rounded border border-border bg-bg-elev px-2 py-1.5 text-fg-muted hover:text-fg hover:border-accent/50 cursor-pointer disabled:opacity-50">
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
+            {turns.map((t) => (
+              <Turn key={t.id} turn={t} />
+            ))}
+          </>
         )}
-        {turns.map((t) => (
-          <Turn key={t.id} turn={t} />
-        ))}
         <div ref={endRef} />
       </div>
 
@@ -109,10 +194,14 @@ export function AssistantPanel() {
         <div className="flex items-end gap-1">
           <textarea
             className="input resize-none min-h-[54px] max-h-40"
-            placeholder="Ask about Kaspa or SilverScript…  (Enter to send, Shift+Enter for a new line)"
+            placeholder={
+              mode === "agent"
+                ? "Objetivo para el agente autónomo (ej: 'Crea un contrato Escrow y compílalo')… Enter para ejecutar"
+                : "Ask about Kaspa or SilverScript…  (Enter to send, Shift+Enter for a new line)"
+            }
             value={input}
             rows={2}
-            aria-label="Message the assistant"
+            aria-label={mode === "agent" ? "Goal for the agent" : "Message the assistant"}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -126,15 +215,261 @@ export function AssistantPanel() {
               <Square size={14} />
             </button>
           ) : (
-            <button type="button" className="btn-primary shrink-0 h-[54px]" onClick={() => send()} disabled={!input.trim()} title="Send" aria-label="Send message">
-              <Send size={14} />
+            <button
+              type="button"
+              className={clsx("shrink-0 h-[54px]", mode === "agent" ? "btn-primary bg-accent/90 hover:bg-accent" : "btn-primary")}
+              onClick={() => send()}
+              disabled={!input.trim()}
+              title={mode === "agent" ? "Ejecutar Agente" : "Send"}
+              aria-label={mode === "agent" ? "Run agent goal" : "Send message"}
+            >
+              {mode === "agent" ? <Wand2 size={14} /> : <Send size={14} />}
             </button>
           )}
         </div>
-        <button type="button" onClick={() => void askResearchGpt()} className="w-full flex items-center justify-center gap-1.5 rounded border border-dashed border-border py-1 text-[11px] text-fg-muted hover:text-fg hover:border-accent/50 cursor-pointer" title="ChatGPT custom GPTs have no API and cannot be embedded: this copies your question with its context and opens the GPT">
-          <ExternalLink size={11} /> Ask the Kaspa Research GPT instead (copies your question)
-        </button>
+        {mode === "chat" && (
+          <button type="button" onClick={() => void askResearchGpt()} className="w-full flex items-center justify-center gap-1.5 rounded border border-dashed border-border py-1 text-[11px] text-fg-muted hover:text-fg hover:border-accent/50 cursor-pointer" title="ChatGPT custom GPTs have no API and cannot be embedded: this copies your question with its context and opens the GPT">
+            <ExternalLink size={11} /> Ask the Kaspa Research GPT instead (copies your question)
+          </button>
+        )}
       </div>
+    </div>
+  );
+}
+
+function AgentView({
+  agentRun,
+  busy,
+  onRunStarter,
+  onReset
+}: {
+  agentRun: AgentRun | null;
+  busy: boolean;
+  onRunStarter: (goal: string) => void;
+  onReset: () => void;
+}) {
+  const engine = useEngine();
+  const [openStepIds, setOpenStepIds] = useState<Record<string, boolean>>({});
+
+  const toggleStep = (id: string) => {
+    setOpenStepIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const openFile = async (filePath: string) => {
+    try {
+      await engine.call("fileManager", "open", filePath);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  if (!agentRun) {
+    return (
+      <div className="space-y-4 pt-1">
+        <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-accent font-semibold text-xs">
+            <Wand2 size={14} /> Modo Agente Autónomo
+          </div>
+          <p className="text-fg-muted leading-relaxed text-[11px]">
+            El agente tiene control autónomo sobre el espacio de trabajo: escribe código, compila con <code className="font-mono text-accent">silverc</code>, ejecuta tests y repara errores automáticamente en bucle cerrado.
+          </p>
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {["write_file", "compile_silverscript", "run_tests", "fund_account"].map((t) => (
+              <span key={t} className="px-1.5 py-0.5 rounded border border-border bg-bg-elev font-mono text-[10px] text-fg-muted">
+                ⚡ {t}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="text-[11px] font-medium text-fg-muted uppercase tracking-wider">Tareas de inicio sugeridas</div>
+          {AGENT_STARTERS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => onRunStarter(s)}
+              disabled={busy}
+              className="w-full text-left rounded border border-border bg-bg-elev px-2.5 py-2 text-fg hover:border-accent/50 hover:bg-bg-hover cursor-pointer transition-colors disabled:opacity-50 group flex items-center justify-between"
+            >
+              <span className="truncate pr-2">{s}</span>
+              <Wand2 size={12} className="opacity-0 group-hover:opacity-100 text-accent transition-opacity shrink-0" />
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 pt-1">
+      {/* Active Goal Header */}
+      <div className="rounded-lg border border-border bg-bg-elev p-3 space-y-2">
+        <div className="flex items-start justify-between gap-2">
+          <div className="space-y-1 min-w-0 flex-1">
+            <div className="text-[10px] uppercase font-semibold text-fg-muted tracking-wider">Objetivo en curso</div>
+            <div className="font-medium text-fg text-xs break-words">{agentRun.goal}</div>
+          </div>
+          <div className="shrink-0">
+            {agentRun.running ? (
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/10 border border-accent/30 text-accent text-[11px] font-medium">
+                <Loader2 size={11} className="animate-spin" /> Ejecutando
+              </span>
+            ) : agentRun.ok ? (
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-ok/10 border border-ok/30 text-ok text-[11px] font-medium">
+                <CheckCircle2 size={11} /> Verificado
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-error/10 border border-error/30 text-error text-[11px] font-medium">
+                <XCircle size={11} /> Detenido
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Live Agent Thoughts (if any) */}
+      {agentRun.thoughts.length > 0 && (
+        <div className="rounded-lg border border-border/80 bg-bg p-2.5 space-y-1 text-fg-muted text-[11px] italic">
+          <div className="not-italic font-semibold text-[10px] uppercase tracking-wider text-accent flex items-center gap-1">
+            <span>💭</span> Razonamiento
+          </div>
+          {agentRun.thoughts.slice(-2).map((thought, idx) => (
+            <div key={idx} className="whitespace-pre-wrap leading-relaxed">
+              {thought}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Steps Timeline */}
+      <div className="space-y-2">
+        <div className="text-[10px] uppercase font-semibold text-fg-muted tracking-wider px-1">
+          Línea de ejecución ({agentRun.steps.length} {agentRun.steps.length === 1 ? "paso" : "pasos"})
+        </div>
+
+        <div className="space-y-1.5">
+          {agentRun.steps.map((step, idx) => {
+            const isOpen = Boolean(openStepIds[step.id] || (step.status === "failed" && openStepIds[step.id] !== false));
+            const hasDetails = Boolean(step.output || step.error || step.input);
+            const filePath =
+              step.input && typeof step.input.path === "string"
+                ? String(step.input.path)
+                : step.input && typeof step.input.file === "string"
+                ? String(step.input.file)
+                : null;
+
+            return (
+              <div
+                key={step.id || idx}
+                className={clsx(
+                  "rounded-md border text-xs transition-colors overflow-hidden",
+                  step.status === "running"
+                    ? "border-accent/40 bg-accent/5"
+                    : step.status === "failed"
+                    ? "border-error/40 bg-error/5"
+                    : "border-border bg-bg-elev/60"
+                )}
+              >
+                <div
+                  onClick={() => hasDetails && toggleStep(step.id)}
+                  className={clsx(
+                    "flex items-center gap-2 px-2.5 py-1.5 select-none",
+                    hasDetails && "cursor-pointer hover:bg-bg-hover/50"
+                  )}
+                >
+                  {step.status === "running" ? (
+                    <Loader2 size={13} className="text-accent animate-spin shrink-0" />
+                  ) : step.status === "succeeded" ? (
+                    <div className="w-4 h-4 rounded-full bg-ok/20 text-ok border border-ok/40 flex items-center justify-center shrink-0">
+                      <Check size={10} strokeWidth={3} />
+                    </div>
+                  ) : (
+                    <div className="w-4 h-4 rounded-full bg-error/20 text-error border border-error/40 flex items-center justify-center shrink-0">
+                      <XCircle size={10} strokeWidth={3} />
+                    </div>
+                  )}
+
+                  <span className="font-medium text-fg truncate flex-1">{step.title}</span>
+
+                  <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-bg border border-border text-fg-muted shrink-0">
+                    {step.tool}
+                  </span>
+
+                  {hasDetails && (
+                    <button
+                      type="button"
+                      aria-label="Expand step details"
+                      className="text-fg-muted hover:text-fg p-0.5"
+                    >
+                      {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    </button>
+                  )}
+                </div>
+
+                {isOpen && hasDetails && (
+                  <div className="px-2.5 pb-2 pt-1 border-t border-border/50 space-y-1.5 bg-bg/60">
+                    {filePath && (
+                      <div className="flex items-center justify-between py-0.5">
+                        <span className="text-[10px] text-fg-muted font-mono">{filePath}</span>
+                        <button
+                          type="button"
+                          onClick={() => openFile(filePath)}
+                          className="flex items-center gap-1 text-[10px] text-accent hover:underline cursor-pointer"
+                        >
+                          <FileCode2 size={11} /> Abrir en editor
+                        </button>
+                      </div>
+                    )}
+                    {step.error && (
+                      <pre className="font-mono text-[10px] text-error bg-error/10 border border-error/20 p-2 rounded whitespace-pre-wrap break-all max-h-40 overflow-auto">
+                        {step.error}
+                      </pre>
+                    )}
+                    {step.output && !step.error && (
+                      <pre className="font-mono text-[10px] text-fg-muted bg-bg border border-border/60 p-2 rounded whitespace-pre-wrap break-all max-h-40 overflow-auto">
+                        {step.output}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Done summary */}
+      {agentRun.summary && (
+        <div
+          className={clsx(
+            "rounded-lg border p-3 space-y-2 text-xs",
+            agentRun.ok ? "border-ok/40 bg-ok/5" : "border-warn/40 bg-warn/5"
+          )}
+        >
+          <div className="flex items-center gap-2 font-semibold">
+            {agentRun.ok ? (
+              <span className="text-ok flex items-center gap-1.5">
+                <CheckCircle2 size={14} /> Contrato y pruebas verificados
+              </span>
+            ) : (
+              <span className="text-warn flex items-center gap-1.5">
+                <AlertCircle size={14} /> Ejecución finalizada con observaciones
+              </span>
+            )}
+          </div>
+          <div className="text-fg leading-relaxed">
+            <Markdown text={agentRun.summary} />
+          </div>
+          <button
+            type="button"
+            onClick={onReset}
+            className="btn-primary w-full justify-center mt-1"
+          >
+            <Wand2 size={13} /> Iniciar nueva tarea
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -183,15 +518,26 @@ function CodeBlock({ lang, code, complete }: { lang: string; code: string; compl
   const engine = useEngine();
   const [copied, setCopied] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const noteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSil = /^(silver|sil)/i.test(lang) || /pragma\s+silverscript/.test(code);
+
+  useEffect(() => {
+    return () => {
+      if (noteTimerRef.current) clearTimeout(noteTimerRef.current);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   const say = (t: string) => {
     setNote(t);
-    setTimeout(() => setNote(null), 2200);
+    if (noteTimerRef.current) clearTimeout(noteTimerRef.current);
+    noteTimerRef.current = setTimeout(() => setNote(null), 2200);
   };
   const copy = async () => {
     setCopied(await copyText(code));
-    setTimeout(() => setCopied(false), 1500);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
   };
   const insert = () => {
     const ok = engine.get<EditorPlugin>("editor").insertText(code);

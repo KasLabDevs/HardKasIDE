@@ -221,6 +221,14 @@ export function Editor() {
         contextMenuOrder: 3,
         run: () => useIde.getState().setActiveSidePlugin("silverCompiler")
       });
+      editor.addAction({
+        id: "hardkas.silver.openCovenantGraph",
+        label: "Visualize in Covenant Graph",
+        precondition: "hardkasSilverScript",
+        contextMenuGroupId: "0_hardkas",
+        contextMenuOrder: 3.5,
+        run: () => void engine.call("covenant", "open")
+      });
     },
     [engine]
   );

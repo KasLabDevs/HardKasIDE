@@ -99,6 +99,14 @@ export function ExplorerCard() {
 
 function Hash({ value, label }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
   return (
     <span className="flex items-center gap-1 min-w-0">
       {label && <span className="text-fg-muted w-14 shrink-0">{label}</span>}
@@ -113,7 +121,8 @@ function Hash({ value, label }: { value: string; label?: string }) {
         onClick={() =>
           void copyText(value).then(() => {
             setCopied(true);
-            setTimeout(() => setCopied(false), 1200);
+            if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+            copyTimerRef.current = setTimeout(() => setCopied(false), 1200);
           })
         }
       >

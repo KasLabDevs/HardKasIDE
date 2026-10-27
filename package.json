@@ -17,6 +17,7 @@
     "typecheck": "pnpm -r run typecheck"
   },
   "devDependencies": {
+    "puppeteer-core": "^25.16.0",
     "typescript": "^5.8.3"
   }
 }

@@ -162,7 +162,7 @@ export function Watches({ plugin }: { plugin: DebugPlugin }) {
             <span className={clsx("font-mono truncate flex-1", r?.error ? "text-error" : "text-fg")} title={r?.error ?? r?.value}>
               {!paused ? "…" : r ? (r.error ? r.error : r.value) : "…"}
             </span>
-            <button type="button" aria-label={`Remove watch ${w}`} className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-fg-muted hover:text-error cursor-pointer" onClick={() => plugin.removeWatch(w)}>
+            <button type="button" aria-label={`Remove watch ${w}`} className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:opacity-100 text-fg-muted hover:text-error cursor-pointer" onClick={() => plugin.removeWatch(w)}>
               <X size={11} />
             </button>
           </div>
@@ -207,7 +207,7 @@ export function Breakpoints({ plugin }: { plugin: DebugPlugin }) {
                   {st?.verified && st.actual !== undefined && st.actual !== line ? ` → ${st.actual}` : ""}
                 </button>
                 {st && !st.verified && <span className="text-[10px] text-fg-muted">no code on this line</span>}
-                <button type="button" aria-label={`Remove breakpoint ${f}:${line}`} className="ml-auto opacity-0 group-hover:opacity-100 focus:opacity-100 text-fg-muted hover:text-error cursor-pointer" onClick={() => void plugin.toggleBreakpoint(f, line)}>
+                <button type="button" aria-label={`Remove breakpoint ${f}:${line}`} className="ml-auto opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:opacity-100 text-fg-muted hover:text-error cursor-pointer" onClick={() => void plugin.toggleBreakpoint(f, line)}>
                   <X size={11} />
                 </button>
               </div>

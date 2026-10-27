@@ -1,0 +1,31 @@
+{
+  "contractName": "KaspaAuction",
+  "network": "simnet",
+  "address": "kaspasim:pqp4zpz5txk0mxz5lxsrrtwhxrgs9k3znqhy0qhd37la22u4l7eqqhyrunejw",
+  "txId": "d811133a48d3bf67237b78b38631fa8e5d8507caa9110129f88d29d8fd29f283",
+  "outpoint": {
+    "transactionId": "d811133a48d3bf67237b78b38631fa8e5d8507caa9110129f88d29d8fd29f283",
+    "index": 0
+  },
+  "valueSompi": "500000000",
+  "sellerAddress": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn",
+  "highestBidderAddress": "kaspasim:qryj23rch0n5rc7klfug58zcrnuc966qljwgzpu3mflqgxu6w2pjg6n575980",
+  "minBidSompi": 1000000000,
+  "currentHighestBidKas": 10,
+  "rpcUrl": "ws://127.0.0.1:18210",
+  "deployedAt": "2026-10-26T19:50:51.168Z",
+  "entries": {
+    "close": {
+      "dispatchTag": "53422444",
+      "description": "Seller closes auction and takes winning bid"
+    },
+    "claim": {
+      "dispatchTag": "dd9ab092",
+      "description": "Highest bidder claims auction lot"
+    },
+    "cancel": {
+      "dispatchTag": "a0893109",
+      "description": "Seller cancels auction and reclaims deposit"
+    }
+  }
+}
