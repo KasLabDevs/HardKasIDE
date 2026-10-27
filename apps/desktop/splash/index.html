@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HardKas IDE</title>
+    <style>
+      html, body { height: 100%; margin: 0; background: #0b0f14; color: #d7e0ea; font-family: system-ui, "Segoe UI", sans-serif; }
+      body { display: grid; place-items: center; -webkit-user-select: none; user-select: none; }
+      .box { text-align: center; }
+      svg { width: 72px; height: 72px; opacity: .95; }
+      h1 { font-size: 18px; font-weight: 600; margin: 14px 0 4px; }
+      h1 b { color: #49eacb; font-weight: 600; }
+      p { margin: 0; color: #8696a7; font-size: 13px; }
+      .bar { width: 160px; height: 3px; background: #1f2a37; border-radius: 2px; margin: 18px auto 0; overflow: hidden; }
+      .bar i { display: block; height: 100%; width: 40%; background: #49eacb; border-radius: 2px; animation: slide 1.1s ease-in-out infinite; }
+      @keyframes slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+      .err { color: #ff6b6b; max-width: 460px; white-space: pre-wrap; margin-top: 16px; font-size: 12px; }
+    </style>
+  </head>
+  <body data-tauri-drag-region>
+    <div class="box">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <defs>
+          <linearGradient id="b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5ef0c9" /><stop offset="1" stop-color="#1f8f72" /></linearGradient>
+          <linearGradient id="l" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8df5db" /><stop offset="1" stop-color="#3dc9a4" /></linearGradient>
+        </defs>
+        <path d="M24 16 v-4 a4 4 0 0 1 4 -4 h8 a4 4 0 0 1 4 4 v4" fill="none" stroke="#2fb18e" stroke-width="4" stroke-linecap="round" />
+        <rect x="8" y="16" width="48" height="12" rx="3" fill="url(#l)" />
+        <rect x="6" y="26" width="52" height="30" rx="4" fill="url(#b)" />
+        <rect x="10" y="30" width="6" height="10" rx="1.5" fill="#0d3f33" opacity=".55" />
+        <rect x="48" y="30" width="6" height="10" rx="1.5" fill="#0d3f33" opacity=".55" />
+        <polygon points="32,31 42,37 42,47 32,53 22,47 22,37" fill="#0b2a23" opacity=".85" />
+        <polygon points="32,36 37.5,39.5 37.5,45.5 32,49 26.5,45.5 26.5,39.5" fill="url(#l)" />
+      </svg>
+      <h1>Hard<b>Kas</b> IDE</h1>
+      <p id="msg">Starting the IDE server…</p>
+      <div class="bar" id="bar"><i></i></div>
+      <div class="err" id="err"></div>
+    </div>
+  </body>
+</html>

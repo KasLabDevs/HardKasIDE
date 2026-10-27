@@ -22,6 +22,14 @@ const step = (label) => console.log(`\n▸ ${label}`);
 // CI=true keeps pnpm from prompting (there is no terminal to answer in a build).
 const run = (cmd, cwd = root) => execSync(cmd, { cwd, stdio: "inherit", env: { ...process.env, CI: "true" } });
 
+step("Ensure desktop splash screen");
+const splashSrc = path.join(desktop, "splash", "index.html");
+const distDir = path.join(desktop, "dist");
+fs.mkdirSync(distDir, { recursive: true });
+if (fs.existsSync(splashSrc)) {
+  fs.copyFileSync(splashSrc, path.join(distDir, "index.html"));
+}
+
 step("Build the IDE server and the UI");
 run("pnpm --filter @hardkas-ide/server build");
 run("pnpm --filter @hardkas-ide/ide build");
