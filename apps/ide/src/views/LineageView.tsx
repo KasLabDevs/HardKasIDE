@@ -101,7 +101,7 @@ export function LineageView() {
             </div>
           )}
           {mode === "timeline" ? (
-            <div className="absolute inset-0 overflow-auto" onClick={(e) => e.target === e.currentTarget && select(null)}>
+            <div role="presentation" className="absolute inset-0 overflow-auto" onClick={(e) => e.target === e.currentTarget && select(null)}>
               <Timeline artifacts={artifacts} edges={edges} fresh={fresh} replays={replays} selected={selected} filter={filter} onSelect={select} />
             </div>
           ) : (

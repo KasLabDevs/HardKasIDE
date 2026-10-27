@@ -241,12 +241,20 @@ export const useIde = create<IdeState>((set, get) => ({
       } catch {
         // ignore
       }
-      // A plugin moved to the right/main should not stay selected on the left.
-      // A plugin moved out of the left column must not stay "active" there; selecting a docked-elsewhere
-      // plugin from the palette also moves it back to the left so it actually shows.
-      const activeSidePlugin = s.activeSidePlugin === pluginName && dock !== "left" ? "files" : s.activeSidePlugin;
+      // If moving back to a side column, close the view tab if open and focus it on the left
+      const viewPath = VIEW_PREFIX + pluginName;
+      const openFiles = dock !== "main" ? s.openFiles.filter((f) => f.path !== viewPath) : s.openFiles;
+      const activeFile = s.activeFile === viewPath && dock !== "main" ? (openFiles.at(-1)?.path ?? null) : s.activeFile;
+      const activeSidePlugin = dock === "left" ? pluginName : s.activeSidePlugin === pluginName ? "files" : s.activeSidePlugin;
       if (dock === "leftBottom" && pluginName === "files") return s; // the Explorer anchors the left column
-      return { docks, activeSidePlugin, outlineOpen: dock === "right" ? true : s.outlineOpen };
+      return {
+        docks,
+        openFiles,
+        activeFile,
+        activeSidePlugin,
+        sidebarOpen: dock === "left" || dock === "leftBottom" ? true : s.sidebarOpen,
+        outlineOpen: dock === "right" ? true : s.outlineOpen
+      };
     }),
 
   resetLayout: () => {
@@ -255,7 +263,15 @@ export const useIde = create<IdeState>((set, get) => ({
     } catch {
       // ignore
     }
-    set({ docks: { ...DEFAULT_DOCKS }, activeSidePlugin: "files", outlineOpen: true, terminalOpen: true, sidebarOpen: true });
+    set((s) => ({
+      docks: { ...DEFAULT_DOCKS },
+      openFiles: s.openFiles.filter((f) => f.kind !== "view"),
+      activeFile: s.activeFile?.startsWith(VIEW_PREFIX) ? (s.openFiles.find((f) => f.kind !== "view")?.path ?? null) : s.activeFile,
+      activeSidePlugin: "files",
+      outlineOpen: true,
+      terminalOpen: true,
+      sidebarOpen: true
+    }));
   },
 
   setWorkspace: (workspace) => set({ workspace }),

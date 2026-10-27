@@ -1,6 +1,8 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import * as wsfs from "./fs.js";
+import { startJob, waitForJob } from "./runner.js";
 
 /**
  * Assistant backend: provider-agnostic chat, grounded in the official Kaspa docs.
@@ -273,4 +275,290 @@ async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator<string
   } finally {
     reader.releaseLock();
   }
+}
+
+// ---------------------------------------------------------------- autonomous agent mode
+
+export interface AgentRequest {
+  goal: string;
+  context?: { workspace?: string; environment?: string; file?: { path: string; content: string } | null };
+}
+
+export type AgentEvent =
+  | { type: "step"; id: string; title: string; tool: string; status: "running" | "succeeded" | "failed"; input?: Record<string, unknown>; output?: string; error?: string }
+  | { type: "thought"; text: string }
+  | { type: "done"; summary: string; ok: boolean };
+
+const AGENT_TOOLS_ANTHROPIC = [
+  {
+    name: "write_file",
+    description: "Write or update a file in the project workspace (contracts, tests, scripts).",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Relative file path inside the workspace, e.g. 'contracts/escrow.sil' or 'test/escrow.test.ts'" },
+        content: { type: "string", description: "Complete file content to write" }
+      },
+      required: ["path", "content"]
+    }
+  },
+  {
+    name: "read_file",
+    description: "Read a file from the workspace.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Relative file path inside the workspace" }
+      },
+      required: ["path"]
+    }
+  },
+  {
+    name: "list_files",
+    description: "List files in the workspace directory.",
+    input_schema: {
+      type: "object",
+      properties: {
+        dir: { type: "string", description: "Optional subfolder, e.g. 'contracts'" }
+      }
+    }
+  },
+  {
+    name: "compile_silverscript",
+    description: "Compile a SilverScript contract (.sil) with silverc via hardkas CLI. Returns compiled ABI on success or detailed compiler errors.",
+    input_schema: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "Path to .sil file, e.g. 'contracts/escrow.sil'" }
+      },
+      required: ["file"]
+    }
+  },
+  {
+    name: "run_tests",
+    description: "Execute Vitest test suite in the workspace to verify contract behavior.",
+    input_schema: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "Optional specific test file, e.g. 'test/payment.test.ts'" }
+      }
+    }
+  },
+  {
+    name: "fund_account",
+    description: "Fund an account (e.g. alice, bob) with test KAS on the local simnet node.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Account name, e.g. 'alice'" },
+        amountKas: { type: "string", description: "Amount in KAS as decimal string, e.g. '100'" }
+      },
+      required: ["name", "amountKas"]
+    }
+  }
+];
+
+const AGENT_TOOLS_OPENAI = AGENT_TOOLS_ANTHROPIC.map((t) => ({
+  type: "function" as const,
+  function: {
+    name: t.name,
+    description: t.description,
+    parameters: t.input_schema
+  }
+}));
+
+async function executeAgentTool(name: string, args: Record<string, unknown>): Promise<{ ok: boolean; title: string; output: string; error?: string }> {
+  try {
+    switch (name) {
+      case "write_file": {
+        const p = String(args.path ?? "").replace(/^[/\\]+/, "");
+        const content = String(args.content ?? "");
+        await wsfs.writeFile(p, content);
+        return { ok: true, title: `Wrote ${p} (${content.length} chars)`, output: `Successfully wrote ${p}` };
+      }
+      case "read_file": {
+        const p = String(args.path ?? "").replace(/^[/\\]+/, "");
+        const content = await wsfs.readFile(p);
+        return { ok: true, title: `Read ${p}`, output: content.length > 8000 ? content.slice(0, 8000) + "\n...(truncated)" : content };
+      }
+      case "list_files": {
+        const tree = await wsfs.readTree(String(args.dir ?? ""));
+        const files: string[] = [];
+        const walk = (nodes: any[]) => {
+          for (const n of nodes) {
+            if (n.type === "file") files.push(n.path);
+            else if (n.children) walk(n.children);
+          }
+        };
+        walk(tree);
+        return { ok: true, title: `Listed ${files.length} files`, output: JSON.stringify(files.slice(0, 100), null, 2) };
+      }
+      case "compile_silverscript": {
+        const file = String(args.file ?? "").replace(/^[/\\]+/, "");
+        const job = await startJob({ args: ["silver", "compile", file, "--json"] });
+        await waitForJob(job);
+        if (job.status === "succeeded") {
+          return { ok: true, title: `Compiled ${file} successfully`, output: `Compilation succeeded:\n${job.stdout.slice(0, 3000)}` };
+        } else {
+          const err = job.stderr.trim() || (job.result as any)?.message || `Compilation failed with exit code ${job.exitCode}`;
+          return { ok: false, title: `Compiler error in ${file}`, output: err, error: err };
+        }
+      }
+      case "run_tests": {
+        const file = args.file ? String(args.file).replace(/^[/\\]+/, "") : undefined;
+        const job = await startJob({ args: ["vitest", "run", ...(file ? [file] : [])], command: "npx" });
+        await waitForJob(job, 120_000);
+        const out = (job.stdout + "\n" + job.stderr).trim();
+        const ok = job.status === "succeeded";
+        return {
+          ok,
+          title: ok ? "Vitest tests passed" : "Vitest tests failed",
+          output: out.slice(-3000),
+          error: !ok ? out.slice(-1200) : undefined
+        };
+      }
+      case "fund_account": {
+        const acc = String(args.name ?? "alice");
+        const amount = String(args.amountKas ?? "100");
+        const job = await startJob({ args: ["localnet", "fund", acc, "--amount", amount, "--profile", "toccata-v2", "--json"] });
+        await waitForJob(job, 180_000);
+        const ok = job.status === "succeeded";
+        return {
+          ok,
+          title: ok ? `Funded ${acc} with ${amount} KAS` : `Funding ${acc} failed`,
+          output: ok ? `Funded ${acc} with ${amount} KAS` : job.stderr,
+          error: !ok ? job.stderr : undefined
+        };
+      }
+      default:
+        return { ok: false, title: `Unknown tool: ${name}`, output: `Tool ${name} does not exist`, error: `Tool ${name} does not exist` };
+    }
+  } catch (e) {
+    const err = e instanceof Error ? e.message : String(e);
+    return { ok: false, title: `Error executing ${name}`, output: err, error: err };
+  }
+}
+
+export async function* streamAgent(req: AgentRequest, signal: AbortSignal): AsyncGenerator<AgentEvent> {
+  const cfg = await loadConfig();
+  if (!cfg.model) throw new AssistantError(400, "NO_MODEL", "Pick a model in the assistant settings first.");
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(cfg.baseUrl);
+  if (!cfg.apiKey && !(cfg.provider === "openai" && isLocal)) {
+    throw new AssistantError(400, "NO_KEY", "Add your API key in assistant settings (gear icon) to run Agent Mode.");
+  }
+  if (!req.goal?.trim()) throw new AssistantError(400, "BAD_REQUEST", "goal is required");
+
+  let docs: Awaited<ReturnType<typeof kaspaDocs>> = null;
+  try {
+    docs = await kaspaDocs(cfg.docs);
+  } catch {
+    docs = null;
+  }
+
+  const system = [
+    "You are the HardKas Autonomous AI Agent, a Principal Kaspa Smart Contract & Web3 Engineer.",
+    "You have real, working tools in the user's IDE workspace: write_file, read_file, list_files, compile_silverscript, run_tests, and fund_account.",
+    "",
+    "Instructions:",
+    "1. When tasked to create or modify contracts or tests, write complete code using write_file.",
+    "2. ALWAYS call compile_silverscript immediately after writing or editing a .sil contract.",
+    "3. If compilation fails with error output, read the error, call write_file to fix the syntax/types, and compile again until it succeeds.",
+    "4. When writing tests, write clean Vitest/HardKas tests in the test/ directory and run them with run_tests.",
+    "5. Be direct, efficient and autonomous. Take initiative to fix errors. When done, output a concise final summary of what was built and verified.",
+    docs ? `\n# Kaspa Documentation Reference:\n${docs.text.slice(0, 16000)}` : ""
+  ].join("\n");
+
+  const MAX_STEPS = 8;
+  let stepCount = 0;
+
+  if (cfg.provider === "anthropic") {
+    const messages: Array<any> = [{ role: "user", content: req.goal }];
+    while (stepCount < MAX_STEPS) {
+      if (signal.aborted) return;
+      stepCount++;
+      const res = await fetch(`${cfg.baseUrl}/v1/messages`, {
+        method: "POST",
+        signal,
+        headers: { "content-type": "application/json", "x-api-key": cfg.apiKey, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: cfg.model, max_tokens: cfg.maxTokens, system, messages, tools: AGENT_TOOLS_ANTHROPIC })
+      });
+      if (!res.ok) throw await upstreamError(res);
+      const data = (await res.json()) as { content?: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }> };
+      const content = data.content ?? [];
+      const toolUses = content.filter((c) => c.type === "tool_use") as Array<{ id: string; name: string; input: Record<string, unknown> }>;
+      const textBlock = content.find((c) => c.type === "text")?.text ?? "";
+      if (textBlock.trim()) yield { type: "thought", text: textBlock.trim() };
+
+      if (toolUses.length === 0) {
+        yield { type: "done", summary: textBlock || "Goal completed successfully.", ok: true };
+        return;
+      }
+
+      messages.push({ role: "assistant", content });
+      const toolResults: Array<{ type: "tool_result"; tool_use_id: string; content: string }> = [];
+
+      for (const tu of toolUses) {
+        if (signal.aborted) return;
+        const stepId = `step_${Date.now()}_${tu.id}`;
+        yield { type: "step", id: stepId, title: `Running ${tu.name}...`, tool: tu.name, status: "running", input: tu.input };
+        const result = await executeAgentTool(tu.name, tu.input);
+        yield { type: "step", id: stepId, title: result.title, tool: tu.name, status: result.ok ? "succeeded" : "failed", output: result.output, error: result.error };
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result.output });
+      }
+
+      messages.push({ role: "user", content: toolResults });
+    }
+    yield { type: "done", summary: "Reached maximum agent step limit (8 steps).", ok: false };
+    return;
+  }
+
+  // OpenAI / compatible
+  const messages: Array<any> = [{ role: "user", content: req.goal }];
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (cfg.apiKey) headers.authorization = `Bearer ${cfg.apiKey}`;
+
+  while (stepCount < MAX_STEPS) {
+    if (signal.aborted) return;
+    stepCount++;
+    const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+      method: "POST",
+      signal,
+      headers,
+      body: JSON.stringify({
+        model: cfg.model,
+        messages: [{ role: "system", content: system }, ...messages],
+        tools: AGENT_TOOLS_OPENAI
+      })
+    });
+    if (!res.ok) throw await upstreamError(res);
+    const data = (await res.json()) as { choices?: Array<{ message?: { role: string; content?: string | null; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> } }> };
+    const msg = data.choices?.[0]?.message;
+    if (!msg) break;
+
+    if (msg.content) yield { type: "thought", text: msg.content.trim() };
+    const toolCalls = msg.tool_calls ?? [];
+    if (toolCalls.length === 0) {
+      yield { type: "done", summary: msg.content ?? "Goal completed successfully.", ok: true };
+      return;
+    }
+
+    messages.push(msg);
+
+    for (const tc of toolCalls) {
+      if (signal.aborted) return;
+      let args: Record<string, unknown> = {};
+      try {
+        args = JSON.parse(tc.function.arguments);
+      } catch {
+        args = {};
+      }
+      const stepId = `step_${Date.now()}_${tc.id}`;
+      yield { type: "step", id: stepId, title: `Running ${tc.function.name}...`, tool: tc.function.name, status: "running", input: args };
+      const result = await executeAgentTool(tc.function.name, args);
+      yield { type: "step", id: stepId, title: result.title, tool: tc.function.name, status: result.ok ? "succeeded" : "failed", output: result.output, error: result.error };
+      messages.push({ role: "tool", tool_call_id: tc.id, content: result.output });
+    }
+  }
+
+  yield { type: "done", summary: "Reached maximum agent step limit (8 steps).", ok: false };
 }

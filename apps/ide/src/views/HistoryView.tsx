@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { ArrowRight, Check, Copy, FileJson, Lock, PackageCheck, RefreshCw, Rocket, Send } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { HistoryPlugin } from "@/plugins/history";
 import { formatKas, useEnv } from "@/store/env";
@@ -140,6 +140,14 @@ export function HistoryView() {
 
 function Row({ item: i, nameOf, onOpen, showGroup, onGroup, contractLabel }: { item: HistoryItem; nameOf: (a?: string) => string; onOpen: () => void; showGroup: boolean; onGroup: () => void; contractLabel?: string }) {
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
   const ok = /accepted|confirmed|submitted/i.test(i.status) && !/reject/i.test(i.status);
   const Icon = i.kind === "deploy" ? Rocket : i.kind === "spend" ? Send : ArrowRight;
   const after = i.kind === "transfer" ? i.changeSompi : i.balanceAfterSompi;
@@ -182,7 +190,8 @@ function Row({ item: i, nameOf, onOpen, showGroup, onGroup, contractLabel }: { i
           onClick={() => {
             void copyText(i.txId).then(() => {
               setCopied(true);
-              setTimeout(() => setCopied(false), 1200);
+              if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+              copyTimerRef.current = setTimeout(() => setCopied(false), 1200);
             });
           }}
         >
