@@ -56,6 +56,10 @@ async function resolveHardkas(cwd: string): Promise<Resolved> {
   if (process.env.HARDKAS_BIN) {
     return { command: process.env.HARDKAS_BIN, prefix: [], shell: isWin };
   }
+  const repoFallback = path.resolve(process.cwd(), "examples", "demo-workspace", "node_modules", ".bin", isWin ? "hardkas.cmd" : "hardkas");
+  if (await exists(repoFallback)) {
+    return { command: repoFallback, prefix: [], shell: isWin };
+  }
   return { command: isWin ? "npx.cmd" : "npx", prefix: ["-y", `@hardkas/cli@${HARDKAS_CLI_VERSION}`], shell: isWin };
 }
 
@@ -234,6 +238,31 @@ export function subscribe(id: string, onEvent: (e: JobEvent) => void, onEnd: () 
     emitter.off("event", onEvent);
     emitter.off("end", onEnd);
   };
+}
+
+export function waitForJob(job: Job, timeoutMs = 120_000): Promise<Job> {
+  if (job.status !== "running") return Promise.resolve(job);
+  return new Promise((resolve) => {
+    let done = false;
+    const timer = setTimeout(() => {
+      if (!done) {
+        done = true;
+        resolve(getJob(job.id) ?? job);
+      }
+    }, timeoutMs);
+    const unsub = subscribe(
+      job.id,
+      () => {},
+      () => {
+        if (!done) {
+          done = true;
+          clearTimeout(timer);
+          unsub();
+          resolve(getJob(job.id) ?? job);
+        }
+      }
+    );
+  });
 }
 
 /** Project templates reachable through `hardkas create <template> <dest>`, plus `hardkas init`. */

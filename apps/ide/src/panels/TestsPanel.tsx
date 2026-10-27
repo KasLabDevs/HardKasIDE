@@ -1,10 +1,13 @@
 import clsx from "clsx";
-import { ArrowDownToLine, ArrowUpFromLine, Bug, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, FileCode2, Play, RotateCw, Square, StepForward, XCircle } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Bug, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, FileCode2, Play, RotateCw, Square, StepForward, Wand2, XCircle } from "lucide-react";
 import { useState } from "react";
 import { useEngine } from "@/engine/context";
+import type { AssistantPlugin } from "@/plugins/assistant";
 import type { DebugPlugin } from "@/plugins/debug";
 import type { TestsPlugin } from "@/plugins/tests";
+import { useAssistant } from "@/store/assistant";
 import { useDebug } from "@/store/debug";
+import { useIde } from "@/store/ide";
 import { useTests, type TestCase, type TestFile, type TestStatus } from "@/store/tests";
 import { Breakpoints, CallStack, Output, Tool, Variables, Watches } from "./DebugSections";
 
@@ -86,9 +89,23 @@ export function TestsPanel() {
         <div className={selectedTest.status === "passed" ? "text-ok" : "text-fg-muted"}>{selectedTest.status === "passed" ? "Passed." : "No failure message."}</div>
       ) : (
         selectedTest.failureMessages.map((m, i) => (
-          <pre key={i} className="rounded border border-error/40 bg-bg p-2 text-[11px] text-error whitespace-pre-wrap break-words">
-            {m}
-          </pre>
+          <div key={i} className="space-y-1.5">
+            <pre className="rounded border border-error/40 bg-bg p-2 text-[11px] text-error whitespace-pre-wrap break-words">
+              {m}
+            </pre>
+            <button
+              type="button"
+              className="btn-primary w-full justify-center bg-accent/90 hover:bg-accent text-xs cursor-pointer shadow-sm"
+              onClick={() => {
+                useIde.getState().revealPlugin("assistant", "Assistant");
+                useAssistant.getState().setMode("agent");
+                const assistant = engine.get<AssistantPlugin>("assistant");
+                void assistant.runAgent(`Arregla el fallo en el test "${selectedTest.fullName}" en ${selectedTest.location?.file || "el workspace"}:\n${m}`);
+              }}
+            >
+              <Wand2 size={13} /> Fix with AI (Autocorregir test)
+            </button>
+          </div>
         ))
       )}
     </div>
@@ -209,7 +226,7 @@ function RowButton({ label, onClick, disabled, children }: { label: string; onCl
         e.stopPropagation();
         onClick();
       }}
-      className="p-0.5 rounded text-fg-muted hover:text-accent hover:bg-bg-hover cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed opacity-0 group-hover:opacity-100 focus:opacity-100"
+      className="p-0.5 rounded text-fg-muted hover:text-accent hover:bg-bg-hover cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:opacity-100"
     >
       {children}
     </button>

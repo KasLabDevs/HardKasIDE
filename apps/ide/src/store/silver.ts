@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { parseSilOutline } from "@/utils/silParser";
 
 /** SilverScript contracts: ABI of compiled contracts, deployed instances, spends. */
 
@@ -18,6 +19,7 @@ export interface SilContractAbi {
   entries: SilEntry[];
   address?: string;
   lockingScript?: string;
+  constructorParams?: SilParam[];
 }
 
 export interface CompiledRecord {
@@ -94,13 +96,18 @@ export const useSilver = create<SilverState>((set) => ({
 }));
 
 /** Parses the silverc artifact JSON (string or object) stored in a compile record into ABIs. */
-export function parseSilArtifact(artifactJson: unknown, contracts?: Array<{ name: string; address?: string; lockingScript?: { script?: string } }>): SilContractAbi[] {
+export function parseSilArtifact(
+  artifactJson: unknown,
+  contracts?: Array<{ name: string; address?: string; lockingScript?: { script?: string } }>,
+  sourceText?: string
+): SilContractAbi[] {
   let obj: Record<string, unknown> | null = null;
   try {
     obj = typeof artifactJson === "string" ? (JSON.parse(artifactJson) as Record<string, unknown>) : (artifactJson as Record<string, unknown>);
   } catch {
     obj = null;
   }
+  const outline = sourceText ? parseSilOutline(sourceText) : null;
   const out: SilContractAbi[] = [];
   const cs = (obj?.contracts ?? {}) as Record<string, { entries?: Record<string, { dispatch_tag?: string; params?: Array<{ name: string; type?: { kind?: string } }> }> }>;
   for (const [name, c] of Object.entries(cs)) {
@@ -110,7 +117,9 @@ export function parseSilArtifact(artifactJson: unknown, contracts?: Array<{ name
       params: (e.params ?? []).map((p) => ({ name: p.name, kind: p.type?.kind ?? "bytes" }))
     }));
     const meta = contracts?.find((x) => x.name === name);
-    out.push({ name, entries, address: meta?.address, lockingScript: meta?.lockingScript?.script });
+    const cDecl = outline?.contracts.find((x) => x.name === name);
+    const constructorParams: SilParam[] | undefined = cDecl?.params.map((p) => ({ name: p.name, kind: p.type }));
+    out.push({ name, entries, address: meta?.address, lockingScript: meta?.lockingScript?.script, constructorParams });
   }
   // Fallback: compile record "contracts" list with entries as a name → tag map, no params.
   if (out.length === 0 && contracts) {
@@ -119,7 +128,9 @@ export function parseSilArtifact(artifactJson: unknown, contracts?: Array<{ name
       const entries: SilEntry[] = Array.isArray(raw)
         ? raw.map((e) => ({ name: typeof e === "string" ? e : String((e as { name?: string }).name ?? ""), params: [] }))
         : Object.keys(raw ?? {}).map((n) => ({ name: n, dispatchTag: (raw as Record<string, string>)[n], params: [] }));
-      out.push({ name: c.name, entries, address: c.address, lockingScript: c.lockingScript?.script });
+      const cDecl = outline?.contracts.find((x) => x.name === c.name);
+      const constructorParams: SilParam[] | undefined = cDecl?.params.map((p) => ({ name: p.name, kind: p.type }));
+      out.push({ name: c.name, entries, address: c.address, lockingScript: c.lockingScript?.script, constructorParams });
     }
   }
   return out;

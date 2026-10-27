@@ -1,17 +1,20 @@
 import clsx from "clsx";
-import { ChevronDown, ChevronRight, FileJson, FolderOpen, Lock, PackageCheck, Rocket, Send } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, FileCode2, FileJson, FolderOpen, Lock, PackageCheck, Rocket, Send, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
+import { api } from "@/api/client";
 import { useEngine } from "@/engine/context";
 import type { SilverPlugin } from "@/plugins/silver";
 import { formatKas, useEnv } from "@/store/env";
-import { useSilver, type DeployRecord, type SilEntry, type SilParam } from "@/store/silver";
+import { useSilver, type DeployRecord, type SilContractAbi, type SilEntry, type SilParam } from "@/store/silver";
 import { useIde } from "@/store/ide";
-import { hexToBytes } from "@/utils/kaspaAddress";
+import { hexToBytes, pubkeyFromAddress } from "@/utils/kaspaAddress";
+import { generateTypeChain } from "@/utils/typechain";
 
 /**
  * Contract GUI for SilverScript:
- *   - compiled contracts → Deploy (fund the P2SH output on localnet)
+ *   - compiled contracts → Deploy (fund the P2SH output on localnet) with visual constructor args
  *   - deployed instances → one button per entry, typed inputs, account signatures
+ *   - TypeChain SDK generator for TypeScript
  */
 export function ContractGUI() {
   const engine = useEngine();
@@ -22,10 +25,13 @@ export function ContractGUI() {
   const error = useSilver((s) => s.error);
   const accounts = useEnv((s) => s.accounts);
   const target = useIde((s) => s.target);
+  const setTarget = useIde((s) => s.setTarget);
   const [from, setFrom] = useState("alice");
   const [amount, setAmount] = useState("5");
   const [atPath, setAtPath] = useState("");
   const [showSpent, setShowSpent] = useState(false);
+  const [constructorValues, setConstructorValues] = useState<Record<string, Record<string, string>>>({});
+  const [sdkNotice, setSdkNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (accounts.length > 0 && !accounts.some((a) => a.name === from)) setFrom(accounts[0].name);
@@ -33,10 +39,77 @@ export function ContractGUI() {
 
   const visible = deployments.filter((d) => showSpent || !d.spent);
 
+  const handleGenerateSdk = async (c: SilContractAbi) => {
+    try {
+      const code = generateTypeChain(c, compiled?.sourcePath);
+      const outPath = `contracts/${c.name}.ts`;
+      await api.fs.write(outPath, code);
+      await engine.call("fileManager", "open", outPath);
+      setSdkNotice(`Generated ${outPath} (TypeChain)`);
+      setTimeout(() => setSdkNotice(null), 3500);
+    } catch (e) {
+      setSdkNotice(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleDeploy = async (c: SilContractAbi) => {
+    if (!compiled) return;
+    const params = c.constructorParams ?? [];
+    if (params.length > 0) {
+      const currentVals = constructorValues[c.name] ?? {};
+      const args = params.map((p, idx) => {
+        if (p.kind === "pubkey") {
+          const chosenAccountName = currentVals[p.name] ?? (accounts[idx]?.name ?? accounts[0]?.name ?? "alice");
+          const acct = accounts.find((a) => a.name === chosenAccountName) ?? accounts[0];
+          const pk = acct ? pubkeyFromAddress(acct.address) : null;
+          if (!pk) throw new Error(`Could not derive Schnorr pubkey for account ${chosenAccountName}`);
+          return { kind: "bytes", value: pk };
+        } else if (p.kind === "int") {
+          const v = currentVals[p.name] || "1000000000";
+          return { kind: "int", value: Number(v) };
+        } else if (p.kind === "bool") {
+          const v = currentVals[p.name] || "true";
+          return { kind: "bool", value: v === "true" };
+        } else {
+          const v = currentVals[p.name] || "";
+          return { kind: "bytes", value: hexToBytes(v) };
+        }
+      });
+
+      const sourceBase = (compiled.sourcePath ?? `contracts/${c.name}.sil`).replace(/\.sil$/, "");
+      const argsPath = `${sourceBase}.constructor-args.json`;
+      await api.fs.write(argsPath, JSON.stringify(args, null, 2));
+
+      // Recompile with the valid Schnorr keys
+      const compileRes = await (silver as any).console().runHardkas([
+        "silver", "compile", compiled.sourcePath ?? `contracts/${c.name}.sil`, "--args", argsPath, "--json"
+      ]);
+      const raw = compileRes.result as Record<string, unknown>;
+      if (compileRes.status !== "succeeded" || !raw || typeof raw.recordPath !== "string") {
+        throw new Error("Compilation with constructor arguments failed");
+      }
+      const newRec = await silver.loadCompiled({ file: compiled.sourcePath ?? `contracts/${c.name}.sil`, raw } as any);
+      const recordToDeploy = newRec?.recordPath ?? compiled.recordPath;
+      await silver.deploy({ compileRecordPath: recordToDeploy, from, amountKas: amount, contract: compiled.contracts.length > 1 ? c.name : undefined });
+      return;
+    }
+
+    await silver.deploy({ compileRecordPath: compiled.recordPath, from, amountKas: amount, contract: compiled.contracts.length > 1 ? c.name : undefined });
+  };
+
   return (
     <div className="space-y-3">
       {target !== "localnet" && (
-        <div className="text-warn">Contracts deploy and spend on the Local node (Docker rusty-kaspad, simnet). Switch the environment to Local node so balances match.</div>
+        <div className="rounded border border-warn/40 bg-warn/10 p-2 text-xs flex items-center justify-between gap-2">
+          <span className="text-warn">Contracts deploy on Local node (rusty-kaspad).</span>
+          <button
+            type="button"
+            onClick={() => setTarget("localnet")}
+            className="px-2 py-0.5 rounded bg-warn/20 hover:bg-warn/30 text-warn font-semibold text-[10px] cursor-pointer shrink-0"
+          >
+            Switch to Local Node
+          </button>
+        </div>
       )}
 
       {/* ---------------------------------------------------- compiled → deploy */}
@@ -46,7 +119,7 @@ export function ContractGUI() {
           <div className="text-fg-muted">Compile a .sil file (Compiler panel or Ctrl+Enter) to deploy it here.</div>
         ) : (
           compiled.contracts.map((c) => (
-            <div key={c.name} className="rounded border border-border bg-bg-elev p-2 space-y-2">
+            <div key={c.name} className="rounded border border-border bg-bg-elev p-2.5 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold text-fg truncate">{c.name}</span>
                 <span className="text-fg-muted shrink-0 tabular-nums">{c.entries.length} entr{c.entries.length === 1 ? "y" : "ies"}</span>
@@ -56,6 +129,71 @@ export function ContractGUI() {
                   {c.address}
                 </div>
               )}
+
+              {/* Constructor Arguments Selector (Auto Schnorr Keys) */}
+              {c.constructorParams && c.constructorParams.length > 0 && (
+                <div className="space-y-1.5 p-2 rounded bg-bg border border-border/80">
+                  <div className="text-[11px] font-semibold text-fg flex items-center justify-between">
+                    <span>Constructor Arguments</span>
+                    <span className="text-[10px] text-accent font-mono flex items-center gap-1">
+                      <Sparkles size={11} /> Auto Schnorr Keys
+                    </span>
+                  </div>
+                  {c.constructorParams.map((p, idx) => (
+                    <div key={p.name} className="flex items-center gap-2">
+                      <span className="w-24 shrink-0 text-fg-muted truncate text-[11px]" title={`${p.kind} ${p.name}`}>
+                        {p.name} <span className="text-[10px]">({p.kind})</span>
+                      </span>
+                      {p.kind === "pubkey" ? (
+                        <select
+                          aria-label={`Constructor argument ${p.name}`}
+                          className="input text-xs"
+                          value={constructorValues[c.name]?.[p.name] ?? accounts[idx]?.name ?? accounts[0]?.name ?? "alice"}
+                          onChange={(e) =>
+                            setConstructorValues((prev) => ({
+                              ...prev,
+                              [c.name]: { ...(prev[c.name] ?? {}), [p.name]: e.target.value }
+                            }))
+                          }
+                        >
+                          {(accounts.length ? accounts : [{ name: "alice", address: "" }, { name: "bob", address: "" }]).map((a) => (
+                            <option key={a.name} value={a.name}>
+                              {a.name} {a.address ? `(${a.address.slice(0, 14)}...)` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      ) : p.kind === "int" ? (
+                        <input
+                          aria-label={`Constructor argument ${p.name}`}
+                          className="input font-mono text-xs"
+                          placeholder="integer e.g. 1000000000"
+                          value={constructorValues[c.name]?.[p.name] ?? ""}
+                          onChange={(e) =>
+                            setConstructorValues((prev) => ({
+                              ...prev,
+                              [c.name]: { ...(prev[c.name] ?? {}), [p.name]: e.target.value }
+                            }))
+                          }
+                        />
+                      ) : (
+                        <input
+                          aria-label={`Constructor argument ${p.name}`}
+                          className="input font-mono text-xs"
+                          placeholder={p.kind}
+                          value={constructorValues[c.name]?.[p.name] ?? ""}
+                          onChange={(e) =>
+                            setConstructorValues((prev) => ({
+                              ...prev,
+                              [c.name]: { ...(prev[c.name] ?? {}), [p.name]: e.target.value }
+                            }))
+                          }
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <div className="text-fg-muted mb-0.5">Fund from</div>
@@ -72,15 +210,32 @@ export function ContractGUI() {
                   <input aria-label="Contract value in KAS" className="input tabular-nums" value={amount} onChange={(e) => setAmount(e.target.value)} />
                 </div>
               </div>
-              <button
-                type="button"
-                className="btn-primary w-full justify-center truncate"
-                disabled={busy !== null}
-                onClick={() => void silver.deploy({ compileRecordPath: compiled.recordPath, from, amountKas: amount, contract: compiled.contracts.length > 1 ? c.name : undefined }).catch(() => undefined)}
-                title="hardkas silver deploy <record> --from --amount --wait"
-              >
-                <Rocket size={13} className="shrink-0" /> <span className="truncate">{busy === "deploy" ? "Deploying…" : `Deploy ${c.name}`}</span>
-              </button>
+
+              <div className="flex gap-1.5 pt-0.5">
+                <button
+                  type="button"
+                  className="btn-primary flex-1 justify-center truncate"
+                  disabled={busy !== null}
+                  onClick={() => void handleDeploy(c).catch(() => undefined)}
+                  title="Deploy contract to localnet"
+                >
+                  <Rocket size={13} className="shrink-0" /> <span className="truncate">{busy === "deploy" ? "Deploying…" : `Deploy ${c.name}`}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost shrink-0 px-2.5 text-accent hover:text-accent-hover"
+                  onClick={() => void handleGenerateSdk(c)}
+                  title="Generate strongly-typed TypeScript SDK (TypeChain) for this contract"
+                >
+                  <FileCode2 size={13} /> SDK
+                </button>
+              </div>
+
+              {sdkNotice && (
+                <div role="status" className="text-ok text-[11px] flex items-center gap-1">
+                  <Check size={11} /> {sdkNotice}
+                </div>
+              )}
             </div>
           ))
         )}

@@ -62,20 +62,27 @@ export function EnvBar() {
         <span className="text-fg">{nodeText}</span>
         {current.needsNode && node?.virtualDaaScore && <span className="tabular-nums">· DAA {node.virtualDaaScore}</span>}
       </button>
-      <button
-        type="button"
-        onClick={() => setActiveSidePlugin("accounts")}
-        className="flex items-center gap-2.5 min-w-0 overflow-hidden tabular-nums hover:text-fg whitespace-nowrap shrink-0 cursor-pointer rounded px-1 py-0.5 hover:bg-bg-hover transition-colors"
-        title="Open Accounts view"
-      >
-        <Users size={12} className="shrink-0" />
-        {accounts.slice(0, 5).map((a) => (
-          <span key={a.name} className="whitespace-nowrap" title={`${a.name}: ${a.address}`}>
-            <span className="text-fg font-medium">{a.name}</span> {formatKas(a.balanceSompi)}
-          </span>
-        ))}
-        {accounts.length > 5 && <span>+{accounts.length - 5}</span>}
-      </button>
+      {current.needsNode && (!node?.running || !node?.rpcReady) ? (
+        <span className="flex items-center gap-1.5 text-fg-muted/60 text-[10px] select-none" title="Inicia el nodo local para cargar las cuentas y sus balances">
+          <Users size={11} className="opacity-50" />
+          <span>cuentas inactivas (nodo apagado)</span>
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setActiveSidePlugin("accounts")}
+          className="flex items-center gap-2.5 min-w-0 overflow-hidden tabular-nums hover:text-fg whitespace-nowrap shrink-0 cursor-pointer rounded px-1 py-0.5 hover:bg-bg-hover transition-colors"
+          title="Open Accounts view"
+        >
+          <Users size={12} className="shrink-0" />
+          {accounts.slice(0, 5).map((a) => (
+            <span key={a.name} className="whitespace-nowrap" title={`${a.name}: ${a.address}`}>
+              <span className="text-fg font-medium">{a.name}</span> {formatKas(a.balanceSompi)}
+            </span>
+          ))}
+          {accounts.length > 5 && <span>+{accounts.length - 5}</span>}
+        </button>
+      )}
     </div>
   );
 }
