@@ -25,6 +25,38 @@ export interface TreeNode {
   children?: TreeNode[];
 }
 
+export interface SearchMatchLine {
+  line: number;
+  column: number;
+  matchLength: number;
+  lineText: string;
+  matchText: string;
+}
+
+export interface SearchFileResult {
+  path: string;
+  matches: SearchMatchLine[];
+}
+
+export interface WorkspaceSearchOptions {
+  query: string;
+  caseSensitive?: boolean;
+  regex?: boolean;
+  wholeWord?: boolean;
+  filePatterns?: string;
+  scopeDir?: string;
+  includeFiles?: string[];
+  maxResults?: number;
+}
+
+export interface WorkspaceSearchResponse {
+  query: string;
+  files: SearchFileResult[];
+  totalMatches: number;
+  totalFiles: number;
+  truncated: boolean;
+}
+
 export interface JobSummary {
   id: string;
   command: string;
@@ -49,15 +81,108 @@ export interface ProjectTemplate {
   command: "init" | "create";
 }
 
+export interface FrontendStackOption {
+  id: string;
+  label: string;
+  language: string;
+  framework: string;
+  description: string;
+}
+
 /** Assistant settings as the browser sees them: the API key itself never leaves the server. */
 export interface AssistantConfigView {
-  provider: "anthropic" | "openai";
+  provider: "opencode" | "anthropic" | "openai";
   baseUrl: string;
   model: string;
   docs: "off" | "core" | "full";
   maxTokens: number;
   hasKey: boolean;
   keyHint: string;
+}
+
+/** Which `hardkas` the server runs and whether it is the version this IDE was tested with. */
+export interface CliInfo {
+  version: string | null;
+  pinned: string;
+  source: "project" | "env" | "repo" | "npx";
+  command: string;
+  error: string | null;
+}
+
+export interface CliCatalogArgument {
+  name: string;
+  description: string;
+  required: boolean;
+  variadic: boolean;
+  defaultValue?: unknown;
+  choices?: string[];
+}
+
+export interface CliCatalogOption {
+  flags: string;
+  long: string | null;
+  short: string | null;
+  attribute: string | null;
+  description: string;
+  takesValue: boolean;
+  valueOptional: boolean;
+  variadic: boolean;
+  mandatory: boolean;
+  negate: boolean;
+  defaultValue?: unknown;
+  choices?: string[];
+}
+
+export interface CliCatalogCommand {
+  name: string;
+  path: string[];
+  aliases: string[];
+  description: string;
+  summary: string;
+  hidden: boolean;
+  arguments: CliCatalogArgument[];
+  options: CliCatalogOption[];
+  commands: CliCatalogCommand[];
+}
+
+export interface CliCatalog {
+  ok: boolean;
+  version: string | null;
+  globalOptions: CliCatalogOption[];
+  commands: CliCatalogCommand[];
+  error?: string;
+}
+
+export interface IdeUpdateInfo {
+  currentVersion: string;
+  latestVersion: string | null;
+  hasUpdate: boolean;
+  releaseName: string | null;
+  releaseUrl: string;
+  downloadUrl: string | null;
+  publishedAt: string | null;
+  notes: string | null;
+  error: string | null;
+}
+
+export interface CliUpdateInfo {
+  runtimeVersion: string | null;
+  runtimeSource: "project" | "env" | "repo" | "npx";
+  projectVersion: string | null;
+  pinnedVersion: string;
+  npmLatest: string | null;
+  npmNext: string | null;
+  targetVersion: string;
+  hasUpdate: boolean;
+  reason: "project-behind" | "npm-newer" | "mismatch" | "missing" | null;
+  updateCommand: string;
+  error: string | null;
+}
+
+export interface UpdateReport {
+  checkedAt: string;
+  ide: IdeUpdateInfo;
+  cli: CliUpdateInfo;
 }
 
 export interface ApiError {
@@ -112,7 +237,11 @@ export const api = {
     write: (path: string, content: string) => request<{ ok: true }>("/api/fs/file", { method: "PUT", body: JSON.stringify({ path, content }) }),
     mkdir: (path: string) => request<{ ok: true }>("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ path }) }),
     rename: (from: string, to: string) => request<{ ok: true }>("/api/fs/rename", { method: "POST", body: JSON.stringify({ from, to }) }),
-    remove: (path: string) => request<{ ok: true }>(`/api/fs?path=${encodeURIComponent(path)}`, { method: "DELETE" })
+    remove: (path: string) => request<{ ok: true }>(`/api/fs?path=${encodeURIComponent(path)}`, { method: "DELETE" }),
+    search: (body: WorkspaceSearchOptions) =>
+      request<WorkspaceSearchResponse>("/api/fs/search", { method: "POST", body: JSON.stringify(body) }),
+    replace: (body: WorkspaceSearchOptions & { replacement: string; targetFiles?: string[] }) =>
+      request<{ replacedFiles: number; replacedMatches: number }>("/api/fs/replace", { method: "POST", body: JSON.stringify(body) })
   },
   devkeys: {
     /** Aliases with a keystore in .hardkas/dev-accounts (alice…erin). */
@@ -126,7 +255,7 @@ export const api = {
       })
   },
   jobs: {
-    run: (args: string[], options?: { cwd?: string; command?: string }) =>
+    run: (args: string[], options?: { cwd?: string; command?: string; wait?: boolean }) =>
       request<{ job: JobSummary }>("/api/run", { method: "POST", body: JSON.stringify({ args, ...options }) }).then((r) => r.job),
     get: (id: string) => request<{ job: JobDetail }>(`/api/jobs/${id}`).then((r) => r.job),
     list: () => request<{ jobs: JobSummary[] }>("/api/jobs").then((r) => r.jobs),
@@ -151,9 +280,19 @@ export const api = {
       })
   },
   project: {
-    templates: () => request<{ templates: ProjectTemplate[]; defaultParent: string }>("/api/project/templates"),
-    create: (body: { template: string; name: string; parentDir: string; install?: boolean }) =>
-      request<{ job: JobSummary; dest: string }>("/api/project/create", { method: "POST", body: JSON.stringify(body) })
+    templates: () => request<{ templates: ProjectTemplate[]; frontends?: FrontendStackOption[]; defaultParent: string }>("/api/project/templates"),
+    create: (body: {
+      template?: string;
+      name: string;
+      parentDir: string;
+      install?: boolean;
+      frontend?: string;
+      starterContract?: {
+        kind: "none" | "silver-basic" | "covenant-1-n" | "covenant-1-1" | "covenant-escrow" | "covenant-timelock";
+        className?: string;
+        fanout?: number;
+      };
+    }) => request<{ job: JobSummary; dest: string }>("/api/project/create", { method: "POST", body: JSON.stringify(body) })
   },
   plugins: {
     /** Fetches a remote text/JSON document through ide-server (no CORS issues). */
@@ -170,7 +309,7 @@ export const api = {
       }>(`/api/plugins/search?q=${encodeURIComponent(q)}`)
   },
   assistant: {
-    config: () => request<{ config: AssistantConfigView; defaults: Record<"anthropic" | "openai", { baseUrl: string; model: string }> }>("/api/assistant/config"),
+    config: () => request<{ config: AssistantConfigView; defaults: Record<"opencode" | "anthropic" | "openai", { baseUrl: string; model: string }> }>("/api/assistant/config"),
     saveConfig: (patch: Partial<AssistantConfigView> & { apiKey?: string; clearKey?: boolean }) =>
       request<{ config: AssistantConfigView }>("/api/assistant/config", { method: "PUT", body: JSON.stringify(patch) }).then((r) => r.config),
     docs: (mode: "off" | "core" | "full") =>
@@ -209,7 +348,10 @@ export const api = {
         }
       }
     },
-    /** Streams an autonomous agent run; resolves when it ends. Events: step, thought, done, error. */
+    /** Answers a "confirm" event of the running agent: run the proposed terminal command (once, or for the rest of the run) or decline it. */
+    agentConfirm: (id: string, approved: boolean, allForRun = false) =>
+      request<{ ok: true }>("/api/assistant/agent/confirm", { method: "POST", body: JSON.stringify({ id, approved, allForRun }) }),
+    /** Streams an autonomous agent run; resolves when it ends. Events: step, thought, confirm, done, error. */
     agent: async (
       body: { goal: string; context?: unknown },
       signal: AbortSignal,
@@ -246,6 +388,27 @@ export const api = {
   },
   system: () =>
     request<{ docker: { installed: boolean; running: boolean; clientVersion: string | null; serverVersion: string | null; error: string | null }; node: string; platform: string }>("/api/system"),
+  /** The hardkas binary the server runs for the open workspace, and its version against the one the IDE was tested with. */
+  cli: Object.assign(
+    (refresh = false) => request<{ cli: CliInfo }>(`/api/cli${refresh ? "?refresh=1" : ""}`).then((r) => r.cli),
+    {
+      catalog: () => request<CliCatalog>("/api/cli/catalog")
+    }
+  ),
+  /** Checks IDE GitHub releases and workspace HardKas CLI version alignment. */
+  updates: (refresh = false) =>
+    request<{ updates: UpdateReport }>(
+      `/api/updates?appVersion=${encodeURIComponent(__APP_VERSION__)}${refresh ? "&refresh=1" : ""}`
+    ).then((r) => r.updates),
+  node: {
+    /** Blocks the local CPU miner found, its state, and how often the node refused its blocks ("route is full"). */
+    blocks: (limit = 30) =>
+      request<{ exists: boolean; running: boolean; perSecond: number; windowBlocks: number; routeFull: number; blocks: Array<{ hash: string; at: string }> }>(`/api/node/blocks?limit=${limit}`),
+    /** Starts or stops the existing miner container (HardKas creates it on the first fund). */
+    miner: (action: "start" | "stop") => request<{ running: boolean }>("/api/node/miner", { method: "POST", body: JSON.stringify({ action }) }),
+    /** Removes the local Docker node + miner containers and wipes `.hardkas/node-data`, `.hardkas/localnet`, and dev accounts. */
+    reset: () => request<{ ok: true; wiped: string[]; containersRemoved: boolean }>("/api/node/reset", { method: "POST" })
+  },
   vsx: {
     search: (q: string, size = 24) => request<{ total: number; hits: import("@/store/vsx").VsxSearchHit[] }>(`/api/vsx/search?q=${encodeURIComponent(q)}&size=${size}`),
     installed: () => request<{ installed: import("@/store/vsx").InstalledVsx[] }>("/api/vsx/installed").then((r) => r.installed),
@@ -256,6 +419,27 @@ export const api = {
     /** URL of a file inside an installed extension (theme json, grammar, snippets). */
     fileUrl: (id: string, relative: string) => `/api/vsx/file/${encodeURIComponent(id)}/${relative.split("/").map(encodeURIComponent).join("/")}`
   },
+  /** Probes whether the HardKas dev-server (:7420) is listening without causing proxy 502s. */
+  devStatus: () => request<{ available: boolean; url: string }>("/api/dev/status"),
   /** Raw call to the HardKas dev-server through the proxy, e.g. dev("/accounts"). */
-  dev: <T = unknown>(path: string, init?: RequestInit) => request<T>(`/api/dev${path}`, init)
+  dev: async <T = unknown>(path: string, init?: RequestInit): Promise<T> => {
+    const status = await request<{ available: boolean; url: string }>("/api/dev/status");
+    if (!status.available) {
+      throw new IdeApiError("DEV_SERVER_UNREACHABLE", `HardKas dev-server is not running at ${status.url}. Start it with "hardkas dev" in the project folder.`, 503);
+    }
+    return request<T>(`/api/dev${path}`, init);
+  },
+  silver: {
+    /** Non-polluting inline compile check via temporary `--out` path. */
+    check: (body: { filePath: string; content?: string; constructorArgs?: string }) =>
+      request<{
+        check: {
+          ok: boolean;
+          code?: string;
+          message: string;
+          contracts?: unknown[];
+          raw?: unknown;
+        };
+      }>("/api/silver/check", { method: "POST", body: JSON.stringify(body) }).then((r) => r.check)
+  }
 };

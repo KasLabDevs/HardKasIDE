@@ -36,10 +36,12 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Setup Node.js 22
+      # stage.mjs copies this Node into the installer, and the IDE server runs the HardKas CLI with it:
+      # it must be the release the CLI requires.
+      - name: Setup Node.js 24.22.1
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.22.1
           cache: 'pnpm'
 
       - name: Setup Rust stable
@@ -70,6 +72,15 @@ jobs:
 
       - name: Build and stage desktop application
         run: pnpm --filter @hardkas-ide/desktop run build
+
+      # The website links to a fixed name (releases/latest/download/HardKas-IDE-setup.exe), so every release carries one.
+      - name: Copy the Windows installer under its stable name
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $nsis = "apps/desktop/src-tauri/target/release/bundle/nsis"
+          $exe = Get-ChildItem "$nsis/*-setup.exe" | Select-Object -First 1
+          Copy-Item $exe.FullName "$nsis/HardKas-IDE-setup.exe"
 
       - name: Upload binaries to GitHub Release Assets
         uses: softprops/action-gh-release@v2

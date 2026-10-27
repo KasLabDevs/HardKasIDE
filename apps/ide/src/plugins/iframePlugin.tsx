@@ -137,7 +137,7 @@ export class IframePlugin extends Plugin {
           if (isBlockedExternalCall(plugin, method, args ?? [])) {
             throw new Error(`blocked sensitive call: ${plugin}.${method}`);
           }
-          const allowed = isAllowed(this.profile.name, plugin, method, this.manifest.permissions) ?? askPermission(this.profile.name, this.profile.displayName, plugin, method);
+          const allowed = isAllowed(this.profile.name, plugin, method, this.manifest.permissions) ?? (await askPermission(this.profile.name, this.profile.displayName, plugin, method));
           if (!allowed) throw new Error(`permission denied: ${plugin}.${method}`);
           const result = await this.call(plugin, method, ...(args ?? []));
           this.post({ type: "hardkas:response", id, ok: true, result: safe(result) });

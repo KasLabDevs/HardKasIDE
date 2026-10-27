@@ -1,0 +1,37 @@
+{
+  "schema": "hardkas.silverSpend.v1",
+  "hardkasVersion": "0.12.0-rc.29",
+  "createdAt": "2026-10-26T01:10:09.996Z",
+  "networkId": "simnet",
+  "capability": "silver.p2sh.deploy-spend.v1",
+  "deployRecord": {
+    "path": ".hardkas/artifacts/silver/silverDeploy-af06ed4282c163f8.json",
+    "contentHash": "af06ed4282c163f8dff132ec26f7d5ebf83e3de364799493fec83b36c127dcc7"
+  },
+  "contract": "SignedRelease",
+  "entry": "release",
+  "dispatchTag": "388ad0b4",
+  "spentOutpoint": {
+    "transactionId": "53a1af4a4b46496ef933f9367a44959927f1e863342db6cfcfe91fbb1a473a53",
+    "index": 0
+  },
+  "txId": "9a7fc7f8f46589d1ef2cbd8c3751afab030f70b03582684ce0ba2180efd7f85e",
+  "to": "kaspasim:qryj23rch0n5rc7klfug58zcrnuc966qljwgzpu3mflqgxu6w2pjg6n575980",
+  "outputSompi": "499824800",
+  "feeSompi": "175200",
+  "sequence": "0",
+  "sigOpCount": 1,
+  "signatureScriptSha256": "fe77f5c7fbdaa14526cc9deb051da35846392dc72f4e08b77c2bb072aa7e981a",
+  "status": "confirmed",
+  "confirmedAtBlockDaaScore": "185706",
+  "node": {
+    "verified": true,
+    "container": "hardkas-kaspad-toccata-v2",
+    "imageDigest": "sha256:f85da74b9514584451f83a2cbea3aa93f700248302fe7e3e0ab17288f93c905b",
+    "serverVersion": "2.1.0"
+  },
+  "version": "1.0.0-alpha",
+  "mode": "localnet",
+  "hashVersion": 5,
+  "contentHash": "0c3f7d016a2fafc4b9b336eedc0c11bc8821485f5dd1250eec447e111bbc8e92"
+}

@@ -1,8 +1,26 @@
+import { useEnv } from "@/store/env";
 import { useIde } from "@/store/ide";
+import { useUpdates } from "@/store/updates";
 
 export function SettingsPanel() {
   const workspace = useIde((s) => s.workspace);
   const resetLayout = useIde((s) => s.resetLayout);
+  const cli = useEnv((s) => s.cli);
+  const report = useUpdates((s) => s.report);
+  const checking = useUpdates((s) => s.checking);
+  const checkUpdates = useUpdates((s) => s.check);
+  const openUpdates = useUpdates((s) => s.openPopover);
+
+  const updateSummary = !report
+    ? "not checked yet"
+    : report.ide.hasUpdate
+      ? `IDE v${report.ide.latestVersion} available`
+      : report.cli.hasUpdate
+        ? `CLI v${report.cli.targetVersion} recommended`
+        : report.ide.error
+          ? "up to date locally (release check offline)"
+          : "up to date";
+
   return (
     <div className="p-3 space-y-4 text-xs">
       <div>
@@ -19,6 +37,25 @@ export function SettingsPanel() {
         <p className="text-fg-muted mb-2">Every panel has an icon in the left rail wherever it is docked. If the layout got confusing, put everything back where it starts.</p>
         <button type="button" className="btn-ghost" onClick={() => resetLayout()}>
           Reset panel layout
+        </button>
+      </div>
+      <div>
+        <div className="label">Updates</div>
+        <dl className="space-y-1 mb-2">
+          <Row k="IDE" v={`v${__APP_VERSION__}`} mono />
+          <Row k="CLI" v={cli?.version ? `v${cli.version} (${cli.source})` : "not found"} mono />
+          <Row k="status" v={checking ? "checking…" : updateSummary} />
+        </dl>
+        <button
+          type="button"
+          className="btn-ghost"
+          disabled={checking}
+          onClick={() => {
+            openUpdates();
+            void checkUpdates(true);
+          }}
+        >
+          {checking ? "Checking…" : "Check for updates"}
         </button>
       </div>
       <div>

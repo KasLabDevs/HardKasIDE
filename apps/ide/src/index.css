@@ -2,11 +2,11 @@
 
 /* HardKas IDE theme tokens. Monaco reads these at runtime to build its theme (see editor/theme.ts). */
 :root {
-  --bg: #0b0f14;
-  --bg-elev: #111821;
-  --bg-panel: #0e141b;
-  --bg-hover: #182230;
-  --border: #1f2a37;
+  --bg: #1f1f1f;
+  --bg-elev: #252526;
+  --bg-panel: #181818;
+  --bg-hover: #2a2d2e;
+  --border: #2b2b2b;
   --fg: #d7e0ea;
   --fg-muted: #8696a7;
   --accent: #49eacb; /* Kaspa teal */
@@ -68,7 +68,7 @@ option {
 
 .btn-primary,
 .btn-ghost {
-  @apply inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium transition-all duration-150 cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-accent/80 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
+  @apply inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-all duration-150 cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-accent/80 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
 }
 .btn-primary {
   @apply bg-accent text-accent-fg hover:brightness-110 shadow-xs;
@@ -77,13 +77,13 @@ option {
   @apply bg-transparent text-fg hover:bg-bg-hover border border-border hover:border-fg-muted/40;
 }
 .input {
-  @apply w-full rounded border border-border bg-bg px-2 py-1.5 text-xs text-fg outline-none transition-colors focus:border-accent focus-visible:ring-1 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed;
+  @apply w-full rounded border border-border bg-bg px-2 py-1 text-xs text-fg outline-none transition-colors focus:border-accent focus-visible:ring-1 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed;
 }
 .label {
   @apply block text-[11px] font-semibold uppercase tracking-wide text-fg-muted mb-1;
 }
 .panel-title {
-  @apply px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border select-none;
+  @apply px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border select-none;
 }
 .tabular-nums {
   font-variant-numeric: tabular-nums;
@@ -164,9 +164,11 @@ a:focus-visible {
 }
 
 /* Title bar: the drag region of a desktop shell (Electron/Tauri/installed PWA); controls stay clickable. */
-.titlebar {
-  -webkit-app-region: drag;
-  padding-left: max(0.5rem, env(titlebar-area-x, 0px));
+@layer components {
+  .titlebar {
+    -webkit-app-region: drag;
+    padding-left: env(titlebar-area-x, 0px);
+  }
 }
 .titlebar button,
 .titlebar a,

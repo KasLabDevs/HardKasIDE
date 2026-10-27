@@ -1,7 +1,10 @@
 import { Hammer } from "lucide-react";
+import { api } from "@/api/client";
 import { Plugin } from "@/engine/engine";
 import { CompilePanel } from "@/panels/CompilePanel";
 import { useIde } from "@/store/ide";
+import { useSilver } from "@/store/silver";
+import { parseSilverDiagnostics } from "@/utils/silverInspector";
 import type { EditorDiagnostic } from "./editor";
 import type { ConsolePlugin } from "./console";
 
@@ -9,6 +12,8 @@ import type { ConsolePlugin } from "./console";
  * SilverScript compiler plugin. Runs `hardkas silver compile <file> --json` and
  * emits `compilationFinished` so Deploy & Run can
  * list the compiled contracts without knowing about silverc.
+ * Also runs non-polluting inline `silverc` checks on open/save/edit to paint
+ * live red/amber squiggles directly in Monaco Editor.
  */
 
 export interface SilverContract {
@@ -33,6 +38,8 @@ export class CompilerPlugin extends Plugin {
   lastResult: CompilationResult | null = null;
   autoCompile = false;
   private offs: Array<() => void> = [];
+  private checkTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private checkSeq = new Map<string, number>();
 
   constructor() {
     super({
@@ -42,27 +49,124 @@ export class CompilerPlugin extends Plugin {
       location: "sidePanel",
       icon: Hammer,
       order: 20,
-      methods: ["compile", "compileCurrent", "getLastResult", "setAutoCompile", "readArgs", "argsFileFor"],
+      methods: ["compile", "compileCurrent", "checkDiagnostics", "getLastResult", "setAutoCompile", "readArgs", "argsFileFor", "audit", "preflight", "doctor", "fuzz"],
       events: ["compilationFinished", "compilationFailed", "statusChanged"]
     });
   }
 
   onActivation(): void {
+    const checkIfSil = (path: string | null | undefined, delayMs = 0) => {
+      if (typeof path === "string" && path.endsWith(".sil")) {
+        this.scheduleCheck(path, delayMs);
+      }
+    };
+
+    checkIfSil(useIde.getState().activeFile, 120);
+
+    let lastActive = useIde.getState().activeFile;
+    const unsubIde = useIde.subscribe((state) => {
+      if (state.activeFile !== lastActive) {
+        lastActive = state.activeFile;
+        checkIfSil(lastActive, 60);
+      }
+    });
+
     this.offs.push(
+      unsubIde,
+      this.on("editor", "editorMounted", () => {
+        checkIfSil(useIde.getState().activeFile, 60);
+      }),
       this.on("editor", "contentChanged", (path) => {
-        if (this.autoCompile && typeof path === "string" && path.endsWith(".sil")) {
-          void this.call("fileManager", "saveFile", path).then(() => this.compile(path));
+        if (typeof path === "string" && path.endsWith(".sil")) {
+          if (this.autoCompile) {
+            void this.call("fileManager", "saveFile", path).then(() => this.compile(path));
+          } else {
+            this.scheduleCheck(path, 650);
+          }
         }
       }),
       this.on("fileManager", "fileSaved", (path) => {
-        if (typeof path === "string" && path.endsWith(".sil")) this.emit("statusChanged", { key: "edited", title: "Saved, not compiled", type: "info" });
+        if (typeof path === "string" && path.endsWith(".sil")) {
+          this.emit("statusChanged", { key: "edited", title: "Saved", type: "info" });
+          this.scheduleCheck(path, 50);
+        }
       })
     );
   }
 
   onDeactivation(): void {
+    for (const t of this.checkTimers.values()) clearTimeout(t);
+    this.checkTimers.clear();
     for (const off of this.offs) off();
     this.offs = [];
+  }
+
+  private scheduleCheck(file: string, delayMs: number): void {
+    const existing = this.checkTimers.get(file);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      this.checkTimers.delete(file);
+      void this.checkDiagnostics(file);
+    }, delayMs);
+    this.checkTimers.set(file, timer);
+  }
+
+  async checkDiagnostics(file: string): Promise<void> {
+    if (!file.endsWith(".sil")) return;
+    if (!useIde.getState().workspace?.root) return;
+
+    const seq = (this.checkSeq.get(file) ?? 0) + 1;
+    this.checkSeq.set(file, seq);
+
+    let source = useIde.getState().openFiles.find((t) => t.path === file)?.content;
+    if (source === undefined) {
+      try {
+        source = await this.call<string>("fileManager", "readFile", file);
+      } catch {
+        return;
+      }
+    }
+
+    try {
+      const check = await api.silver.check({ filePath: file, content: source });
+      if (this.checkSeq.get(file) !== seq) return; // superseded by newer keystroke
+
+      useSilver.getState().setCheckResult({
+        file,
+        ok: check.ok,
+        errorText: check.ok ? undefined : check.message,
+        checkedAt: Date.now()
+      });
+
+      const parsedDiags = parseSilverDiagnostics(file, source, {
+        file,
+        ok: check.ok,
+        raw: check.raw,
+        errorText: check.ok ? undefined : check.message
+      });
+      await this.applyMarkers(file, parsedDiags);
+    } catch {
+      // Fall back to static source diagnostics if server check is unavailable.
+      if (this.checkSeq.get(file) !== seq) return;
+      const staticDiags = parseSilverDiagnostics(file, source, null);
+      await this.applyMarkers(file, staticDiags);
+    }
+  }
+
+  private async applyMarkers(
+    file: string,
+    parsedDiags: ReturnType<typeof parseSilverDiagnostics>
+  ): Promise<void> {
+    const diagnostics: EditorDiagnostic[] = parsedDiags.map((d) => ({
+      file: d.file,
+      line: d.line,
+      column: d.column,
+      endLine: d.line,
+      endColumn: d.endColumn ?? d.column + 24,
+      severity: d.severity,
+      message: `[${d.code}] ${d.message}${d.hint ? ` (${d.hint})` : ""}`
+    }));
+    await this.call("editor", "setFileMarkers", file, diagnostics, "silverc");
   }
 
   setAutoCompile(value: boolean): void {
@@ -100,13 +204,19 @@ export class CompilerPlugin extends Plugin {
 
     const cliArgs = ["silver", "compile", file];
     const argsFile = this.argsFileFor(file);
+    let usedArgsText: string | null = null;
     if (options?.args !== undefined && options.args.trim() !== "") {
       JSON.parse(options.args); // fail early on invalid JSON
       await this.call("fileManager", "writeFile", argsFile, options.args);
       await this.call("fileManager", "refresh");
+      usedArgsText = options.args;
       cliArgs.push("--args", argsFile);
-    } else if ((await this.readArgs(file)) !== null) {
-      cliArgs.push("--args", argsFile);
+    } else {
+      const existingArgs = await this.readArgs(file);
+      if (existingArgs !== null) {
+        usedArgsText = existingArgs;
+        cliArgs.push("--args", argsFile);
+      }
     }
     cliArgs.push("--json");
 
@@ -124,18 +234,74 @@ export class CompilerPlugin extends Plugin {
       errorText: ok ? undefined : messageOf(raw, run)
     };
     this.lastResult = result;
+    useSilver.getState().setCheckResult({
+      file,
+      ok,
+      errorText: ok ? undefined : result.errorText,
+      checkedAt: Date.now()
+    });
+
+    if (ok && usedArgsText && typeof raw?.contentHash === "string" && raw.contentHash) {
+      await this.call("fileManager", "writeFile", `.hardkas/ide/covenant-args/${raw.contentHash}.json`, usedArgsText).catch(() => undefined);
+    }
+
+    // Read source code to extract line-accurate diagnostics & pragma checks
+    let source = useIde.getState().openFiles.find((t) => t.path === file)?.content ?? "";
+    if (!source) {
+      try {
+        source = await this.call<string>("fileManager", "readFile", file);
+      } catch {
+        source = "";
+      }
+    }
+
+    const parsedDiags = parseSilverDiagnostics(file, source, {
+      file,
+      ok,
+      contracts: contracts.map((c) => ({ name: c.name, lockingScript: c.lockingScript, address: c.address })),
+      raw,
+      errorText: result.errorText
+    });
+
+    await this.applyMarkers(file, parsedDiags);
 
     if (ok) {
       this.emit("statusChanged", { key: "ok", title: `${contracts.length} contract(s)`, type: "success" });
       this.emit("compilationFinished", result);
     } else {
-      // silverc only gives us stderr text (no line/column). Mark line 1 so the editor shows something.
-      const diagnostics: EditorDiagnostic[] = [{ file, line: 1, severity: "error", message: result.errorText ?? "Compilation failed" }];
-      await this.call("editor", "addErrorMarker", diagnostics, "silverc");
+      if (parsedDiags.length === 0) {
+        await this.applyMarkers(file, [
+          { file, line: 1, column: 1, severity: "error", code: "SILVERC-ERR", message: result.errorText ?? "Compilation failed" }
+        ]);
+      }
       this.emit("statusChanged", { key: "error", title: "Compilation failed", type: "error" });
       this.emit("compilationFailed", result);
     }
     return result;
+  }
+
+  async audit(file: string): Promise<{ ok: boolean; result: unknown; error?: string }> {
+    const terminal = this.engine.get<ConsolePlugin>("console");
+    const run = await terminal.runHardkas(["silver", "audit", file, "--json"]);
+    return { ok: run.status === "succeeded", result: run.result, error: run.exitCode ? `exit code ${run.exitCode}` : undefined };
+  }
+
+  async preflight(file: string): Promise<{ ok: boolean; result: unknown; error?: string }> {
+    const terminal = this.engine.get<ConsolePlugin>("console");
+    const run = await terminal.runHardkas(["silver", "preflight", file, "--json"]);
+    return { ok: run.status === "succeeded", result: run.result, error: run.exitCode ? `exit code ${run.exitCode}` : undefined };
+  }
+
+  async doctor(): Promise<{ ok: boolean; result: unknown }> {
+    const terminal = this.engine.get<ConsolePlugin>("console");
+    const run = await terminal.runHardkas(["silver", "doctor", "--json"]);
+    return { ok: run.status === "succeeded", result: run.result };
+  }
+
+  async fuzz(file: string): Promise<{ ok: boolean; result: unknown; error?: string }> {
+    const terminal = this.engine.get<ConsolePlugin>("console");
+    const run = await terminal.runHardkas(["silver", "fuzz", file, "--json"]);
+    return { ok: run.status === "succeeded", result: run.result, error: run.exitCode ? `exit code ${run.exitCode}` : undefined };
   }
 }
 

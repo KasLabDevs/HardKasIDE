@@ -36,8 +36,8 @@ export class EnvironmentPlugin extends Plugin {
       location: "sidePanel",
       icon: Server,
       order: 15,
-      methods: ["refresh", "refreshNode", "refreshDocker", "refreshAccounts", "startNode", "stopNode", "restartNode", "resetNode", "createAccount", "copyPrivateKey", "getPrivateKey", "fund"],
-      events: ["nodeChanged", "accountsChanged"]
+      methods: ["refresh", "refreshNode", "refreshDocker", "refreshCli", "refreshAccounts", "startNode", "stopNode", "restartNode", "resetNode", "createAccount", "copyPrivateKey", "getPrivateKey", "fund", "fundAll", "startMiner", "stopMiner", "mineBurst"],
+      events: ["nodeChanged", "accountsChanged", "minerChanged"]
     });
   }
 
@@ -65,8 +65,23 @@ export class EnvironmentPlugin extends Plugin {
   }
 
   async refresh(): Promise<void> {
-    await Promise.all([this.refreshNode(true), this.refreshAccounts()]);
+    await Promise.all([this.refreshNode(true), this.refreshAccounts(), this.refreshCli()]);
     useEnv.getState().touch();
+  }
+
+  /** Which hardkas the server runs for this workspace; the status bar warns when it is not the tested version. */
+  async refreshCli(): Promise<void> {
+    try {
+      const cli = await api.cli();
+      useEnv.getState().setCli(cli);
+      if (cli.version && cli.version !== cli.pinned) {
+        this.console().warn(`HardKas CLI ${cli.version} (${cli.source}); this IDE was tested with ${cli.pinned}. Records and command output may differ.`);
+      } else if (!cli.version) {
+        this.console().warn(`The hardkas CLI did not answer --version (${cli.command}): ${cli.error ?? "unknown error"}`);
+      }
+    } catch {
+      useEnv.getState().setCli(null);
+    }
   }
 
   /** Is Docker there? Checked once per refresh; the Servers view explains what to do when it is not. */
@@ -128,10 +143,21 @@ export class EnvironmentPlugin extends Plugin {
       await this.refreshAccounts();
     }
   });
+  private stepFundDevAccounts = (): OpStep => ({
+    label: "Seeding dev accounts (100 KAS each) from localnet Treasury",
+    run: async (note) => {
+      await this.fundAll("100", note, { onlyEmpty: true, target: "localnet" });
+    }
+  });
 
   /** `localnet start --toccata` starts (or adopts) rusty-kaspad AND creates the dev accounts alice…erin. */
   async startNode(): Promise<void> {
-    await this.runOp("start", "Starting the local node", [this.stepStartNode(), this.stepWaitReady(), this.stepLoadAccounts()], "The node is ready. Fund an account to mine its first KAS.");
+    await this.runOp(
+      "start",
+      "Starting the local node",
+      [this.stepStartNode(), this.stepWaitReady(), this.stepLoadAccounts(), this.stepFundDevAccounts()],
+      "The node is ready and all dev accounts have confirmed balances."
+    );
   }
 
   /** `localnet stop` stops the node and its CPU miner (plain `node stop` would leave the miner running). */
@@ -140,13 +166,20 @@ export class EnvironmentPlugin extends Plugin {
   }
 
   async restartNode(): Promise<void> {
-    await this.runOp("restart", "Restarting the local node", [this.stepStopNode(), this.stepStartNode(), this.stepWaitReady(), this.stepLoadAccounts()], "The node is back.");
+    await this.runOp(
+      "restart",
+      "Restarting the local node",
+      [this.stepStopNode(), this.stepStartNode(), this.stepWaitReady(), this.stepLoadAccounts(), this.stepFundDevAccounts()],
+      "The node is back and all dev accounts have confirmed balances."
+    );
   }
 
   /**
    * Wipes the local chain and starts over: stop node + miner, `node reset --yes` (removes all local chain
-   * data), then `localnet start --toccata` (fresh node, dev accounts recreated, empty). Callers must have
-   * asked the user to confirm: this is destructive.
+   * data), `localnet start --toccata` (fresh node, dev accounts recreated), and funds all dev accounts so
+   * none remain at 0 KAS. Callers must have asked the user to confirm: this is destructive. The server moves the
+   * account keys (accounts.real.json, dev-accounts) to .hardkas/backups/reset-<time>/ instead of deleting them, and
+   * leaves the containers to HardKas (`localnet stop`, `node reset`).
    */
   async resetNode(): Promise<void> {
     await this.runOp(
@@ -154,12 +187,19 @@ export class EnvironmentPlugin extends Plugin {
       "Resetting the local node from scratch",
       [
         this.stepStopNode(),
-        { label: "Wiping all local chain data", run: async () => this.runCli(["node", "reset", "--yes"], "node reset failed: the local chain was not wiped") },
+        {
+          label: "Wiping all local chain data",
+          run: async () => {
+            await api.node.reset();
+            await this.runCli(["node", "reset", "--yes"], "node reset failed: the local chain was not wiped");
+          }
+        },
         { ...this.stepStartNode(), label: "Starting a fresh node" },
         this.stepWaitReady(),
-        { ...this.stepLoadAccounts(), label: "Recreating the dev accounts (empty)" }
+        { ...this.stepLoadAccounts(), label: "Recreating and loading the dev accounts" },
+        this.stepFundDevAccounts()
       ],
-      "Fresh empty chain. Fund an account to mine its first KAS."
+      "Fresh chain ready. All dev accounts are funded and confirmed."
     );
   }
 
@@ -218,50 +258,95 @@ export class EnvironmentPlugin extends Plugin {
   }
 
   private accountsSeq = 0;
+  private accountsInFlight: { network: string; promise: Promise<AccountInfo[]> } | null = null;
 
   async refreshAccounts(): Promise<AccountInfo[]> {
+    const network = networkForTarget(useIde.getState().target);
+    if (this.accountsInFlight && this.accountsInFlight.network === network) {
+      return this.accountsInFlight.promise;
+    }
     const seq = ++this.accountsSeq;
+    const promise = this.doRefreshAccounts(seq, network).finally(() => {
+      if (this.accountsInFlight?.promise === promise) {
+        this.accountsInFlight = null;
+      }
+    });
+    this.accountsInFlight = { network, promise };
+    return promise;
+  }
+
+  private async readAccountBalance(name: string, network: string): Promise<{ balanceSompi: string; utxoCount: number; address?: string } | null> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const b = await this.console().runHardkas(["accounts", "balance", name, "--network", network, "--json"], { quiet: true });
+        if (b.status === "succeeded") {
+          const res = unwrapEnvelope(b.result) as { balanceSompi?: string | number; utxoCount?: number; address?: string } | null;
+          if (res && res.balanceSompi !== undefined && res.balanceSompi !== null) {
+            return {
+              balanceSompi: String(res.balanceSompi),
+              utxoCount: typeof res.utxoCount === "number" ? res.utxoCount : 0,
+              address: typeof res.address === "string" && res.address ? res.address : undefined
+            };
+          }
+        }
+      } catch {
+        // transient RPC or subprocess error; retry once
+      }
+      if (attempt === 0) await sleep(400);
+    }
+    return null;
+  }
+
+  private async doRefreshAccounts(seq: number, network: string): Promise<AccountInfo[]> {
     const env = useEnv.getState();
     env.setAccountsBusy(true);
     try {
-      const network = networkForTarget(useIde.getState().target);
       const [run, devKeyNames] = await Promise.all([
         this.console().runHardkas(["accounts", "list", "--json"], { quiet: true }),
         api.devkeys.list().catch(() => [] as string[])
       ]);
       if (seq !== this.accountsSeq) return useEnv.getState().accounts;
       const devKeySet = new Set(devKeyNames);
+      const prevByName = new Map(useEnv.getState().accounts.map((a) => [a.name, a]));
       const list = Array.isArray(run.result) ? (run.result as Array<{ name: string; kind: string; address: string }>) : [];
       const accounts: AccountInfo[] = list.map((a) => {
         const canExport = devKeySet.has(a.name);
+        const prev = prevByName.get(a.name);
+        const sameNet = prev?.balanceNetwork === network;
+        const resolvedAddr = sameNet && prev?.address && (network !== "simnet" || prev.address.startsWith("kaspasim:")) ? prev.address : a.address;
+        const isRealLocalKey = network === "simnet" && (canExport || resolvedAddr.startsWith("kaspasim:"));
         return {
           name: a.name,
-          kind: a.kind,
-          address: a.address,
-          balanceSompi: null,
-          utxoCount: null,
+          kind: isRealLocalKey ? "kaspa" : a.kind,
+          address: resolvedAddr,
+          balanceSompi: sameNet ? (prev?.balanceSompi ?? null) : null,
+          utxoCount: sameNet ? (prev?.utxoCount ?? null) : null,
           balanceNetwork: network,
           hasPlainKey: canExport,
-          keystore: canExport ? "dev-keystore" : a.kind === "synthetic" ? "encrypted" : "unknown"
+          keystore: canExport ? "dev-keystore" : isRealLocalKey ? "encrypted" : a.kind === "synthetic" ? "encrypted" : "unknown"
         };
       });
       env.setAccounts(accounts);
       this.emit("accountsChanged", accounts);
       await Promise.all(
         accounts.map(async (a) => {
-          try {
-            const b = await this.console().runHardkas(["accounts", "balance", a.name, "--network", network, "--json"], { quiet: true });
-            if (seq !== this.accountsSeq) return;
-            const res = (b.result as { result?: { balanceSompi?: string; utxoCount?: number; address?: string } } | null)?.result;
+          const bal = await this.readAccountBalance(a.name, network);
+          if (seq !== this.accountsSeq) return;
+          if (bal) {
+            const addr = bal.address ?? a.address;
+            const isRealLocalKey = network === "simnet" && (devKeySet.has(a.name) || addr.startsWith("kaspasim:"));
             env.patchAccount(a.name, {
-              balanceSompi: res?.balanceSompi ?? "0",
-              utxoCount: res?.utxoCount ?? 0,
+              balanceSompi: bal.balanceSompi,
+              utxoCount: bal.utxoCount,
               balanceNetwork: network,
-              address: res?.address ?? a.address
+              address: addr,
+              ...(isRealLocalKey ? { kind: "kaspa" } : {})
             });
-          } catch {
-            if (seq !== this.accountsSeq) return;
-            env.patchAccount(a.name, { balanceSompi: "0", utxoCount: 0, balanceNetwork: network });
+          } else {
+            const prev = prevByName.get(a.name);
+            const fallbackBal = prev?.balanceNetwork === network && prev.balanceSompi !== null ? prev.balanceSompi : "0";
+            const fallbackUtxos = prev?.balanceNetwork === network && prev.utxoCount !== null ? prev.utxoCount : 0;
+            env.patchAccount(a.name, { balanceSompi: fallbackBal, utxoCount: fallbackUtxos, balanceNetwork: network });
           }
         })
       );
@@ -286,17 +371,205 @@ export class EnvironmentPlugin extends Plugin {
    *   Local node → `localnet fund --profile toccata-v2` (mines real simnet blocks to the account)
    *   Testnet    → no faucet from the IDE
    */
-  async fund(name: string, amountKas: string): Promise<void> {
-    const target = useIde.getState().target;
-    if (target === "localnet") {
-      await this.console().runHardkas(["localnet", "fund", name, "--amount", amountKas, "--profile", "toccata-v2", "--json"]);
-    } else if (target === "simulator") {
-      // `simulator fund` is the stable replacement for the deprecated `accounts fund`.
-      await this.console().runHardkas(["simulator", "fund", name, "--amount", amountKas, "--json"]);
-    } else {
+  /** Polls `accounts balance` until `name` shows strictly more than `minExclusiveSompi` on `network`. */
+  private async waitForConfirmedBalance(
+    name: string,
+    network: string,
+    minExclusiveSompi = 0n,
+    timeoutMs = 25_000,
+    note?: (text: string) => void
+  ): Promise<{ balanceSompi: string; utxoCount: number }> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const bal = await this.readAccountBalance(name, network);
+      if (bal && parseSompi(bal.balanceSompi) > minExclusiveSompi) {
+        if (network === networkForTarget(useIde.getState().target)) {
+          useEnv.getState().patchAccount(name, {
+            balanceSompi: bal.balanceSompi,
+            utxoCount: bal.utxoCount,
+            balanceNetwork: network,
+            ...(bal.address ? { address: bal.address } : {}),
+            ...(network === "simnet" && bal.address?.startsWith("kaspasim:") ? { kind: "kaspa" } : {})
+          });
+        }
+        return { balanceSompi: bal.balanceSompi, utxoCount: bal.utxoCount };
+      }
+      if (Date.now() >= deadline) {
+        const seen = bal ? `${bal.balanceSompi} sompi` : "unreachable";
+        throw new Error(`Account "${name}" did not confirm funds on ${network} (balance: ${seen}).`);
+      }
+      note?.(`confirming ${name} balance on ${network}…`);
+      await sleep(1500);
+    }
+  }
+
+  private async listBalancesForNetwork(network: string): Promise<Array<{ name: string; balanceSompi: string }>> {
+    if (network === networkForTarget(useIde.getState().target)) {
+      const accounts = await this.refreshAccounts();
+      return accounts.map((a) => ({ name: a.name, balanceSompi: a.balanceSompi ?? "0" }));
+    }
+    const run = await this.console().runHardkas(["accounts", "list", "--json"], { quiet: true });
+    const list = Array.isArray(run.result) ? (run.result as Array<{ name: string }>) : [];
+    return Promise.all(
+      list.map(async (a) => {
+        const bal = await this.readAccountBalance(a.name, network);
+        return { name: a.name, balanceSompi: bal?.balanceSompi ?? "0" };
+      })
+    );
+  }
+
+  async fund(name: string, amountKas: string, opts?: { refreshAfter?: boolean; target?: ExecutionTarget; note?: (text: string) => void }): Promise<void> {
+    const target = opts?.target ?? useIde.getState().target;
+    if (target === "rpc") {
       throw new Error("No faucet for the public testnet from the IDE; use a testnet faucet and send to the address.");
     }
-    await this.refreshAccounts();
+    const network = networkForTarget(target);
+    const before = await this.readAccountBalance(name, network);
+    const beforeSompi = parseSompi(before?.balanceSompi);
+
+    if (target === "localnet") {
+      let run = await this.console().runHardkas(["localnet", "fund", name, "--treasury", "--amount", amountKas, "--profile", "toccata-v2", "--stop-miner", "--json"]);
+      if (run.status !== "succeeded") {
+        throw new Error(extractCliError(run.result) ?? `Funding ${name} failed (exit ${run.exitCode}). See the Console for details.`);
+      }
+      let payload = unwrapEnvelope(run.result);
+      let after = (payload?.after ?? null) as { matureBalanceSompi?: string | number } | null;
+      const cmdBefore = (payload?.before ?? null) as { matureBalanceSompi?: string | number } | null;
+      if (payload?.status === "TOCCATA_FUNDING_PENDING_MATURITY" || parseSompi(after?.matureBalanceSompi) <= parseSompi(cmdBefore?.matureBalanceSompi)) {
+        opts?.note?.(`waiting for Treasury funding settlement on ${name}…`);
+        run = await this.console().runHardkas(["localnet", "fund", name, "--treasury", "--amount", amountKas, "--profile", "toccata-v2", "--stop-miner", "--json"]);
+        if (run.status !== "succeeded") {
+          throw new Error(extractCliError(run.result) ?? `Funding retry for ${name} failed (exit ${run.exitCode}).`);
+        }
+        payload = unwrapEnvelope(run.result);
+        after = (payload?.after ?? null) as { matureBalanceSompi?: string | number } | null;
+        if (payload?.status === "TOCCATA_FUNDING_PENDING_MATURITY" && parseSompi(after?.matureBalanceSompi) === 0n) {
+          throw new Error(`Funding ${name} is still pending maturity on localnet. Try mining a burst in Servers.`);
+        }
+      }
+      await this.waitForConfirmedBalance(name, network, beforeSompi, 30_000, opts?.note);
+    } else {
+      // `simulator fund` is the stable replacement for the deprecated `accounts fund`.
+      const run = await this.console().runHardkas(["simulator", "fund", name, "--amount", amountKas, "--json"]);
+      if (run.status !== "succeeded") {
+        throw new Error(extractCliError(run.result) ?? `Simulator funding for ${name} failed (exit ${run.exitCode}).`);
+      }
+      await this.waitForConfirmedBalance(name, network, beforeSompi, 10_000, opts?.note);
+    }
+    if (opts?.refreshAfter !== false) await this.refreshAccounts();
+  }
+
+  /**
+   * Funds accounts on the target network (`localnet seed` 1 -> N Treasury transfer on Docker simnet,
+   * or `simulator fund` in-memory) and verifies every account has confirmed spendable balance > 0 KAS.
+   */
+  async fundAll(
+    amountKas = "100",
+    note?: (text: string) => void,
+    opts?: { onlyEmpty?: boolean; target?: ExecutionTarget }
+  ): Promise<void> {
+    const target = opts?.target ?? useIde.getState().target;
+    if (target === "rpc") {
+      throw new Error("No faucet for the public testnet from the IDE; use a testnet faucet and send to the address.");
+    }
+    const network = networkForTarget(target);
+    const current = await this.listBalancesForNetwork(network);
+    if (current.length === 0) throw new Error("No accounts found in the workspace.");
+
+    const empty = current.filter((a) => parseSompi(a.balanceSompi) <= 0n);
+    if (opts?.onlyEmpty && empty.length === 0) {
+      note?.("all dev accounts already funded");
+      return;
+    }
+    const list = opts?.onlyEmpty ? empty : empty.length > 0 ? empty : current;
+
+    if (target === "localnet") {
+      note?.(`seeding ${list.map((a) => a.name).join(", ")} (${amountKas} KAS each) from Treasury…`);
+      const args = ["localnet", "seed", "--amount", amountKas, "--profile", "toccata-v2", "--stop-miner", "--json"];
+      if (opts?.onlyEmpty || empty.length > 0) {
+        args.push("--only-empty");
+      } else {
+        args.push("--accounts", list.map((a) => a.name).join(","));
+      }
+      const run = await this.console().runHardkas(args);
+      if (run.status !== "succeeded") {
+        throw new Error(extractCliError(run.result) ?? `Seeding localnet accounts failed (exit ${run.exitCode}). See the Console for details.`);
+      }
+    } else {
+      for (let i = 0; i < list.length; i++) {
+        const a = list[i];
+        note?.(`funding ${a.name} (${i + 1}/${list.length})…`);
+        await this.fund(a.name, amountKas, { refreshAfter: false, target, note });
+      }
+    }
+
+    note?.("verifying confirmed balances for all accounts…");
+    const verified = await this.listBalancesForNetwork(network);
+    const missing = verified.filter((a) => parseSompi(a.balanceSompi) <= 0n);
+    for (const m of missing) {
+      note?.(`confirming funds for ${m.name}…`);
+      try {
+        await this.waitForConfirmedBalance(m.name, network, 0n, 15_000, note);
+      } catch {
+        note?.(`retrying funding for ${m.name}…`);
+        await this.fund(m.name, amountKas, { refreshAfter: false, target, note });
+      }
+    }
+
+    const finalBalances = await this.listBalancesForNetwork(network);
+    const stillZero = finalBalances.filter((a) => parseSompi(a.balanceSompi) <= 0n);
+    if (stillZero.length > 0) {
+      throw new Error(`Could not confirm funds on ${network} for: ${stillZero.map((a) => a.name).join(", ")}.`);
+    }
+  }
+
+  // ---- blocks: nothing confirms on simnet unless the CPU miner runs, and a miner running flat out floods the node ----
+
+  /** Starts the existing miner container; it mines to whichever account HardKas last funded. */
+  async startMiner(): Promise<void> {
+    await this.minerOp("start", async () => {
+      await api.node.miner("start");
+    });
+  }
+
+  /** Stops the miner so the node can catch up ("route is full" in its log means it was falling behind). */
+  async stopMiner(): Promise<void> {
+    await this.minerOp("stop", async () => {
+      await api.node.miner("stop");
+    });
+  }
+
+  /**
+   * Mines a short burst: `localnet fund <account> --amount 1 --stop-miner` runs the miner until one more mature
+   * KAS reaches the account, then stops it (without --stop-miner the CLI has been seen leaving it running).
+   * Enough blocks for pending transactions to confirm, without flooding the node.
+   */
+  async mineBurst(account: string): Promise<void> {
+    await this.minerOp("burst", async () => {
+      await this.runCli(["localnet", "fund", account, "--treasury", "--amount", "1", "--stop-miner", "--profile", "toccata-v2", "--json"], "Mining burst failed");
+      await this.refreshAccounts();
+    });
+  }
+
+  private async minerOp(kind: "start" | "stop" | "burst", run: () => Promise<void>): Promise<void> {
+    const env = useEnv.getState();
+    if (env.minerBusy) return;
+    env.setMinerBusy(kind);
+    env.setError(null);
+    let failed: string | null = null;
+    try {
+      await run();
+    } catch (e) {
+      failed = e instanceof Error ? e.message : String(e);
+      this.console().error(failed);
+      throw new Error(failed);
+    } finally {
+      useEnv.getState().setMinerBusy(null);
+      // refreshNode clears the error on success, so the miner's failure is set afterwards to stay visible.
+      const node = await this.refreshNode(true);
+      if (failed) useEnv.getState().setError(failed);
+      this.emit("minerChanged", node?.miner ?? null);
+    }
   }
 
   /**
@@ -323,13 +596,43 @@ export class EnvironmentPlugin extends Plugin {
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function parseSompi(value: string | number | null | undefined): bigint {
+  if (value === null || value === undefined || value === "") return 0n;
+  try {
+    return BigInt(value);
+  } catch {
+    return 0n;
+  }
+}
+
+function unwrapEnvelope(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  if (obj.result && typeof obj.result === "object") return obj.result as Record<string, unknown>;
+  return obj;
+}
+
+function extractCliError(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as { error?: { message?: unknown } | string; message?: unknown };
+  if (typeof obj.error === "string" && obj.error) return obj.error;
+  if (obj.error && typeof obj.error === "object" && typeof obj.error.message === "string") return obj.error.message;
+  if (typeof obj.message === "string" && obj.message) return obj.message;
+  return null;
+}
+
 /** One stage of a node operation: `run` may report short progress notes through `note`. */
 interface OpStep {
   label: string;
   run: (note: (text: string) => void) => Promise<void>;
 }
 
-function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {
+/** Reads `hardkas localnet status --json` (either of its two shapes) into the IDE's NodeStatus. */
+export function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {
   const container = (raw.container ?? {}) as Record<string, unknown>;
   const rpc = (raw.rpc ?? {}) as Record<string, unknown>;
   const node = (raw.node ?? {}) as Record<string, unknown>;
@@ -340,9 +643,17 @@ function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {
   const miner = (raw.miner ?? {}) as Record<string, unknown>;
 
   // `localnet status` has two shapes: a full one (container/rpc/ports) and, when the node answers, a short
-  // one where `node.ready` is true and there is no `running` flag. A node that answers RPC is running.
-  const rpcReady = Boolean(rpc.ready ?? node.rpcReady ?? node.ready);
-  const running = rpcReady || Boolean(container.running ?? node.running);
+  // one where `node.ready` is true and there is no `running` flag. A node that answers RPC is running,
+  // unless the CLI also saw that the container is not: then something else holds the port (seen with a
+  // test suite's mock node on 18210) and the answers are not the HardKas node's.
+  const observedContainer = (observed.container ?? {}) as Record<string, unknown>;
+  const containerRunning = (container.running ?? observedContainer.running) as boolean | undefined;
+  const rpcAnswers = Boolean(rpc.ready ?? node.rpcReady ?? node.ready);
+  const foreign = rpcAnswers && containerRunning === false;
+  const rpcReady = rpcAnswers && !foreign;
+  const running = rpcReady || Boolean(containerRunning ?? node.running);
+  const rpcUrlSeen = (rpc.url as string | undefined) ?? (node.rpcUrl as string | undefined) ?? "ws://127.0.0.1:18210";
+  const containerSeen = (container.name as string | undefined) ?? (observedContainer.name as string | undefined) ?? (expected.containerName as string | undefined) ?? "the node container";
 
   const rpcTransports = (rpc.transports ?? {}) as Record<string, { port?: number; ready?: boolean }>;
   const nodeTransports = (node.transports ?? {}) as Record<string, { port?: number; ready?: boolean }>;
@@ -357,10 +668,10 @@ function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {
 
   return {
     profile: String(raw.profile ?? "toccata-v2"),
-    status: String(raw.status ?? (rpcReady ? "READY" : running ? "STARTING" : "STOPPED")),
+    status: foreign ? "FOREIGN RPC" : String(raw.status ?? (rpcReady ? "READY" : running ? "STARTING" : "STOPPED")),
     running,
     rpcReady,
-    containerName: (container.name as string | undefined) ?? (node.containerName as string | undefined) ?? (expected.containerName as string | undefined),
+    containerName: (container.name as string | undefined) ?? (observedContainer.name as string | undefined) ?? (node.containerName as string | undefined) ?? (expected.containerName as string | undefined),
     image: (container.image as string | undefined) ?? (node.image as string | undefined) ?? (expected.image as string | undefined),
     network: (node.network as string | undefined) ?? (node.networkId as string | undefined) ?? (expected.network as string | undefined) ?? "simnet",
     rpcUrl: (rpc.url as string | undefined) ?? (node.rpcUrl as string | undefined),
@@ -368,8 +679,11 @@ function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {
     serverVersion: (server.serverVersion as string | undefined) ?? (node.serverVersion as string | undefined) ?? (expected.serverVersion as string | undefined),
     isSynced: (server.isSynced as boolean | undefined) ?? (node.isSynced as boolean | undefined),
     virtualDaaScore: (server.virtualDaaScore as string | undefined) ?? (node.virtualDaaScore as string | undefined),
-    miner: miner && typeof miner.running === "boolean" ? { running: Boolean(miner.running), status: String(miner.status ?? "") } : undefined,
-    lastError: (rpc.lastError as string | null | undefined) ?? (node.lastError as string | null | undefined) ?? null,
+    // `miner.exists === false` means no container at all (HardKas creates it on the first fund).
+    miner: miner && typeof miner.running === "boolean" && miner.exists !== false ? { running: Boolean(miner.running), status: String(miner.status ?? "") } : undefined,
+    lastError: foreign
+      ? `Something answers on ${rpcUrlSeen}, but ${containerSeen} is not running: another process holds the port, and its answers are not this node's. Stop it, then start the node.`
+      : ((rpc.lastError as string | null | undefined) ?? (node.lastError as string | null | undefined) ?? null),
     checkedAt: identity.checkedAt as string | undefined,
     raw: { ...raw, transports }
   };

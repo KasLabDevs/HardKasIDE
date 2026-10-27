@@ -210,7 +210,7 @@ export class RunPlugin extends Plugin {
   }
 
   async localnetFund(account: string, amount: string) {
-    return this.console().runHardkas(["localnet", "fund", account, "--amount", amount, "--json"]);
+    return this.console().runHardkas(["localnet", "fund", account, "--treasury", "--amount", amount, "--json"]);
   }
 }
 

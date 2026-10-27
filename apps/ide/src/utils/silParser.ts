@@ -7,6 +7,7 @@
 export interface SilParamDecl {
   type: string;
   name: string;
+  initialExpr?: string;
 }
 
 export interface SilEntryDecl {
@@ -15,11 +16,14 @@ export interface SilEntryDecl {
   line: number;
   endLine: number;
   requires: number;
+  isCovenantPolicy?: boolean;
+  covenantAttrs?: Record<string, string>;
 }
 
 export interface SilContractDecl {
   name: string;
   params: SilParamDecl[];
+  stateFields: SilParamDecl[];
   line: number;
   endLine: number;
   entries: SilEntryDecl[];
@@ -28,6 +32,32 @@ export interface SilContractDecl {
 export interface SilOutline {
   pragma: string | null;
   contracts: SilContractDecl[];
+}
+
+function parseCovenantAttrs(rawAttr: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  for (const part of rawAttr.split(",")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) continue;
+    const k = part.slice(0, eq).trim();
+    const v = part.slice(eq + 1).trim();
+    if (k && v) attrs[k] = v;
+  }
+  return attrs;
+}
+
+function parseContractStateFields(body: string): SilParamDecl[] {
+  const fields: SilParamDecl[] = [];
+  // Inspect top-level lines before the first entry/function/#[covenant
+  const inner = body.slice(1, body.endsWith("}") ? -1 : body.length);
+  const firstFnIdx = inner.search(/(?:#\[covenant|\bentry\b|\bentrypoint\b|\bfunction\b)/);
+  const declBlock = firstFnIdx >= 0 ? inner.slice(0, firstFnIdx) : inner;
+  const fieldRe = /\b([A-Za-z_]\w*(?:\s*\[\s*\d*\s*\])?)\s+([A-Za-z_]\w*)\s*=\s*([^;]+);/g;
+  let m: RegExpExecArray | null;
+  while ((m = fieldRe.exec(declBlock))) {
+    fields.push({ type: m[1].trim(), name: m[2].trim(), initialExpr: m[3].trim() });
+  }
+  return fields;
 }
 
 export function parseSilOutline(source: string): SilOutline {
@@ -43,27 +73,30 @@ export function parseSilOutline(source: string): SilOutline {
     const bodyStart = m.index + m[0].length - 1;
     const bodyEnd = matchBrace(text, bodyStart);
     const line = lineOf(text, start);
+    const body = text.slice(bodyStart, bodyEnd + 1);
     const contract: SilContractDecl = {
       name: m[1],
       params: parseParams(m[2]),
+      stateFields: parseContractStateFields(body),
       line,
       endLine: lineOf(text, bodyEnd),
       entries: []
     };
-    const body = text.slice(bodyStart, bodyEnd + 1);
-    const entryRe = /entry\s+([A-Za-z_]\w*)\s*\(([^)]*)\)\s*\{/g;
+    const fnRe = /(?:(#\[covenant\(([^)]*)\)\])\s*)?(?:entrypoint\s+function|entry|function)\s+([A-Za-z_]\w*)\s*\(([^)]*)\)\s*(?::\s*\([^)]*\)\s*)?\{/g;
     let e: RegExpExecArray | null;
-    while ((e = entryRe.exec(body))) {
+    while ((e = fnRe.exec(body))) {
       const eStart = bodyStart + e.index;
       const eBodyStart = eStart + e[0].length - 1;
       const eBodyEnd = matchBrace(text, eBodyStart);
       const eBody = text.slice(eBodyStart, eBodyEnd + 1);
+      const isCov = Boolean(e[1]);
       contract.entries.push({
-        name: e[1],
-        params: parseParams(e[2]),
+        name: e[3],
+        params: parseParams(e[4]),
         line: lineOf(text, eStart),
         endLine: lineOf(text, eBodyEnd),
-        requires: (eBody.match(/\brequire\s*\(/g) ?? []).length
+        requires: (eBody.match(/\brequire\s*\(/g) ?? []).length,
+        ...(isCov ? { isCovenantPolicy: true, covenantAttrs: parseCovenantAttrs(e[2] ?? "") } : {})
       });
     }
     contracts.push(contract);

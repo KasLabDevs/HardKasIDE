@@ -1,11 +1,16 @@
-import { CheckCircle2, Coins, FileJson, History, Pickaxe, Play, RadioTower, RefreshCw, Send, Signature, Zap } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import clsx from "clsx";
+import { ArrowRightLeft, CheckCircle2, ChevronDown, ChevronRight, Coins, FileJson, GitBranch, History, Pickaxe, Play, RadioTower, RefreshCw, Send, Signature, Zap } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
-import type { Account, PlanOutcome, RunPlugin, SendOutcome, SignOutcome, TxStatus } from "@/plugins/run";
-import { formatKas } from "@/store/env";
+import type { EnvironmentPlugin } from "@/plugins/environment";
+import type { PlanOutcome, RunPlugin, SendOutcome, SignOutcome, TxStatus } from "@/plugins/run";
+import { formatKas, useEnv } from "@/store/env";
 import { ENVIRONMENTS, useIde, type ExecutionTarget } from "@/store/ide";
+import { useSilver } from "@/store/silver";
+import { groupCovenantChains } from "@/utils/silverRecords";
 import { NodeBusyCover } from "@/shell/NodeOpProgress";
 import { ContractGUI } from "./ContractGUI";
+import { CovenantChainSection } from "./CovenantGUI";
 
 const TARGETS = ENVIRONMENTS.map((e) => ({ id: e.id, label: `${e.label} · ${e.networkId}`, hint: e.description }));
 
@@ -13,9 +18,13 @@ export function RunPanel() {
   const engine = useEngine();
   const target = useIde((s) => s.target);
   const setTarget = useIde((s) => s.setTarget);
-  const workspace = useIde((s) => s.workspace);
 
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const accounts = useEnv((s) => s.accounts);
+  const covenants = useSilver((s) => s.covenants);
+  const covenantChains = useMemo(() => groupCovenantChains(covenants), [covenants]);
+  const [sectionMode, setSectionMode] = useState<"all" | "covenants" | "transfers">("all");
+  const [transfersOpen, setTransfersOpen] = useState(true);
+  const userToggledTransfersRef = useRef(false);
   const [from, setFrom] = useState("alice");
   const [to, setTo] = useState("bob");
   const [amount, setAmount] = useState("10");
@@ -26,23 +35,26 @@ export function RunPanel() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (userToggledTransfersRef.current || plan || signed || sent || error) return;
+    setTransfersOpen(covenantChains.length === 0);
+  }, [covenantChains.length, plan, signed, sent, error]);
+
   const run = engine.get<RunPlugin>("deployRun");
+  const env = engine.get<EnvironmentPlugin>("environment");
 
   const loadAccounts = useCallback(async () => {
     try {
-      const list = await run.accounts();
-      setAccounts(list);
-      if (list.length > 0 && !list.some((a) => a.name === from)) setFrom(list[0].name);
-      if (list.length > 1 && !list.some((a) => a.name === to)) setTo(list[1].name);
+      await env.refreshAccounts();
     } catch (e) {
       setError(String(e));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run]);
+  }, [env]);
 
   useEffect(() => {
-    if (workspace?.hasConfig) void loadAccounts();
-  }, [workspace?.root, workspace?.hasConfig, loadAccounts]);
+    if (accounts.length > 0 && !accounts.some((a) => a.name === from)) setFrom(accounts[0].name);
+    if (accounts.length > 1 && !accounts.some((a) => a.name === to)) setTo(accounts[1].name);
+  }, [accounts, from, to]);
 
   const guard = async (label: string, fn: () => Promise<void>) => {
     setBusy(label);
@@ -130,110 +142,192 @@ export function RunPanel() {
         <button type="button" className="btn-ghost flex-1 justify-center" disabled={busy !== null} onClick={() => void guard("status", async () => void (await run.localnetStatus()))}>
           <RadioTower size={14} /> Localnet status
         </button>
-        <button type="button" className="btn-ghost flex-1 justify-center truncate" disabled={busy !== null} onClick={() => void guard("fund", async () => void (await run.localnetFund(from, "1000")))}>
+        <button type="button" className="btn-ghost flex-1 justify-center truncate" disabled={busy !== null} onClick={() => void guard("fund", async () => void (await run.localnetFund(from, "100")))}>
           <Coins size={14} className="shrink-0" /> <span className="truncate">{busy === "fund" ? "Funding…" : `Fund ${from}`}</span>
         </button>
       </div>
 
       {busy === "fund" && target === "localnet" && (
-        <div className="rounded bg-accent/10 border border-accent/30 p-2 space-y-1">
-          <div className="flex items-center justify-between text-[11px] text-accent">
-            <span className="flex items-center gap-1.5 font-medium">
-              <Pickaxe size={12} className="animate-spin" /> Minando en Docker...
-            </span>
-            <span className="font-mono text-[10px]">Maduración Coinbase</span>
+        <div role="status" className="rounded bg-accent/10 border border-accent/30 p-2 space-y-1">
+          <div className="flex items-center gap-1.5 text-[11px] text-accent font-medium">
+            <Pickaxe size={12} className="animate-spin" /> Funding on the local node…
           </div>
-          <div className="w-full bg-bg rounded-full h-1.5 overflow-hidden">
-            <div className="bg-accent h-1.5 rounded-full animate-pulse w-3/4"></div>
-          </div>
-          <div className="text-[10px] text-fg-muted">
-            rusty-kaspad + cpuminer minando bloques para madurar monedas (~60s)...
-          </div>
+          <div className="text-[10px] text-fg-muted">hardkas localnet fund --treasury: transfers exact KAS from the localnet Treasury (only mines coinbases if the Treasury needs reserve).</div>
         </div>
       )}
 
-      <div className="space-y-2">
-        <div className="label flex items-center justify-between">
-          <span>Accounts</span>
-          <button type="button" onClick={() => void loadAccounts()} className="p-0.5 rounded text-fg-muted hover:text-fg hover:bg-bg-hover normal-case tracking-normal cursor-pointer" title="Reload accounts" aria-label="Reload accounts">
-            <RefreshCw size={12} />
-          </button>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <div className="text-fg-muted mb-0.5">From</div>
-            {accountSelect("From account", from, setFrom)}
-          </div>
-          <div>
-            <div className="text-fg-muted mb-0.5">To</div>
-            {accountSelect("To account", to, setTo)}
-          </div>
-        </div>
-        <div>
-          <label htmlFor="run-amount-input" className="block text-fg-muted mb-0.5">Amount (KAS)</label>
-          <input id="run-amount-input" className="input tabular-nums" value={amount} onChange={(e) => setAmount(e.target.value)} />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <div className="label">Lifecycle</div>
-        <button type="button" className="btn-primary w-full justify-center" disabled={busy !== null} onClick={() => void doAll()}>
-          <Zap size={14} /> {busy === "all" ? "Running…" : "Plan → Sign → Send"}
+      {/* Visual parity switcher: Transfers vs Toccata Covenants v1 */}
+      <div
+        className="grid grid-cols-3 gap-0.5 rounded border border-border bg-bg-elev p-0.5 text-[11px]"
+        role="tablist"
+        aria-label="Deploy & Run view filter"
+        data-testid="deploy-run-mode-bar"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={sectionMode === "all"}
+          data-testid="run-mode-all"
+          onClick={() => setSectionMode("all")}
+          className={clsx(
+            "rounded px-1.5 py-1 font-medium cursor-pointer transition-colors truncate",
+            sectionMode === "all" ? "bg-accent/15 text-accent" : "text-fg-muted hover:text-fg"
+          )}
+        >
+          All
         </button>
-        <div className="grid grid-cols-3 gap-1">
-          <button type="button" className="btn-ghost justify-center" disabled={busy !== null} onClick={() => void doPlan()}>
-            <Play size={12} /> {busy === "plan" ? "…" : "Plan"}
-          </button>
-          <button type="button" className="btn-ghost justify-center" disabled={busy !== null || !plan} onClick={() => void doSign()}>
-            <Signature size={12} /> {busy === "sign" ? "…" : "Sign"}
-          </button>
-          <button type="button" className="btn-ghost justify-center" disabled={busy !== null || !signed} onClick={() => void doSend()}>
-            <Send size={12} /> {busy === "send" ? "…" : "Send"}
-          </button>
-        </div>
-        {error && <div role="alert" className="text-error whitespace-pre-wrap break-words">{error}</div>}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={sectionMode === "covenants"}
+          data-testid="run-mode-covenants"
+          onClick={() => setSectionMode("covenants")}
+          className={clsx(
+            "rounded px-1.5 py-1 font-medium cursor-pointer transition-colors flex items-center justify-center gap-1 truncate",
+            sectionMode === "covenants" ? "bg-accent/15 text-accent" : "text-fg-muted hover:text-fg"
+          )}
+        >
+          <GitBranch size={11} className="shrink-0" />
+          <span className="truncate">Covenants</span>
+          {covenantChains.length > 0 && (
+            <span className="px-1 rounded-full bg-accent/20 text-accent text-[9px] font-mono tabular-nums">
+              {covenantChains.length}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={sectionMode === "transfers"}
+          data-testid="run-mode-transfers"
+          onClick={() => setSectionMode("transfers")}
+          className={clsx(
+            "rounded px-1.5 py-1 font-medium cursor-pointer transition-colors flex items-center justify-center gap-1 truncate",
+            sectionMode === "transfers" ? "bg-accent/15 text-accent" : "text-fg-muted hover:text-fg"
+          )}
+        >
+          <ArrowRightLeft size={11} className="shrink-0" />
+          <span className="truncate">Transfers</span>
+        </button>
+      </div>
 
-        {plan && (
-          <Step title="Plan" done onOpen={() => openInEditor(plan.planPath)}>
-            <Row k="planId" v={plan.planId} />
-            <Row k="amount" v={formatKas(plan.amountSompi)} />
-            <Row k="est. fee" v={`${plan.estimatedFeeSompi} sompi`} />
-          </Step>
-        )}
-        {signed && (
-          <Step title="Signed" done onOpen={() => openInEditor(signed.signedPath)}>
-            <Row k="signedId" v={signed.signedId} />
-            <Row k="txId" v={signed.txId} />
-          </Step>
-        )}
-        {sent?.receipt && (
-          <Step
-            title={`${sent.receipt.schema.includes("Submission") ? "Submitted" : "Receipt"} · ${sent.receipt.status}`}
-            done
-            onOpen={sent.receiptPath ? () => openInEditor(sent.receiptPath!) : undefined}
-          >
-            <Row k="txId" v={sent.receipt.txId} />
-            <Row k="fee" v={`${sent.receipt.feeSompi ?? "?"} sompi${sent.receipt.mass ? ` · mass ${sent.receipt.mass}` : ""}`} />
-            <Row k="network" v={`${sent.receipt.networkId ?? ""} (${sent.receipt.mode ?? ""})`} />
-            {sent.receipt.submitPoint?.sinkBlueScore && <Row k="accepted@" v={`blue score ${sent.receipt.submitPoint.sinkBlueScore} · DAA ${sent.receipt.submitPoint.virtualDaaScore ?? "?"}`} />}
-            <button type="button" className="btn-ghost w-full justify-center mt-1" disabled={busy !== null} onClick={() => void doStatus()}>
-              <RadioTower size={12} /> {busy === "status" ? "Asking the node…" : "Check status on the node"}
+      {(sectionMode === "all" || sectionMode === "transfers") && (
+        <div className="rounded border border-border bg-bg-elev/60" data-testid="l1-transfers-section">
+          {sectionMode === "all" ? (
+            <button
+              type="button"
+              aria-expanded={transfersOpen}
+              onClick={() => {
+                userToggledTransfersRef.current = true;
+                setTransfersOpen((o) => !o);
+              }}
+              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left cursor-pointer hover:bg-bg-hover/60 rounded-t min-w-0"
+            >
+              {transfersOpen ? <ChevronDown size={12} className="shrink-0 text-fg-muted" /> : <ChevronRight size={12} className="shrink-0 text-fg-muted" />}
+              <ArrowRightLeft size={12} className="shrink-0 text-fg-muted" />
+              <span className="label !mb-0 shrink-0">L1 Transfers</span>
+              <span className="ml-auto text-[10px] font-mono text-fg-muted truncate tabular-nums">
+                {from} → {to} · {amount} KAS
+              </span>
             </button>
-            {txStatus && (
-              <div className="pt-1 space-y-0.5">
-                <Row k="state" v={txStatus.state + (txStatus.isFinal ? " (final)" : "")} />
-                {txStatus.confirmations && <Row k="confirm." v={`${txStatus.confirmations.blue ?? "?"} ${txStatus.confirmations.unit ?? ""} · DAA ${txStatus.confirmations.daa ?? "?"}`} />}
-              </div>
-            )}
-            <div className="text-fg-muted pt-1">Artifact saved under .hardkas/artifacts and listed in the Artifacts panel.</div>
-          </Step>
-        )}
-      </div>
+          ) : null}
 
-      <div className="space-y-2 border-t border-border pt-3">
-        <div className="label">SilverScript contracts</div>
-        <ContractGUI />
-      </div>
+          {(sectionMode === "transfers" || transfersOpen) && (
+            <div className={clsx("p-2.5 space-y-3", sectionMode === "all" && "border-t border-border/70")}>
+              <div className="space-y-2">
+                <div className="label flex items-center justify-between">
+                  <span>Accounts</span>
+                  <button type="button" onClick={() => void loadAccounts()} className="p-0.5 rounded text-fg-muted hover:text-fg hover:bg-bg-hover normal-case tracking-normal cursor-pointer" title="Reload accounts" aria-label="Reload accounts">
+                    <RefreshCw size={12} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="text-fg-muted mb-0.5">From</div>
+                    {accountSelect("From account", from, setFrom)}
+                  </div>
+                  <div>
+                    <div className="text-fg-muted mb-0.5">To</div>
+                    {accountSelect("To account", to, setTo)}
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="run-amount-input" className="block text-fg-muted mb-0.5">Amount (KAS)</label>
+                  <input id="run-amount-input" className="input tabular-nums" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="label">Lifecycle</div>
+                <button type="button" className="btn-primary w-full justify-center" disabled={busy !== null} onClick={() => void doAll()}>
+                  <Zap size={14} /> {busy === "all" ? "Running…" : "Plan → Sign → Send"}
+                </button>
+                <div className="grid grid-cols-3 gap-1">
+                  <button type="button" className="btn-ghost justify-center" disabled={busy !== null} onClick={() => void doPlan()}>
+                    <Play size={12} /> {busy === "plan" ? "…" : "Plan"}
+                  </button>
+                  <button type="button" className="btn-ghost justify-center" disabled={busy !== null || !plan} onClick={() => void doSign()}>
+                    <Signature size={12} /> {busy === "sign" ? "…" : "Sign"}
+                  </button>
+                  <button type="button" className="btn-ghost justify-center" disabled={busy !== null || !signed} onClick={() => void doSend()}>
+                    <Send size={12} /> {busy === "send" ? "…" : "Send"}
+                  </button>
+                </div>
+                {error && <div role="alert" className="text-error whitespace-pre-wrap break-words">{error}</div>}
+
+                {plan && (
+                  <Step title="Plan" done onOpen={() => openInEditor(plan.planPath)}>
+                    <Row k="planId" v={plan.planId} />
+                    <Row k="amount" v={formatKas(plan.amountSompi)} />
+                    <Row k="est. fee" v={`${plan.estimatedFeeSompi} sompi`} />
+                  </Step>
+                )}
+                {signed && (
+                  <Step title="Signed" done onOpen={() => openInEditor(signed.signedPath)}>
+                    <Row k="signedId" v={signed.signedId} />
+                    <Row k="txId" v={signed.txId} />
+                  </Step>
+                )}
+                {sent?.receipt && (
+                  <Step
+                    title={`${sent.receipt.schema.includes("Submission") ? "Submitted" : "Receipt"} · ${sent.receipt.status}`}
+                    done
+                    onOpen={sent.receiptPath ? () => openInEditor(sent.receiptPath!) : undefined}
+                  >
+                    <Row k="txId" v={sent.receipt.txId} />
+                    <Row k="fee" v={`${sent.receipt.feeSompi ?? "?"} sompi${sent.receipt.mass ? ` · mass ${sent.receipt.mass}` : ""}`} />
+                    <Row k="network" v={`${sent.receipt.networkId ?? ""} (${sent.receipt.mode ?? ""})`} />
+                    {sent.receipt.submitPoint?.sinkBlueScore && <Row k="accepted@" v={`blue score ${sent.receipt.submitPoint.sinkBlueScore} · DAA ${sent.receipt.submitPoint.virtualDaaScore ?? "?"}`} />}
+                    <button type="button" className="btn-ghost w-full justify-center mt-1" disabled={busy !== null} onClick={() => void doStatus()}>
+                      <RadioTower size={12} /> {busy === "status" ? "Asking the node…" : "Check status on the node"}
+                    </button>
+                    {txStatus && (
+                      <div className="pt-1 space-y-0.5">
+                        <Row k="state" v={txStatus.state + (txStatus.isFinal ? " (final)" : "")} />
+                        {txStatus.confirmations && <Row k="confirm." v={`${txStatus.confirmations.blue ?? "?"} ${txStatus.confirmations.unit ?? ""} · DAA ${txStatus.confirmations.daa ?? "?"}`} />}
+                      </div>
+                    )}
+                    <div className="text-fg-muted pt-1">Artifact saved under .hardkas/artifacts and listed in the Artifacts panel.</div>
+                  </Step>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {sectionMode !== "transfers" && (
+        <>
+          <div className="space-y-2 border-t border-border pt-3">
+            <CovenantChainSection alwaysShowHeader />
+          </div>
+
+          <div className="space-y-2 border-t border-border pt-3">
+            <div className="label">SilverScript contracts</div>
+            <ContractGUI includeCovenants={false} />
+          </div>
+        </>
+      )}
     </div>
   );
 }

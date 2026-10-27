@@ -19,6 +19,7 @@ interface Check {
 const INITIAL: Check[] = [
   { id: "fresh", title: "Index is current", level: "pending", summary: "", items: [] },
   { id: "verify", title: "Artifacts verify (hashes, schema, lineage)", level: "pending", summary: "", items: [] },
+  { id: "doctor", title: "HardKAS Doctor (System & Workspace Health)", level: "pending", summary: "", items: [] },
   { id: "orphans", title: "Lineage has no broken links", level: "pending", summary: "", items: [] },
   { id: "replay", title: "Replays match their receipts", level: "pending", summary: "", items: [] },
   { id: "traces", title: "Workflow traces finished", level: "pending", summary: "", items: [] }
@@ -66,6 +67,21 @@ export function ProblemsTab() {
         summary: bad.length ? `${bad.length} of ${res.scanned} files fail${codes.size ? ` · ${[...codes].map(([c, n]) => `${c} ×${n}`).join(", ")}` : ""}` : `All ${res.scanned} files verify.`,
         items: bad.map((b) => ({ key: b.file, label: b.file, detail: (b.result.issues?.map((i) => i.message) ?? b.result.errors ?? []).join(" · "), file: `.hardkas/artifacts/${b.file.replace(/\\/g, "/")}` }))
       };
+    });
+
+    await guard("doctor", async () => {
+      const r = (await plugin.query(["doctor", "--json"])) as any;
+      if (!r || !r.checks) return { level: "warn", summary: "Doctor check did not return a structured diagnosis." };
+      const failed = r.checks.filter((c: any) => c.status === "fail");
+      const warnings = r.checks.filter((c: any) => c.status === "warn");
+      const level = failed.length ? "error" : warnings.length ? "warn" : "ok";
+      const summary = `${r.summary?.passed ?? 0} passed, ${failed.length} failed, ${warnings.length} warning(s)`;
+      const items = [...failed, ...warnings].map((c: any) => ({
+        key: c.code ?? c.name,
+        label: `${c.name}: ${c.message}`,
+        detail: c.suggestion ? `Suggestion: ${c.suggestion}` : undefined
+      }));
+      return { level, summary, items };
     });
 
     await guard("orphans", async () => {

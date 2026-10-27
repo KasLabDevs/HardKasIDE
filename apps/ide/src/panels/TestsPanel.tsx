@@ -100,10 +100,10 @@ export function TestsPanel() {
                 useIde.getState().revealPlugin("assistant", "Assistant");
                 useAssistant.getState().setMode("agent");
                 const assistant = engine.get<AssistantPlugin>("assistant");
-                void assistant.runAgent(`Arregla el fallo en el test "${selectedTest.fullName}" en ${selectedTest.location?.file || "el workspace"}:\n${m}`);
+                void assistant.runAgent(`Fix the failing test "${selectedTest.fullName}" in ${selectedTest.location?.file || "the workspace"}:\n${m}`);
               }}
             >
-              <Wand2 size={13} /> Fix with AI (Autocorregir test)
+              <Wand2 size={13} /> Fix with AI
             </button>
           </div>
         ))
