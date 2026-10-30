@@ -1,972 +1,566 @@
-import {
-  Background,
-  Controls,
-  Handle,
-  MiniMap,
-  Position,
-  ReactFlow,
-  type Edge,
-  type Node,
-  type NodeProps,
-  useEdgesState,
-  useNodesState
-} from "@xyflow/react";
+import { Background, Controls, Handle, MiniMap, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import clsx from "clsx";
-import {
-  Check,
-  Coins,
-  Copy,
-  FileCode2,
-  GitBranch,
-  Layers,
-  Play,
-  ShieldCheck,
-  Sparkles,
-  Wallet,
-  X
-} from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Check, Coins, Copy, FileCode2, FileJson, GitBranch, GitFork, Play, Rocket, ShieldCheck, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
-import { useSilver } from "@/store/silver";
+import type { ConsolePlugin } from "@/plugins/console";
+import { formatKas } from "@/store/env";
+import { useSilver, type DeployRecord, type SilContractAbi, type SpendRecord } from "@/store/silver";
 import { useIde } from "@/store/ide";
 import { copyText } from "@/utils/clipboard";
 
-// ---------------------------------------------------------------- Node Types & Models
+/**
+ * Covenant graph: the life of one compiled SilverScript contract, drawn only from HardKas records.
+ *
+ *   deploy records ──► covenant (the P2SH output) ──► one node per entry ──► spend records
+ *
+ * The contract and its entries come from the compile record (ABI), the left column from
+ * silverDeploy records and the right column from silverSpend records. What has not happened is
+ * not drawn: a contract that was never deployed has no deploy or spend nodes, and says so.
+ */
 
-export type FundingNodeData = {
-  title: string;
-  account: string;
-  address: string;
-  amountKas: string;
-  txHash: string;
-  status: "confirmed" | "planned" | "simulated";
-  selected?: boolean;
+// ---------------------------------------------------------------- node data
+
+type DeployNodeData = { deploy: DeployRecord; selected: boolean; [key: string]: unknown };
+type CovenantNodeData = {
+  contract: SilContractAbi;
+  address: string | null;
+  deployCount: number;
+  liveCount: number;
+  selected: boolean;
   [key: string]: unknown;
 };
+type EntryNodeData = { contractName: string; entry: SilContractAbi["entries"][number]; spendCount: number; selected: boolean; [key: string]: unknown };
+type SpendNodeData = { spend: SpendRecord; selected: boolean; [key: string]: unknown };
 
-export type CovenantNodeData = {
-  contractName: string;
-  address: string;
-  outpoint: string;
-  amountKas: string;
-  amountSompi: string;
-  lockingScript?: string;
-  status: "locked" | "spent" | "simulated";
-  entriesCount: number;
-  selected?: boolean;
-  [key: string]: unknown;
-};
+type GraphNode = Node<DeployNodeData, "deploy"> | Node<CovenantNodeData, "covenant"> | Node<EntryNodeData, "entry"> | Node<SpendNodeData, "spend">;
 
-export type EntrypointNodeData = {
-  name: string;
-  contractName: string;
-  params: Array<{ name: string; kind: string }>;
-  opcodes: string[];
-  condition: string;
-  witnessStack: string[];
-  spendTarget?: string;
-  selected?: boolean;
-  [key: string]: unknown;
-};
-
-export type SettlementNodeData = {
-  title: string;
-  recipient: string;
-  address: string;
-  amountKas: string;
-  feeKas: string;
-  status: "claimable" | "spent" | "expired";
-  conditionMet: string;
-  selected?: boolean;
-  [key: string]: unknown;
-};
-
-export type CovenantGraphNode =
-  | Node<FundingNodeData, "funding">
-  | Node<CovenantNodeData, "covenant">
-  | Node<EntrypointNodeData, "entrypoint">
-  | Node<SettlementNodeData, "settlement">;
-
-// ---------------------------------------------------------------- Presets for Kaspa Covenants
-
-interface PresetDefinition {
-  id: string;
-  name: string;
-  description: string;
-  contractName: string;
-  contractFile: string;
-  funding: FundingNodeData;
-  covenant: CovenantNodeData;
-  entrypoints: Array<{
-    data: EntrypointNodeData;
-    settlement: SettlementNodeData;
-  }>;
+/** One contract the graph can show, with the compile record it comes from. */
+interface Subject {
+  key: string;
+  contract: SilContractAbi;
+  recordPath: string;
+  contentHash: string;
+  sourcePath?: string;
+  networkId?: string;
+  /** Known only through a deploy record (no compile in this session). */
+  fromDeploy: boolean;
 }
 
-const PRESETS: PresetDefinition[] = [
-  {
-    id: "escrow",
-    name: "Escrow con Timeout Refund (2-Party)",
-    description: "Covenant clásico de Kaspa donde los fondos se bloquean hasta que el comprador firma la entrega, o se devuelven al comprador tras un timeout relativo.",
-    contractName: "Escrow",
-    contractFile: "contracts/escrow.sil",
-    funding: {
-      title: "Depósito del Comprador",
-      account: "alice",
-      address: "kaspa:qqalice9823h89dha983ydha098ydha7612ga7",
-      amountKas: "100.00",
-      txHash: "7b4c91a02e88f4c891...32d1",
-      status: "confirmed"
-    },
-    covenant: {
-      contractName: "Escrow",
-      address: "kaspa:p2sh_escrow_7781a92bf0c...881a",
-      outpoint: "7b4c91a02e88f4c891...32d1:0",
-      amountKas: "100.00",
-      amountSompi: "10,000,000,000",
-      lockingScript: "OP_IF OP_CHECKSIG OP_ELSE OP_CHECKSEQUENCEVERIFY OP_DROP OP_CHECKSIG OP_ENDIF",
-      status: "locked",
-      entriesCount: 2
-    },
-    entrypoints: [
-      {
-        data: {
-          name: "spend_claim",
-          contractName: "Escrow",
-          params: [
-            { name: "buyerSig", kind: "sig" }
-          ],
-          opcodes: ["OP_CHECKSIG", "OP_VERIFY"],
-          condition: "Firma válida del comprador autorizando la liberación inmediata del pago al vendedor.",
-          witnessStack: ["<buyer_sig>", "<0x01 (branch 0)>"],
-          spendTarget: "bob"
-        },
-        settlement: {
-          title: "Liquidación a Vendedor",
-          recipient: "bob",
-          address: "kaspa:qqbob458293hfiaushdf8374hd784920hf8472",
-          amountKas: "99.98",
-          feeKas: "0.02",
-          status: "claimable",
-          conditionMet: "Firma de Alice verificada"
-        }
-      },
-      {
-        data: {
-          name: "spend_refund",
-          contractName: "Escrow",
-          params: [
-            { name: "buyerSig", kind: "sig" }
-          ],
-          opcodes: ["OP_CHECKSEQUENCEVERIFY", "OP_DROP", "OP_CHECKSIG"],
-          condition: "Timeout de 172,800 segundos (48h transcurridas en el DAG) + firma del comprador.",
-          witnessStack: ["<buyer_sig>", "<0x00 (branch 1)>"],
-          spendTarget: "alice"
-        },
-        settlement: {
-          title: "Reembolso por Timeout",
-          recipient: "alice",
-          address: "kaspa:qqalice9823h89dha983ydha098ydha7612ga7",
-          amountKas: "99.98",
-          feeKas: "0.02",
-          status: "expired",
-          conditionMet: "CSV 48h cumplido"
-        }
-      }
-    ]
-  },
-  {
-    id: "htlc",
-    name: "HTLC (Atomic Swap Cross-Chain)",
-    description: "Hashed Time-Lock Contract para intercambio atómico entre cadenas: liberación mediante secreto hash256 o reembolso por DAA score.",
-    contractName: "HTLC",
-    contractFile: "contracts/htlc.sil",
-    funding: {
-      title: "Fondeo Swap",
-      account: "alice",
-      address: "kaspa:qqalice9823h89dha983ydha098ydha7612ga7",
-      amountKas: "250.00",
-      txHash: "4f8a291bc7190de...889a",
-      status: "confirmed"
-    },
-    covenant: {
-      contractName: "HTLC",
-      address: "kaspa:p2sh_htlc_39f02919...aa11",
-      outpoint: "4f8a291bc7190de...889a:0",
-      amountKas: "250.00",
-      amountSompi: "25,000,000,000",
-      lockingScript: "OP_IF OP_SHA256 <secretHash> OP_EQUALVERIFY OP_CHECKSIG OP_ELSE OP_CHECKLOCKTIMEVERIFY OP_DROP OP_CHECKSIG OP_ENDIF",
-      status: "locked",
-      entriesCount: 2
-    },
-    entrypoints: [
-      {
-        data: {
-          name: "claim",
-          contractName: "HTLC",
-          params: [
-            { name: "preimage", kind: "bytes32" },
-            { name: "bobSig", kind: "sig" }
-          ],
-          opcodes: ["OP_SHA256", "OP_EQUALVERIFY", "OP_CHECKSIG"],
-          condition: "Preimagen revelada: sha256(preimage) == hashLock + firma de Bob.",
-          witnessStack: ["<bob_sig>", "<preimage_32b>", "<0x01>"],
-          spendTarget: "bob"
-        },
-        settlement: {
-          title: "Canje Atómico",
-          recipient: "bob",
-          address: "kaspa:qqbob458293hfiaushdf8374hd784920hf8472",
-          amountKas: "249.98",
-          feeKas: "0.02",
-          status: "claimable",
-          conditionMet: "Preimagen revelada"
-        }
-      },
-      {
-        data: {
-          name: "refund",
-          contractName: "HTLC",
-          params: [
-            { name: "aliceSig", kind: "sig" }
-          ],
-          opcodes: ["OP_CHECKLOCKTIMEVERIFY", "OP_DROP", "OP_CHECKSIG"],
-          condition: "DAA Score absoluto alcanzado (bloques transcurridos) + firma de Alice.",
-          witnessStack: ["<alice_sig>", "<0x00>"],
-          spendTarget: "alice"
-        },
-        settlement: {
-          title: "Reembolso Atomic Swap",
-          recipient: "alice",
-          address: "kaspa:qqalice9823h89dha983ydha098ydha7612ga7",
-          amountKas: "249.98",
-          feeKas: "0.02",
-          status: "expired",
-          conditionMet: "CLTV Expiry alcanzado"
-        }
-      }
-    ]
-  },
-  {
-    id: "multisig",
-    name: "Multi-Sig 2 de 3 Treasury Covenant",
-    description: "Covenant con regla m-of-n donde se exigen al menos 2 firmas de los 3 custodios para liberar fondos hacia tesorería.",
-    contractName: "Treasury2of3",
-    contractFile: "contracts/treasury.sil",
-    funding: {
-      title: "Depósito de Tesorería",
-      account: "dao_treasury",
-      address: "kaspa:qqdao889920192hda8129yda78129ga9982",
-      amountKas: "500.00",
-      txHash: "e331bc0092fa71...aa98",
-      status: "confirmed"
-    },
-    covenant: {
-      contractName: "Treasury2of3",
-      address: "kaspa:p2sh_multisig_881920aa...44bb",
-      outpoint: "e331bc0092fa71...aa98:0",
-      amountKas: "500.00",
-      amountSompi: "50,000,000,000",
-      lockingScript: "OP_2 <pubkey1> <pubkey2> <pubkey3> OP_3 OP_CHECKMULTISIG",
-      status: "locked",
-      entriesCount: 1
-    },
-    entrypoints: [
-      {
-        data: {
-          name: "spend",
-          contractName: "Treasury2of3",
-          params: [
-            { name: "sig1", kind: "sig" },
-            { name: "sig2", kind: "sig" }
-          ],
-          opcodes: ["OP_2", "OP_3", "OP_CHECKMULTISIG"],
-          condition: "Al menos 2 firmas válidas de custodios registrados (Alice, Bob o Charlie).",
-          witnessStack: ["<0>", "<sig_alice>", "<sig_bob>"],
-          spendTarget: "destination"
-        },
-        settlement: {
-          title: "Transferencia Aprobada",
-          recipient: "payout_destination",
-          address: "kaspa:qqdest992817264859201hd8274619ga8716",
-          amountKas: "499.96",
-          feeKas: "0.04",
-          status: "claimable",
-          conditionMet: "2/3 firmas verificadas"
-        }
-      }
-    ]
-  }
-];
+const short = (hash: string, n = 10) => (hash.length > n * 2 + 1 ? `${hash.slice(0, n)}…${hash.slice(-6)}` : hash);
+const accepted = (status: string) => /accepted|confirmed|submitted/i.test(status) && !/reject/i.test(status);
 
-// ---------------------------------------------------------------- Custom Node Views
+// ---------------------------------------------------------------- node views
 
-function FundingNodeView({ data }: NodeProps<Node<FundingNodeData, "funding">>) {
+function Card({ selected, tone, children, left, right }: { selected: boolean; tone: "info" | "accent" | "warn" | "ok"; children: React.ReactNode; left?: boolean; right?: boolean }) {
+  const ring = { info: "border-info ring-2 ring-info/30", accent: "border-accent ring-2 ring-accent/30", warn: "border-warn ring-2 ring-warn/30", ok: "border-ok ring-2 ring-ok/30" }[tone];
+  const hover = { info: "hover:border-info/60", accent: "border-accent/40 hover:border-accent", warn: "hover:border-warn/60", ok: "hover:border-ok/60" }[tone];
+  const dot = { info: "!bg-info", accent: "!bg-accent", warn: "!bg-warn", ok: "!bg-ok" }[tone];
   return (
-    <div
-      className={clsx(
-        "rounded-lg border bg-bg-elev/95 p-3 shadow-md transition-all select-none w-64",
-        data.selected ? "border-info ring-2 ring-info/30" : "border-border hover:border-info/60"
-      )}
-    >
-      <div className="flex items-center justify-between gap-1 pb-2 border-b border-border text-info">
-        <div className="flex items-center gap-1.5 font-semibold text-xs">
-          <Wallet size={13} />
-          <span>{data.title}</span>
-        </div>
-        <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-info/10 border border-info/30 text-info">
-          Input UTXO
-        </span>
-      </div>
-
-      <div className="pt-2 space-y-1.5 text-[11px]">
-        <div className="flex items-center justify-between">
-          <span className="text-fg-muted">Cuenta:</span>
-          <span className="font-medium text-fg font-mono">@{data.account}</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-fg-muted">Monto fondeo:</span>
-          <span className="font-semibold text-info font-mono tabular-nums">{data.amountKas} KAS</span>
-        </div>
-        <div className="flex items-center justify-between text-[10px] text-fg-muted">
-          <span>Outpoint:</span>
-          <span className="font-mono truncate max-w-[120px]">{data.txHash}</span>
-        </div>
-      </div>
-
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!bg-info !w-3 !h-3 !border-2 !border-bg"
-      />
+    <div className={clsx("rounded-lg border bg-bg-elev/95 p-3 shadow-md transition-all select-none w-64", selected ? ring : clsx("border-border", hover))}>
+      {left && <Handle type="target" position={Position.Left} className={clsx(dot, "!w-3 !h-3 !border-2 !border-bg")} />}
+      {children}
+      {right && <Handle type="source" position={Position.Right} className={clsx(dot, "!w-3 !h-3 !border-2 !border-bg")} />}
     </div>
+  );
+}
+
+function Head({ icon, title, badge, tone }: { icon: React.ReactNode; title: string; badge: string; tone: "info" | "accent" | "warn" | "ok" }) {
+  const color = { info: "text-info", accent: "text-accent", warn: "text-warn", ok: "text-ok" }[tone];
+  const chip = { info: "bg-info/10 border-info/30", accent: "bg-accent/15 border-accent/40", warn: "bg-warn/10 border-warn/30", ok: "bg-ok/10 border-ok/30" }[tone];
+  return (
+    <div className={clsx("flex items-center justify-between gap-1 pb-2 border-b border-border", color)}>
+      <div className="flex items-center gap-1.5 font-semibold text-xs min-w-0">
+        {icon}
+        <span className="truncate">{title}</span>
+      </div>
+      <span className={clsx("text-[9px] font-mono uppercase px-1.5 py-0.5 rounded border shrink-0", chip)}>{badge}</span>
+    </div>
+  );
+}
+
+function Row({ label, value, mono = true, className }: { label: string; value: React.ReactNode; mono?: boolean; className?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2 text-[11px]">
+      <span className="text-fg-muted shrink-0">{label}</span>
+      <span className={clsx("truncate text-fg", mono && "font-mono tabular-nums", className)}>{value}</span>
+    </div>
+  );
+}
+
+function DeployNodeView({ data }: NodeProps<Node<DeployNodeData, "deploy">>) {
+  const d = data.deploy;
+  return (
+    <Card selected={data.selected} tone="info" right>
+      <Head icon={<Rocket size={13} />} title="Deploy" badge={d.spent ? "spent" : accepted(d.status) ? "live" : d.status || "?"} tone="info" />
+      <div className="pt-2 space-y-1.5">
+        <Row label="Locked" value={formatKas(d.valueSompi)} className="font-semibold text-info" />
+        <Row label="Tx" value={short(d.txId)} />
+        <Row label="Output" value={`#${d.outpoint?.index ?? 0}`} />
+        {d.createdAt && <Row label="When" value={new Date(d.createdAt).toLocaleString()} mono={false} />}
+      </div>
+    </Card>
   );
 }
 
 function CovenantNodeView({ data }: NodeProps<Node<CovenantNodeData, "covenant">>) {
+  const state = data.deployCount === 0 ? "not deployed" : data.liveCount > 0 ? `${data.liveCount} live` : "all spent";
   return (
-    <div
-      className={clsx(
-        "rounded-lg border bg-bg-elev/95 p-3.5 shadow-lg transition-all select-none w-72",
-        data.selected ? "border-accent ring-2 ring-accent/30" : "border-accent/40 hover:border-accent"
-      )}
-    >
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!bg-info !w-3 !h-3 !border-2 !border-bg"
-      />
-
-      <div className="flex items-center justify-between gap-1 pb-2 border-b border-border">
-        <div className="flex items-center gap-1.5 font-semibold text-xs text-accent">
-          <ShieldCheck size={14} />
-          <span>Covenant: {data.contractName}</span>
-        </div>
-        <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-accent/15 border border-accent/40 text-accent font-semibold">
-          P2SH Lock
-        </span>
-      </div>
-
-      <div className="pt-2 space-y-2 text-[11px]">
-        <div className="p-2 rounded bg-bg border border-border/80 space-y-1">
-          <div className="text-[10px] text-fg-muted flex items-center justify-between">
-            <span>UTXO Bloqueado</span>
-            <span className="text-ok font-mono font-medium">● Activo</span>
-          </div>
-          <div className="text-sm font-semibold text-fg font-mono tabular-nums">{data.amountKas} KAS</div>
-          <div className="text-[10px] text-fg-muted font-mono truncate">{data.amountSompi} sompi</div>
-        </div>
-
-        <div className="space-y-1 text-[10px]">
-          <div className="flex items-center justify-between text-fg-muted">
-            <span>Dirección del Contrato:</span>
-          </div>
-          <div className="font-mono text-[10px] text-accent truncate bg-bg px-1.5 py-0.5 rounded border border-border">
-            {data.address}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between text-[10px] text-fg-muted pt-1">
-          <span>Ramas disponibles:</span>
-          <span className="font-mono font-semibold text-fg">{data.entriesCount} entrypoints</span>
-        </div>
-      </div>
-
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!bg-accent !w-3 !h-3 !border-2 !border-bg"
-      />
-    </div>
-  );
-}
-
-function EntrypointNodeView({ data }: NodeProps<Node<EntrypointNodeData, "entrypoint">>) {
-  return (
-    <div
-      className={clsx(
-        "rounded-lg border bg-bg-elev/95 p-3 shadow-md transition-all select-none w-64",
-        data.selected ? "border-warn ring-2 ring-warn/30" : "border-border hover:border-warn/60"
-      )}
-    >
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!bg-accent !w-3 !h-3 !border-2 !border-bg"
-      />
-
-      <div className="flex items-center justify-between gap-1 pb-2 border-b border-border text-warn">
-        <div className="flex items-center gap-1.5 font-semibold text-xs">
-          <GitBranch size={13} />
-          <span>{data.name}()</span>
-        </div>
-        <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-warn/10 border border-warn/30 text-warn">
-          Entrypoint
-        </span>
-      </div>
-
-      <div className="pt-2 space-y-2 text-[11px]">
-        <div>
-          <div className="text-[10px] text-fg-muted mb-1">Parámetros requeridos:</div>
-          <div className="flex flex-wrap gap-1">
-            {data.params.length === 0 ? (
-              <span className="text-[10px] text-fg-muted italic">sin argumentos</span>
-            ) : (
-              data.params.map((p, i) => (
-                <span
-                  key={i}
-                  className="px-1.5 py-0.5 rounded bg-bg border border-border text-[10px] font-mono text-fg"
-                >
-                  {p.name}: <span className="text-warn">{p.kind}</span>
-                </span>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="p-1.5 rounded bg-bg border border-border/80 space-y-1">
-          <div className="text-[10px] text-fg-muted">Opcodes de validación:</div>
-          <div className="flex flex-wrap gap-1 font-mono text-[9px]">
-            {data.opcodes.map((op, i) => (
-              <span key={i} className="px-1 py-0.2 rounded bg-bg-elev text-accent border border-border">
-                {op}
+    <Card selected={data.selected} tone="accent" left right>
+      <Head icon={<ShieldCheck size={14} />} title={data.contract.name} badge="P2SH covenant" tone="accent" />
+      <div className="pt-2 space-y-1.5">
+        <Row label="State" value={state} mono={false} className={data.deployCount === 0 ? "text-fg-muted" : data.liveCount > 0 ? "text-ok" : "text-fg-muted"} />
+        <Row label="Deploys" value={String(data.deployCount)} />
+        <Row label="Entries" value={String(data.contract.entries.length)} />
+        {data.contract.constructorParams && data.contract.constructorParams.length > 0 && (
+          <div className="flex flex-wrap gap-1 pt-0.5">
+            {data.contract.constructorParams.map((p) => (
+              <span key={p.name} className="px-1.5 py-0.5 rounded bg-bg border border-border text-[10px] font-mono text-fg">
+                {p.name}: <span className="text-accent">{p.kind}</span>
               </span>
             ))}
           </div>
+        )}
+        <div className="font-mono text-[10px] text-accent truncate bg-bg px-1.5 py-0.5 rounded border border-border" title={data.address ?? undefined}>
+          {data.address ?? "address unknown until compiled with constructor args"}
         </div>
       </div>
-
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!bg-warn !w-3 !h-3 !border-2 !border-bg"
-      />
-    </div>
+    </Card>
   );
 }
 
-function SettlementNodeView({ data }: NodeProps<Node<SettlementNodeData, "settlement">>) {
+function EntryNodeView({ data }: NodeProps<Node<EntryNodeData, "entry">>) {
   return (
-    <div
-      className={clsx(
-        "rounded-lg border bg-bg-elev/95 p-3 shadow-md transition-all select-none w-64",
-        data.selected ? "border-ok ring-2 ring-ok/30" : "border-border hover:border-ok/60"
-      )}
-    >
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!bg-warn !w-3 !h-3 !border-2 !border-bg"
-      />
-
-      <div className="flex items-center justify-between gap-1 pb-2 border-b border-border text-ok">
-        <div className="flex items-center gap-1.5 font-semibold text-xs">
-          <Coins size={13} />
-          <span>{data.title}</span>
+    <Card selected={data.selected} tone="warn" left right>
+      <Head icon={<GitBranch size={13} />} title={`${data.entry.name}()`} badge={data.entry.dispatchTag ? `tag ${data.entry.dispatchTag}` : "entry"} tone="warn" />
+      <div className="pt-2 space-y-1.5">
+        <div className="flex flex-wrap gap-1">
+          {data.entry.params.length === 0 ? (
+            <span className="text-[10px] text-fg-muted italic">no arguments</span>
+          ) : (
+            data.entry.params.map((p) => (
+              <span key={p.name} className="px-1.5 py-0.5 rounded bg-bg border border-border text-[10px] font-mono text-fg">
+                {p.name}: <span className="text-warn">{p.kind}</span>
+              </span>
+            ))
+          )}
         </div>
-        <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-ok/10 border border-ok/30 text-ok">
-          Output UTXO
-        </span>
+        <Row label="Spends" value={data.spendCount === 0 ? "none yet" : String(data.spendCount)} mono={data.spendCount > 0} />
       </div>
-
-      <div className="pt-2 space-y-1.5 text-[11px]">
-        <div className="flex items-center justify-between">
-          <span className="text-fg-muted">Destinatario:</span>
-          <span className="font-semibold text-fg font-mono">@{data.recipient}</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-fg-muted">Monto recibido:</span>
-          <span className="font-semibold text-ok font-mono tabular-nums">{data.amountKas} KAS</span>
-        </div>
-        <div className="flex items-center justify-between text-[10px] text-fg-muted">
-          <span>Fee minero:</span>
-          <span className="font-mono tabular-nums">{data.feeKas} KAS</span>
-        </div>
-        <div className="p-1 rounded bg-bg border border-border/80 text-[10px] text-fg-muted">
-          Condición: <span className="text-fg font-medium">{data.conditionMet}</span>
-        </div>
-      </div>
-    </div>
+    </Card>
   );
 }
 
-const NODE_TYPES = {
-  funding: FundingNodeView,
-  covenant: CovenantNodeView,
-  entrypoint: EntrypointNodeView,
-  settlement: SettlementNodeView
-};
+function SpendNodeView({ data }: NodeProps<Node<SpendNodeData, "spend">>) {
+  const s = data.spend;
+  return (
+    <Card selected={data.selected} tone="ok" left>
+      <Head icon={<Coins size={13} />} title={`${s.entry}()`} badge={accepted(s.status) ? "accepted" : s.status || "?"} tone="ok" />
+      <div className="pt-2 space-y-1.5">
+        <Row label="Output" value={formatKas(s.outputSompi)} className="font-semibold text-ok" />
+        {s.feeSompi && <Row label="Fee" value={formatKas(s.feeSompi)} />}
+        <Row label="To" value={short(s.to, 12)} />
+        <Row label="Tx" value={short(s.txId)} />
+      </div>
+    </Card>
+  );
+}
 
-// ---------------------------------------------------------------- Main Covenant Graph View
+const NODE_TYPES = { deploy: DeployNodeView, covenant: CovenantNodeView, entry: EntryNodeView, spend: SpendNodeView };
+
+// ---------------------------------------------------------------- graph
+
+const COL = { deploy: 40, covenant: 380, entry: 720, spend: 1060 };
+const GAP = 170;
+
+function buildGraph(contract: SilContractAbi, deploys: DeployRecord[], spends: SpendRecord[], selectedId: string | null): { nodes: GraphNode[]; edges: Edge[] } {
+  const nodes: GraphNode[] = [];
+  const edges: Edge[] = [];
+  const sel = (id: string) => id === selectedId;
+
+  // Entries, each followed by its spends, set the height of the right side.
+  const perEntry = contract.entries.map((entry) => ({ entry, spends: spends.filter((s) => s.entry === entry.name) }));
+  let y = 40;
+  const entryRows = perEntry.map(({ entry, spends: es }) => {
+    const top = y;
+    y += Math.max(1, es.length) * GAP;
+    return { entry, spends: es, top };
+  });
+  const rightHeight = Math.max(y - 40, GAP);
+  const leftHeight = Math.max(deploys.length, 1) * GAP;
+  const height = Math.max(rightHeight, leftHeight);
+  const centerY = 40 + height / 2 - GAP / 2;
+
+  const address = deploys[0]?.address ?? contract.address ?? null;
+  nodes.push({
+    id: "covenant",
+    type: "covenant",
+    position: { x: COL.covenant, y: centerY },
+    data: { contract, address, deployCount: deploys.length, liveCount: deploys.filter((d) => !d.spent).length, selected: sel("covenant") }
+  });
+
+  deploys.forEach((d, i) => {
+    const id = `deploy:${d.recordPath}`;
+    const top = 40 + (height - deploys.length * GAP) / 2 + i * GAP;
+    nodes.push({ id, type: "deploy", position: { x: COL.deploy, y: top }, data: { deploy: d, selected: sel(id) } });
+    edges.push({ id: `e:${id}`, source: id, target: "covenant", animated: !d.spent, label: formatKas(d.valueSompi), style: { stroke: "var(--info)", strokeWidth: 2 } });
+  });
+
+  entryRows.forEach(({ entry, spends: es, top }) => {
+    const id = `entry:${entry.name}`;
+    nodes.push({ id, type: "entry", position: { x: COL.entry, y: top }, data: { contractName: contract.name, entry, spendCount: es.length, selected: sel(id) } });
+    edges.push({ id: `e:${id}`, source: "covenant", target: id, animated: false, style: { stroke: "var(--accent)", strokeWidth: 2 } });
+    es.forEach((s, j) => {
+      const sid = `spend:${s.recordPath}`;
+      nodes.push({ id: sid, type: "spend", position: { x: COL.spend, y: top + j * GAP }, data: { spend: s, selected: sel(sid) } });
+      edges.push({ id: `e:${sid}`, source: id, target: sid, animated: false, label: accepted(s.status) ? "accepted" : s.status, style: { stroke: "var(--ok)", strokeWidth: 2 } });
+    });
+  });
+
+  return { nodes, edges };
+}
+
+// ---------------------------------------------------------------- view
 
 export function CovenantView() {
   const engine = useEngine();
   const compiled = useSilver((s) => s.compiled);
   const deployments = useSilver((s) => s.deployments);
-  const activeFile = useIde((s) => s.activeFile);
+  const spends = useSilver((s) => s.spends);
 
-  const [presetId, setPresetId] = useState<string>("escrow");
-  const [selectedNode, setSelectedNode] = useState<CovenantGraphNode | null>(null);
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [contractName, setContractName] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (copyTimer.current && clearTimeout(copyTimer.current)), []);
 
-  const allPresets = useMemo<PresetDefinition[]>(() => {
-    const list: PresetDefinition[] = [...PRESETS];
-    if (compiled && compiled.contracts.length > 0) {
-      const activeContract = compiled.contracts[0];
-      const activeDeploy = deployments.find((d) => d.contract === activeContract.name);
-      list.unshift({
-        id: "workspace_active",
-        name: `Workspace: ${activeContract.name} (Compilado)`,
-        description: `Contrato activo del workspace (${compiled.sourcePath || "actual"}) compilado con SilverScript.`,
-        contractName: activeContract.name,
-        contractFile: compiled.sourcePath || activeFile || "contracts/contract.sil",
-        funding: {
-          title: "Fondeo del Contrato",
-          account: "alice",
-          address: "kaspa:qqalice9823h89dha983ydha098ydha7612ga7",
-          amountKas: activeDeploy?.valueSompi ? (Number(activeDeploy.valueSompi) / 1e8).toFixed(2) : "100.00",
-          txHash: activeDeploy?.txId ? `${activeDeploy.txId.slice(0, 16)}...` : "plan_workspace_init",
-          status: "confirmed"
-        },
-        covenant: {
-          contractName: activeContract.name,
-          address: activeContract.address || activeDeploy?.address || "kaspa:p2sh_active_contract...",
-          outpoint: activeDeploy?.outpoint ? `${activeDeploy.outpoint.transactionId}:${activeDeploy.outpoint.index}` : "tx_compiled:0",
-          amountKas: activeDeploy?.valueSompi ? (Number(activeDeploy.valueSompi) / 1e8).toFixed(2) : "100.00",
-          amountSompi: activeDeploy?.valueSompi || "10,000,000,000",
-          lockingScript: activeContract.lockingScript || "OP_IF OP_CHECKSIG OP_ELSE OP_CHECKSEQUENCEVERIFY OP_ENDIF",
-          status: activeDeploy?.spent ? "spent" : "locked",
-          entriesCount: activeContract.entries.length
-        },
-        entrypoints: activeContract.entries.map((entry, idx) => ({
-          data: {
-            name: entry.name,
-            contractName: activeContract.name,
-            params: entry.params.map((p) => ({ name: p.name, kind: p.kind })),
-            opcodes: entry.name.toLowerCase().includes("refund") ? ["OP_CHECKSEQUENCEVERIFY", "OP_CHECKSIG"] : ["OP_CHECKSIG", "OP_VERIFY"],
-            condition: `Ejecución de ${entry.name}() con ${entry.params.length} argumento(s) requeridos.`,
-            witnessStack: entry.params.map((p) => `<${p.name}>`).concat([`<0x0${idx}>`]),
-            spendTarget: "beneficiary"
-          },
-          settlement: {
-            title: `Liquidación ${entry.name}`,
-            recipient: "beneficiary",
-            address: "kaspa:qqbeneficiary_payout_address...",
-            amountKas: "99.98",
-            feeKas: "0.02",
-            status: "claimable",
-            conditionMet: `Entrada ${entry.name} verificada`
-          }
-        }))
-      });
+  // What can be drawn: the contracts of the last compile in this session, plus every contract that has a
+  // deploy record in the workspace (its ABI comes from the compile record the deploy points at).
+  const subjects = useMemo<Subject[]>(() => {
+    const list: Subject[] = (compiled?.contracts ?? []).map((c) => ({
+      key: `c:${c.name}`,
+      contract: c,
+      recordPath: compiled!.recordPath,
+      contentHash: compiled!.contentHash,
+      sourcePath: compiled!.sourcePath,
+      networkId: compiled!.networkId,
+      fromDeploy: false
+    }));
+    for (const d of deployments) {
+      if (!d.abi || !d.compileRecordPath) continue;
+      if (list.some((s) => s.contract.name === d.contract && s.recordPath === d.compileRecordPath)) continue;
+      list.push({ key: `d:${d.contract}:${d.compileRecordPath}`, contract: d.abi, recordPath: d.compileRecordPath, contentHash: "", networkId: d.networkId, fromDeploy: true });
     }
     return list;
-  }, [compiled, deployments, activeFile]);
+  }, [compiled, deployments]);
+  const subject = subjects.find((s) => s.key === contractName) ?? subjects[0] ?? null;
+  const contract = subject?.contract ?? null;
 
-  // Generate graph elements based on selected preset or active compiled contract
-  const { initialNodes, initialEdges, activePreset } = useMemo(() => {
-    const preset = allPresets.find((p) => p.id === presetId) || allPresets[0];
+  // Deploys made from this compile record; for a contract compiled in this session and never deployed from
+  // that record, earlier deploys of a contract with the same name.
+  const deploys = useMemo(() => {
+    if (!subject) return [];
+    const own = deployments.filter((d) => d.contract === subject.contract.name && d.compileRecordPath === subject.recordPath);
+    return own.length > 0 || subject.fromDeploy ? own : deployments.filter((d) => d.contract === subject.contract.name);
+  }, [subject, deployments]);
+  const contractSpends = useMemo(() => {
+    if (!contract) return [];
+    const hashes = new Set(deploys.map((d) => d.contentHash));
+    return spends.filter((s) => s.contract === contract.name && (!s.deployContentHash || hashes.has(s.deployContentHash)));
+  }, [contract, deploys, spends]);
 
-    const nodes: CovenantGraphNode[] = [];
-    const edges: Edge[] = [];
+  const { nodes, edges } = useMemo(() => (contract ? buildGraph(contract, deploys, contractSpends, selectedId) : { nodes: [], edges: [] }), [contract, deploys, contractSpends, selectedId]);
+  const deploySubjects = subjects.filter((s) => s.fromDeploy).length;
+  const selected = nodes.find((n) => n.id === selectedId) ?? null;
 
-    const startX = 50;
-    const covenantX = 380;
-    const entryX = 740;
-    const settlementX = 1080;
-
-    const totalEntries = preset.entrypoints.length;
-    const verticalGap = 190;
-    const startY = 100;
-    const centerY = startY + ((totalEntries - 1) * verticalGap) / 2;
-
-    // 1. Funding Node
-    nodes.push({
-      id: "node_funding",
-      type: "funding",
-      position: { x: startX, y: centerY },
-      data: preset.funding
-    });
-
-    // 2. Covenant Contract Node
-    nodes.push({
-      id: "node_covenant",
-      type: "covenant",
-      position: { x: covenantX, y: centerY },
-      data: preset.covenant
-    });
-
-    // Edge from Funding -> Covenant
-    edges.push({
-      id: "edge_fund_covenant",
-      source: "node_funding",
-      target: "node_covenant",
-      animated: true,
-      style: { stroke: "var(--info)", strokeWidth: 2 },
-      label: "Fondeo P2SH"
-    });
-
-    // 3. Entrypoints & Settlement Outputs
-    preset.entrypoints.forEach((ep, i) => {
-      const epY = startY + i * verticalGap;
-      const epId = `node_ep_${i}`;
-      const settleId = `node_settle_${i}`;
-
-      nodes.push({
-        id: epId,
-        type: "entrypoint",
-        position: { x: entryX, y: epY },
-        data: ep.data
-      });
-
-      edges.push({
-        id: `edge_covenant_${epId}`,
-        source: "node_covenant",
-        target: epId,
-        animated: true,
-        style: { stroke: "var(--accent)", strokeWidth: 2 },
-        label: `Gasto: ${ep.data.name}`
-      });
-
-      nodes.push({
-        id: settleId,
-        type: "settlement",
-        position: { x: settlementX, y: epY },
-        data: ep.settlement
-      });
-
-      edges.push({
-        id: `edge_${epId}_${settleId}`,
-        source: epId,
-        target: settleId,
-        animated: false,
-        style: { stroke: "var(--ok)", strokeWidth: 2 },
-        label: "Pago confirmado"
-      });
-    });
-
-    return { initialNodes: nodes, initialEdges: edges, activePreset: preset };
-  }, [allPresets, presetId]);
-
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-
-  // Sync nodes when preset changes
-  useEffect(() => {
-    setNodes(initialNodes);
-    setEdges(initialEdges);
-    setSelectedNode(null);
-  }, [initialNodes, initialEdges, setNodes, setEdges]);
-
-  const handleNodeClick = (_: React.MouseEvent, node: Node) => {
-    setSelectedNode(node as CovenantGraphNode);
-  };
-
-  const handleCopy = async (key: string, text: string) => {
+  const copy = async (key: string, text: string) => {
     await copyText(text);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 1500);
+    setCopied(key);
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopied(null), 1500);
+  };
+  const open = (path: string) => {
+    engine.call("fileManager", "open", path).catch((e: unknown) => engine.get<ConsolePlugin>("console").error(`Could not open ${path}: ${e instanceof Error ? e.message : String(e)}`));
   };
 
-  const openInEditor = (file: string) => {
-    void engine.call("fileManager", "open", file);
-  };
+  if (!contract || !subject) {
+    return (
+      <div className="h-full flex items-center justify-center bg-bg text-fg p-6">
+        <div className="max-w-md text-center space-y-3">
+          <GitFork size={28} className="mx-auto text-fg-muted" />
+          <div className="text-sm font-semibold">Nothing to draw yet</div>
+          <p className="text-[11px] text-fg-muted leading-relaxed">
+            The covenant graph draws a SilverScript contract from its compile record, plus the deploy and spend records HardKas wrote for it. This workspace has no deploy records, and nothing has been compiled in this session: compile a <code>.sil</code> file (Ctrl+Enter in the editor) to see it here.
+          </p>
+          <button type="button" className="btn-primary mx-auto" onClick={() => useIde.getState().setActiveSidePlugin("silverCompiler")}>
+            <FileCode2 size={13} /> Open the compiler
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col min-w-0 bg-bg text-fg select-none">
-      {/* Top Toolbar */}
-      <div className="shrink-0 flex items-center justify-between px-3 h-10 border-b border-border bg-bg-panel text-xs">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 font-semibold text-fg">
-            <Layers size={14} className="text-accent" />
-            <span>Covenant Graph</span>
+      <div className="shrink-0 flex items-center justify-between gap-2 px-3 h-10 border-b border-border bg-bg-panel text-xs">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-1.5 font-semibold text-fg shrink-0">
+            <GitFork size={14} className="text-accent" />
+            <span>Covenant graph</span>
           </div>
-
           <div className="h-4 w-px bg-border mx-1" />
-
-          {/* Preset Selector */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-fg-muted">Flujo:</span>
-            <select
-              className="input !py-0.5 !h-7 text-xs bg-bg font-medium cursor-pointer"
-              value={presetId}
-              onChange={(e) => setPresetId(e.target.value)}
-            >
-              {allPresets.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
+          {subjects.length > 1 ? (
+            <select aria-label="Contract" className="input !py-0.5 !h-7 text-xs bg-bg font-medium cursor-pointer" value={subject.key} onChange={(e) => (setContractName(e.target.value), setSelectedId(null))}>
+              {subjects.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.contract.name} {s.fromDeploy ? "(deployed)" : "(compiled now)"}
                 </option>
               ))}
             </select>
-          </div>
+          ) : (
+            <span className="font-medium text-fg">{contract.name}</span>
+          )}
+          <span className="text-fg-muted truncate font-mono text-[10px]" title={subject.recordPath}>
+            {subject.sourcePath ?? subject.recordPath}
+          </span>
         </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => openInEditor(activePreset.contractFile)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-border bg-bg-elev hover:bg-bg-hover hover:border-accent/40 text-[11px] text-fg cursor-pointer transition-colors"
-            title="Abrir contrato SilverScript en el editor"
-          >
-            <FileCode2 size={12} className="text-accent" />
-            <span>Ver {activePreset.contractFile}</span>
+        <div className="flex items-center gap-2 shrink-0">
+          {subject.sourcePath && (
+            <button type="button" onClick={() => open(subject.sourcePath!)} className="btn-ghost !py-1 !h-7 text-[11px]" title="Open the contract source in the editor">
+              <FileCode2 size={12} className="text-accent" /> Source
+            </button>
+          )}
+          <button type="button" onClick={() => open(subject.recordPath)} className="btn-ghost !py-1 !h-7 text-[11px]" title="Open the compile record (JSON)">
+            <FileJson size={12} /> Compile record
           </button>
-
-          <button
-            type="button"
-            onClick={() => useIde.getState().setActiveSidePlugin("deployRun")}
-            className="btn-primary !py-1 !h-7 text-[11px] cursor-pointer"
-            title="Desplegar o interactuar en simnet"
-          >
-            <Play size={11} />
-            <span>Deploy & Run</span>
+          <button type="button" onClick={() => useIde.getState().setActiveSidePlugin("deployRun")} className="btn-primary !py-1 !h-7 text-[11px]" title="Deploy or call the contract from Deploy & Run">
+            <Play size={11} /> Deploy &amp; Run
           </button>
         </div>
       </div>
 
-      {/* Main Graph Canvas + Inspector Sidebar */}
-      <div className="flex-1 min-h-0 relative flex">
-        {/* ReactFlow Interactive Canvas */}
+      <div className="flex-1 min-h-0 flex">
         <div className="flex-1 h-full min-w-0 relative">
-          <ReactFlow
+          <ReactFlow<GraphNode, Edge>
             nodes={nodes}
             edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onNodeClick={handleNodeClick}
             nodeTypes={NODE_TYPES}
             fitView
-            fitViewOptions={{ padding: 0.2 }}
+            fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
             minZoom={0.3}
             maxZoom={1.8}
-            className="bg-bg"
+            proOptions={{ hideAttribution: true }}
+            onNodeClick={(_e, n) => setSelectedId(n.id)}
+            onPaneClick={() => setSelectedId(null)}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            colorMode="dark"
           >
             <Background color="var(--border)" gap={20} size={1} />
-            <Controls className="!bg-bg-elev !border-border !rounded-md" />
-            <MiniMap
-              className="!bg-bg-elev !border-border !rounded-md"
-              nodeColor={(n) => {
-                if (n.type === "funding") return "var(--info)";
-                if (n.type === "covenant") return "var(--accent)";
-                if (n.type === "entrypoint") return "var(--warn)";
-                return "var(--ok)";
-              }}
-            />
+            <Controls showInteractive={false} />
+            <MiniMap pannable zoomable nodeColor={(n) => ({ deploy: "var(--info)", covenant: "var(--accent)", entry: "var(--warn)", spend: "var(--ok)" })[n.type ?? "covenant"] ?? "#888"} />
           </ReactFlow>
 
-          {/* Quick Legend Overlay */}
-          <div className="absolute bottom-3 left-3 z-10 flex items-center gap-3 px-3 py-1.5 rounded-lg border border-border bg-bg-elev/90 backdrop-blur-sm text-[11px] shadow-sm select-none">
-            <span className="flex items-center gap-1 text-info font-medium">
-              <span className="w-2 h-2 rounded-full bg-info" /> Fondeo (In)
-            </span>
-            <span className="flex items-center gap-1 text-accent font-medium">
-              <span className="w-2 h-2 rounded-full bg-accent" /> Covenant P2SH
-            </span>
-            <span className="flex items-center gap-1 text-warn font-medium">
-              <span className="w-2 h-2 rounded-full bg-warn" /> Entrypoints
-            </span>
-            <span className="flex items-center gap-1 text-ok font-medium">
-              <span className="w-2 h-2 rounded-full bg-ok" /> Settlement (Out)
-            </span>
+          <div className="absolute bottom-3 left-3 z-10 flex items-center gap-3 px-3 py-1.5 rounded-lg border border-border bg-bg-elev/90 backdrop-blur-sm text-[11px] shadow-sm">
+            <span className="flex items-center gap-1 text-info font-medium"><span className="w-2 h-2 rounded-full bg-info" /> Deploys ({deploys.length})</span>
+            <span className="flex items-center gap-1 text-accent font-medium"><span className="w-2 h-2 rounded-full bg-accent" /> Covenant</span>
+            <span className="flex items-center gap-1 text-warn font-medium"><span className="w-2 h-2 rounded-full bg-warn" /> Entries ({contract.entries.length})</span>
+            <span className="flex items-center gap-1 text-ok font-medium"><span className="w-2 h-2 rounded-full bg-ok" /> Spends ({contractSpends.length})</span>
           </div>
         </div>
 
-        {/* Inspector Sidebar Drawer */}
-        {selectedNode ? (
-          <div className="w-80 shrink-0 border-l border-border bg-bg-panel flex flex-col h-full animate-in slide-in-from-right duration-150">
-            <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-border">
-              <div className="flex items-center gap-2 font-semibold text-xs">
-                {selectedNode.type === "funding" && <Wallet size={14} className="text-info" />}
-                {selectedNode.type === "covenant" && <ShieldCheck size={14} className="text-accent" />}
-                {selectedNode.type === "entrypoint" && <GitBranch size={14} className="text-warn" />}
-                {selectedNode.type === "settlement" && <Coins size={14} className="text-ok" />}
-                <span>
-                  {selectedNode.type === "funding" && "Input UTXO"}
-                  {selectedNode.type === "covenant" && "Covenant UTXO"}
-                  {selectedNode.type === "entrypoint" && "Condición de Gasto"}
-                  {selectedNode.type === "settlement" && "Output Settlement"}
-                </span>
+        <aside className="w-80 shrink-0 border-l border-border bg-bg-panel flex flex-col h-full hidden md:flex">
+          {selected ? (
+            <>
+              <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-border">
+                <div className="flex items-center gap-2 font-semibold text-xs">
+                  {selected.type === "deploy" && <Rocket size={14} className="text-info" />}
+                  {selected.type === "covenant" && <ShieldCheck size={14} className="text-accent" />}
+                  {selected.type === "entry" && <GitBranch size={14} className="text-warn" />}
+                  {selected.type === "spend" && <Coins size={14} className="text-ok" />}
+                  <span>{{ deploy: "Deploy record", covenant: "Covenant", entry: "Entry", spend: "Spend record" }[selected.type!]}</span>
+                </div>
+                <button type="button" onClick={() => setSelectedId(null)} className="p-1 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer" aria-label="Close inspector">
+                  <X size={13} />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedNode(null)}
-                className="p-1 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer"
-                title="Cerrar inspector"
-              >
-                <X size={13} />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-auto p-3.5 space-y-4 text-xs">
-              {/* Covenant Node Inspector */}
-              {selectedNode.type === "covenant" && (
-                <>
-                  <div className="space-y-1">
-                    <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Contrato</div>
-                    <div className="font-semibold text-sm text-accent">{selectedNode.data.contractName}</div>
-                  </div>
-
-                  <div className="p-2.5 rounded-lg border border-border bg-bg space-y-2">
-                    <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Monto Bloqueado</div>
-                    <div className="text-base font-mono font-semibold text-fg tabular-nums">{selectedNode.data.amountKas} KAS</div>
-                    <div className="text-[10px] font-mono text-fg-muted">{selectedNode.data.amountSompi} sompi</div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-[10px] text-fg-muted font-semibold uppercase tracking-wider">
-                      <span>Dirección P2SH</span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy("covenantAddr", selectedNode.data.address)}
-                        className="text-accent hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        {copiedKey === "covenantAddr" ? <Check size={11} className="text-ok" /> : <Copy size={11} />}
-                        <span>{copiedKey === "covenantAddr" ? "Copiado" : "Copiar"}</span>
-                      </button>
-                    </div>
-                    <div className="font-mono text-[10px] p-2 rounded bg-bg border border-border break-all">
-                      {selectedNode.data.address}
-                    </div>
-                  </div>
-
-                  {selectedNode.data.lockingScript && (
-                    <div className="space-y-1">
-                      <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Locking Script (Opcodes)</div>
-                      <pre className="font-mono text-[10px] p-2 rounded bg-bg border border-border text-accent whitespace-pre-wrap leading-relaxed">
-                        {selectedNode.data.lockingScript}
-                      </pre>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* Entrypoint Node Inspector */}
-              {selectedNode.type === "entrypoint" && (
-                <>
-                  <div className="space-y-1">
-                    <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Función de Gasto</div>
-                    <div className="font-semibold text-sm text-warn font-mono">{selectedNode.data.name}()</div>
-                  </div>
-
-                  <div className="p-2.5 rounded-lg border border-border bg-bg space-y-2">
-                    <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Lógica de Desbloqueo</div>
-                    <p className="text-[11px] text-fg leading-relaxed">{selectedNode.data.condition}</p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Witness Stack Requerido</div>
-                    <div className="p-2 rounded bg-bg border border-border space-y-1 font-mono text-[11px]">
-                      <div className="text-[9px] text-fg-muted pb-1 border-b border-border">Pila de ejecución (Stack Top al inicio):</div>
-                      {selectedNode.data.witnessStack.map((item, idx) => (
-                        <div key={idx} className="flex items-center gap-2 text-fg">
-                          <span className="text-[9px] text-accent font-semibold w-4">#{idx}</span>
-                          <span className="text-ok">{item}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Secuencia de Opcodes</div>
-                    <div className="flex flex-wrap gap-1 font-mono text-[10px]">
-                      {selectedNode.data.opcodes.map((op, i) => (
-                        <span key={i} className="px-2 py-1 rounded bg-bg border border-border text-accent font-medium">
-                          {op}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* Funding Node Inspector */}
-              {selectedNode.type === "funding" && (
-                <>
-                  <div className="space-y-1">
-                    <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Fondeador</div>
-                    <div className="font-semibold text-sm text-info font-mono">@{selectedNode.data.account}</div>
-                  </div>
-
-                  <div className="p-2.5 rounded-lg border border-border bg-bg space-y-1.5">
-                    <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Depósito de Entrada</div>
-                    <div className="text-base font-mono font-semibold text-fg tabular-nums">{selectedNode.data.amountKas} KAS</div>
-                    <div className="text-[10px] text-ok">Estado: {selectedNode.data.status}</div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Outpoint TxHash</div>
-                    <div className="font-mono text-[10px] p-2 rounded bg-bg border border-border break-all">
-                      {selectedNode.data.txHash}
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* Settlement Node Inspector */}
-              {selectedNode.type === "settlement" && (
-                <>
-                  <div className="space-y-1">
-                    <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Destino de Salida</div>
-                    <div className="font-semibold text-sm text-ok font-mono">@{selectedNode.data.recipient}</div>
-                  </div>
-
-                  <div className="p-2.5 rounded-lg border border-border bg-bg space-y-1.5">
-                    <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Net Payout</div>
-                    <div className="text-base font-mono font-semibold text-ok tabular-nums">{selectedNode.data.amountKas} KAS</div>
-                    <div className="text-[10px] text-fg-muted">Fee deducido: {selectedNode.data.feeKas} KAS</div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Dirección de Destino</div>
-                    <div className="font-mono text-[10px] p-2 rounded bg-bg border border-border break-all">
-                      {selectedNode.data.address}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="w-72 shrink-0 border-l border-border bg-bg-panel/40 p-4 text-xs flex flex-col justify-between hidden md:flex">
-            <div className="space-y-3">
-              <div className="font-semibold text-fg text-xs flex items-center gap-1.5">
-                <Sparkles size={13} className="text-accent" />
-                <span>Inspector de UTXOs</span>
+              <div className="flex-1 overflow-auto p-3.5 space-y-3 text-xs">
+                {selected.type === "covenant" && <CovenantInspector data={selected.data} compiled={subject} copied={copied} onCopy={copy} onOpen={open} />}
+                {selected.type === "deploy" && <DeployInspector d={selected.data.deploy} copied={copied} onCopy={copy} onOpen={open} />}
+                {selected.type === "entry" && <EntryInspector data={selected.data} spends={contractSpends.filter((s) => s.entry === selected.data.entry.name)} onOpen={open} />}
+                {selected.type === "spend" && <SpendInspector s={selected.data.spend} copied={copied} onCopy={copy} onOpen={open} />}
               </div>
-              <p className="text-fg-muted text-[11px] leading-relaxed">
-                Haz clic en cualquier nodo o rama del diagrama para inspeccionar los opcodes de Kaspa Script, el stack de testigos (witness) y las condiciones de validación del covenant.
-              </p>
+            </>
+          ) : (
+            <div className="p-4 text-xs space-y-3">
+              <div className="font-semibold text-fg">Inspector</div>
+              <p className="text-fg-muted text-[11px] leading-relaxed">Click a node to see the record behind it: the compile record for the covenant and its entries, the silverDeploy and silverSpend records for the rest. Every value shown comes from those files.</p>
+              {deploys.length === 0 && (
+                <p className="text-fg-muted text-[11px] leading-relaxed">
+                  <span className="text-fg font-medium">{contract.name}</span> has not been deployed from this compile record, so there are no deploy or spend nodes yet. Deploy it from Deploy &amp; Run and they appear here.
+                </p>
+              )}
+              {subject.fromDeploy && deploySubjects > 0 && (
+                <p className="text-fg-muted text-[11px] leading-relaxed">Shown from its deploy record and the compile record that deploy points at. Compile the source again to refresh the ABI.</p>
+              )}
             </div>
-
-            <div className="p-3 rounded-lg border border-border bg-bg space-y-2">
-              <div className="text-[10px] uppercase font-semibold text-fg-muted tracking-wider">Flujo Activo</div>
-              <div className="font-medium text-fg text-xs">{activePreset.name}</div>
-              <div className="text-[10px] text-fg-muted leading-relaxed">{activePreset.description}</div>
-            </div>
-          </div>
-        )}
+          )}
+        </aside>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- inspector panels
+
+function Field({ label, value, copyKey, copied, onCopy, mono = true }: { label: string; value: string; copyKey?: string; copied?: string | null; onCopy?: (key: string, text: string) => void; mono?: boolean }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-[10px] text-fg-muted font-semibold uppercase tracking-wider">
+        <span>{label}</span>
+        {copyKey && onCopy && (
+          <button type="button" onClick={() => onCopy(copyKey, value)} className="text-accent hover:underline flex items-center gap-1 cursor-pointer normal-case tracking-normal font-normal">
+            {copied === copyKey ? <Check size={11} className="text-ok" /> : <Copy size={11} />}
+            <span>{copied === copyKey ? "Copied" : "Copy"}</span>
+          </button>
+        )}
+      </div>
+      <div className={clsx("text-[10px] p-2 rounded bg-bg border border-border break-all", mono && "font-mono")}>{value}</div>
+    </div>
+  );
+}
+
+function RecordButton({ path, onOpen, label = "Open record (JSON)" }: { path: string; onOpen: (p: string) => void; label?: string }) {
+  return (
+    <button type="button" onClick={() => onOpen(path)} className="btn-ghost w-full justify-center text-[11px]" title={path}>
+      <FileJson size={12} /> {label}
+    </button>
+  );
+}
+
+type CopyProps = { copied: string | null; onCopy: (key: string, text: string) => void; onOpen: (path: string) => void };
+
+function CovenantInspector({ data, compiled, copied, onCopy, onOpen }: { data: CovenantNodeData; compiled: { recordPath: string; contentHash: string; networkId?: string } } & CopyProps) {
+  const c = data.contract;
+  return (
+    <>
+      <div>
+        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Contract</div>
+        <div className="font-semibold text-sm text-accent">{c.name}</div>
+        <div className="text-[10px] text-fg-muted">
+          {data.deployCount === 0 ? "compiled, not deployed" : `${data.deployCount} deploy${data.deployCount === 1 ? "" : "s"}, ${data.liveCount} live`}
+          {compiled.networkId ? ` · ${compiled.networkId}` : ""}
+        </div>
+      </div>
+      {data.address && <Field label="P2SH address" value={data.address} copyKey="addr" copied={copied} onCopy={onCopy} />}
+      {c.lockingScript && <Field label="Locking script (hex)" value={c.lockingScript} copyKey="script" copied={copied} onCopy={onCopy} />}
+      {c.constructorParams && c.constructorParams.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Constructor</div>
+          <div className="flex flex-wrap gap-1">
+            {c.constructorParams.map((p) => (
+              <span key={p.name} className="px-1.5 py-0.5 rounded bg-bg border border-border text-[10px] font-mono">
+                {p.name}: <span className="text-accent">{p.kind}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="space-y-1">
+        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Entries</div>
+        {c.entries.map((e) => (
+          <div key={e.name} className="flex items-center justify-between gap-2 text-[11px] font-mono">
+            <span className="text-warn">{e.name}({e.params.map((p) => p.name).join(", ")})</span>
+            {e.dispatchTag && <span className="text-fg-muted text-[10px]">{e.dispatchTag}</span>}
+          </div>
+        ))}
+      </div>
+      {compiled.contentHash && <Field label="Content hash" value={compiled.contentHash} copyKey="hash" copied={copied} onCopy={onCopy} />}
+      <RecordButton path={compiled.recordPath} onOpen={onOpen} label="Open compile record" />
+    </>
+  );
+}
+
+function DeployInspector({ d, copied, onCopy, onOpen }: { d: DeployRecord } & CopyProps) {
+  return (
+    <>
+      <div className="p-2.5 rounded-lg border border-border bg-bg space-y-1">
+        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Locked in the covenant</div>
+        <div className="text-base font-mono font-semibold text-fg tabular-nums">{formatKas(d.valueSompi)}</div>
+        <div className="text-[10px] text-fg-muted">
+          {d.spent ? "spent" : accepted(d.status) ? "live" : d.status}
+          {d.feeSompi ? ` · fee ${formatKas(d.feeSompi)}` : ""}
+          {d.networkId ? ` · ${d.networkId}` : ""}
+          {d.createdAt ? ` · ${new Date(d.createdAt).toLocaleString()}` : ""}
+        </div>
+      </div>
+      <Field label="Transaction" value={d.txId} copyKey="tx" copied={copied} onCopy={onCopy} />
+      <Field label="Outpoint" value={`${d.outpoint?.transactionId ?? d.txId}:${d.outpoint?.index ?? 0}`} copyKey="outpoint" copied={copied} onCopy={onCopy} />
+      <Field label="Address" value={d.address} copyKey="daddr" copied={copied} onCopy={onCopy} />
+      <RecordButton path={d.recordPath} onOpen={onOpen} />
+      {d.compileRecordPath && <RecordButton path={d.compileRecordPath} onOpen={onOpen} label="Open its compile record" />}
+    </>
+  );
+}
+
+function EntryInspector({ data, spends, onOpen }: { data: EntryNodeData; spends: SpendRecord[]; onOpen: (p: string) => void }) {
+  const e = data.entry;
+  return (
+    <>
+      <div>
+        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Entry of {data.contractName}</div>
+        <div className="font-semibold text-sm text-warn font-mono">{e.name}()</div>
+        {e.dispatchTag && <div className="text-[10px] text-fg-muted font-mono">dispatch tag {e.dispatchTag}</div>}
+      </div>
+      <div className="space-y-1">
+        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Arguments</div>
+        {e.params.length === 0 ? (
+          <div className="text-[11px] text-fg-muted italic">none</div>
+        ) : (
+          e.params.map((p) => (
+            <div key={p.name} className="flex items-center justify-between text-[11px] font-mono">
+              <span>{p.name}</span>
+              <span className="text-warn">{p.kind}</span>
+            </div>
+          ))
+        )}
+      </div>
+      <p className="text-[10px] text-fg-muted leading-relaxed">The compile record carries the entry's name, dispatch tag and argument types; the opcodes it validates are only in the locking script of the covenant node.</p>
+      <div className="space-y-1">
+        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Spends through this entry</div>
+        {spends.length === 0 ? (
+          <div className="text-[11px] text-fg-muted italic">none recorded</div>
+        ) : (
+          spends.map((s) => (
+            <button key={s.recordPath} type="button" onClick={() => onOpen(s.recordPath)} className="w-full text-left text-[11px] font-mono flex items-center justify-between gap-2 hover:text-accent cursor-pointer" title={s.recordPath}>
+              <span className="truncate">{short(s.txId)}</span>
+              <span className="text-ok shrink-0">{formatKas(s.outputSompi)}</span>
+            </button>
+          ))
+        )}
+      </div>
+    </>
+  );
+}
+
+function SpendInspector({ s, copied, onCopy, onOpen }: { s: SpendRecord } & CopyProps) {
+  return (
+    <>
+      <div className="p-2.5 rounded-lg border border-border bg-bg space-y-1">
+        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">
+          {s.contract}.{s.entry}()
+        </div>
+        <div className="text-base font-mono font-semibold text-ok tabular-nums">{formatKas(s.outputSompi)}</div>
+        <div className="text-[10px] text-fg-muted">
+          {s.status}
+          {s.feeSompi ? ` · fee ${formatKas(s.feeSompi)}` : ""}
+          {s.createdAt ? ` · ${new Date(s.createdAt).toLocaleString()}` : ""}
+        </div>
+      </div>
+      <Field label="Transaction" value={s.txId} copyKey="stx" copied={copied} onCopy={onCopy} />
+      <Field label="Paid to" value={s.to} copyKey="to" copied={copied} onCopy={onCopy} />
+      <RecordButton path={s.recordPath} onOpen={onOpen} />
+    </>
   );
 }

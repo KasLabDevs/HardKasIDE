@@ -4,8 +4,8 @@ import { useIde } from "@/store/ide";
 import { CovenantView } from "@/views/CovenantView";
 
 /**
- * Visual UTXO & Covenant Flow: interactive lifecycle graph of SilverScript contracts,
- * spending entrypoints, opcode sequences, and settlement output transactions.
+ * Covenant graph: the compiled SilverScript contract, its deploy records, its entries and its spend
+ * records as one left-to-right flow. Everything drawn comes from HardKas records.
  */
 export class CovenantPlugin extends Plugin {
   view = CovenantView;
@@ -14,7 +14,7 @@ export class CovenantPlugin extends Plugin {
     super({
       name: "covenant",
       displayName: "Covenant Graph",
-      description: "Visual UTXO and covenant execution flow inspector",
+      description: "Deploys, entries and spends of the compiled contract, from its HardKas records",
       location: "mainPanel",
       icon: GitFork,
       order: 48,
