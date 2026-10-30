@@ -11,12 +11,19 @@ import type { ConsolePlugin } from "./console";
  * contracts): deploy a compiled contract's P2SH output, list deployed instances,
  * call an entry (spend) with typed arguments and account signatures.
  *
- *   hardkas silver deploy <compileRecord> --from <acct> --amount <kas> [--contract] --wait --json
- *   hardkas silver spend  <deployRecord>  --entry <name> --to <addr> --args <file> --wait --json
+ *   hardkas silver deploy <compileRecord> --from <acct> --amount <kas> [--contract] --wait --timeout 600 --json
+ *   hardkas silver spend  <deployRecord>  --entry <name> --to <addr> --args <file> --wait --timeout 600 --json
  *
  * Entry args file: JSON list of {kind, value} and {"kind":"signature","account":"<name>"}.
+ *
+ * The CLI's default confirmation wait is 120 s and it writes no record when it expires, even though the
+ * transaction was sent and confirms later. On simnet with the CPU miner running flat out the node falls
+ * behind ("route is full"), so a spend can take longer than that: the IDE waits up to ten minutes.
  * Constructor `pubkey` args come from an account's address (x-only key), see utils/kaspaAddress.
  */
+/** Seconds `--wait` may take before the CLI gives up (and leaves no record). */
+const CONFIRM_TIMEOUT_S = "600";
+
 export class SilverPlugin extends Plugin {
   private offs: Array<() => void> = [];
 
@@ -163,7 +170,7 @@ export class SilverPlugin extends Plugin {
     store.setBusy("deploy");
     store.setError(null);
     try {
-      const args = ["silver", "deploy", input.compileRecordPath, "--from", input.from, "--amount", input.amountKas, "--wait", "--json"];
+      const args = ["silver", "deploy", input.compileRecordPath, "--from", input.from, "--amount", input.amountKas, "--wait", "--timeout", CONFIRM_TIMEOUT_S, "--json"];
       if (input.contract) args.push("--contract", input.contract);
       const run = await this.console().runHardkas(args);
       const raw = run.result as Record<string, unknown> | null;
@@ -190,7 +197,7 @@ export class SilverPlugin extends Plugin {
     try {
       const argsFile = `.hardkas/ide/spend-args/${input.deploy.contentHash.slice(0, 16)}-${input.entry}.json`;
       await api.fs.write(argsFile, JSON.stringify(input.args, null, 2));
-      const args = ["silver", "spend", input.deploy.recordPath, "--entry", input.entry, "--to", input.to, "--args", argsFile, "--wait", "--json"];
+      const args = ["silver", "spend", input.deploy.recordPath, "--entry", input.entry, "--to", input.to, "--args", argsFile, "--wait", "--timeout", CONFIRM_TIMEOUT_S, "--json"];
       if (input.sequence) args.push("--sequence", input.sequence);
       const run = await this.console().runHardkas(args);
       const raw = run.result as Record<string, unknown> | null;
