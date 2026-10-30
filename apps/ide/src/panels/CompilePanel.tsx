@@ -180,7 +180,7 @@ export function CompilePanel() {
                 onClick={() => void engine.call("covenant", "open")}
                 className="btn-ghost w-full justify-center text-accent text-xs mt-1 cursor-pointer border border-accent/30 bg-accent/5 hover:bg-accent/10"
               >
-                <GitFork size={13} /> Ver en Covenant Graph
+                <GitFork size={13} /> Show in Covenant graph
               </button>
             </>
           ) : (
@@ -192,11 +192,11 @@ export function CompilePanel() {
                   useIde.getState().revealPlugin("assistant", "Assistant");
                   useAssistant.getState().setMode("agent");
                   const assistant = engine.get<AssistantPlugin>("assistant");
-                  void assistant.runAgent(`Arregla el siguiente error de compilación en ${result.file}:\n${result.errorText}`);
+                  void assistant.runAgent(`Fix this compile error in ${result.file}:\n${result.errorText}`);
                 }}
                 className="btn-primary w-full justify-center bg-accent/90 hover:bg-accent text-xs cursor-pointer shadow-sm"
               >
-                <Wand2 size={13} /> Fix with AI (Autocorregir)
+                <Wand2 size={13} /> Fix with AI
               </button>
             </div>
           )}

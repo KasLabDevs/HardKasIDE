@@ -126,10 +126,10 @@ function Block({ block }: { block: JournalBlock }) {
             useIde.getState().revealPlugin("assistant", "Assistant");
             useAssistant.getState().setMode("agent");
             const assistant = engine.get<AssistantPlugin>("assistant");
-            void assistant.runAgent(`Arregla el siguiente error:\n${block.text}`);
+            void assistant.runAgent(`Fix this error:\n${block.text}`);
           }}
-          className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded border border-error/40 bg-error/10 text-error hover:bg-error/20 text-[10px] cursor-pointer"
-          title="Analizar y arreglar con el Agente Autónomo"
+          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded border border-error/40 bg-error/10 text-error hover:bg-error/20 text-[10px] cursor-pointer"
+          title="Ask the agent to analyze and fix this error"
         >
           <Wand2 size={11} /> Fix with AI
         </button>

@@ -13,7 +13,7 @@ import * as ide from "./ide.js";
  */
 
 const server = new McpServer(
-  { name: "hardkas-ide", version: "0.1.0" },
+  { name: "hardkas-ide", version: "0.2.0" },
   {
     instructions: [
       "Tools for working on a HardKas (Kaspa) project through the HardKas IDE server.",

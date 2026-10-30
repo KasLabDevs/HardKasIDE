@@ -21,3 +21,7 @@ examples/demo-workspace/events.jsonl
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/stage/
 apps/desktop/src-tauri/gen/
+
+# HardKas runtime state created when the CLI runs from the repo root (node database, dev keystores)
+/.hardkas/
+

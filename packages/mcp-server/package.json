@@ -1,7 +1,7 @@
 {
   "name": "@hardkas-ide/mcp",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "MCP server for HardKas IDE: lets an AI agent compile SilverScript, run the local node, move test coins and deploy contracts through the IDE server.",
   "bin": {

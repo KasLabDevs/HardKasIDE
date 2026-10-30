@@ -48,7 +48,7 @@ export function StatusBar() {
           onClick={() => void quickFund()}
           disabled={funding || !node?.rpcReady}
           className="flex items-center gap-1 text-accent hover:text-fg shrink-0 cursor-pointer rounded px-1.5 py-0.5 hover:bg-bg-hover transition-colors border border-accent/20 bg-accent/5 disabled:opacity-50 disabled:cursor-not-allowed"
-          title={node?.rpcReady ? "Fondeo rápido de 100 KAS en simnet" : "Inicia el nodo local para fondear"}
+          title={node?.rpcReady ? `Fund ${accounts[0]?.name ?? "alice"} with 100 KAS on simnet (hardkas localnet fund)` : "Start the local node to fund accounts"}
         >
           <Droplets size={11} className={funding ? "animate-bounce text-accent" : ""} />
           <span>{funding ? "Funding…" : "Airdrop +100 KAS"}</span>
@@ -68,7 +68,7 @@ export function StatusBar() {
       <button type="button" onClick={() => setOutlineOpen(!outlineOpen)} className="flex items-center gap-1 hover:text-fg shrink-0 cursor-pointer rounded px-1 hover:bg-bg-hover transition-colors" title="Toggle outline">
         <ListTree size={12} /> {outlineOpen ? "hide" : "show"} outline
       </button>
-      <span className="shrink-0 hidden sm:inline tabular-nums">HardKas IDE 0.1 · CLI 0.12.0-rc.29</span>
+      <span className="shrink-0 hidden sm:inline tabular-nums">HardKas IDE {__APP_VERSION__} · CLI 0.12.0-rc.29</span>
     </footer>
   );
 }

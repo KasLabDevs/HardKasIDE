@@ -33,6 +33,8 @@ export interface AgentRun {
   summary: string | null;
   running: boolean;
   ok?: boolean;
+  /** A terminal command waiting for the user's approval; the run is paused until it is answered. */
+  pendingConfirm: { id: string; command: string } | null;
 }
 
 const KEY = "hardkas-ide.assistant.chat";
@@ -89,6 +91,7 @@ interface AssistantState {
   startAgentRun(goal: string): void;
   addAgentThought(thought: string): void;
   upsertAgentStep(step: AgentStep): void;
+  setAgentConfirm(confirm: AgentRun["pendingConfirm"]): void;
   finishAgentRun(summary: string, ok: boolean): void;
   resetAgentRun(): void;
 }
@@ -139,8 +142,9 @@ export const useAssistant = create<AssistantState>((set) => ({
   startAgentRun: (goal) =>
     set({
       busy: true,
-      agentRun: { goal, steps: [], thoughts: [], summary: null, running: true }
+      agentRun: { goal, steps: [], thoughts: [], summary: null, running: true, pendingConfirm: null }
     }),
+  setAgentConfirm: (pendingConfirm) => set((s) => (s.agentRun ? { agentRun: { ...s.agentRun, pendingConfirm } } : {})),
   addAgentThought: (thought) =>
     set((s) => {
       if (!s.agentRun) return {};
@@ -162,7 +166,7 @@ export const useAssistant = create<AssistantState>((set) => ({
       if (!s.agentRun) return { busy: false };
       return {
         busy: false,
-        agentRun: { ...s.agentRun, summary, ok, running: false }
+        agentRun: { ...s.agentRun, summary, ok, running: false, pendingConfirm: null }
       };
     }),
   resetAgentRun: () => set({ agentRun: null, busy: false })

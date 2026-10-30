@@ -43,9 +43,18 @@ export class FileManagerPlugin extends Plugin {
 
   async open(path: string): Promise<void> {
     const state = useIde.getState();
-    const content = await api.fs.read(path);
-    state.upsertOpenFile({ path, content, savedContent: content, language: languageForPath(path) });
-    state.setActiveFile(path);
+    const already = state.openFiles.find((f) => f.path === path);
+    if (already && already.content !== already.savedContent) {
+      // Unsaved edits win: never replace a dirty buffer with what is on disk.
+      state.setActiveFile(path);
+    } else {
+      // Not open, or open and clean: (re)load from disk so edits made outside the editor (agent, terminal) show up.
+      const content = await api.fs.read(path);
+      if (!already || content !== already.savedContent) {
+        state.upsertOpenFile({ path, content, savedContent: content, language: languageForPath(path) });
+      }
+      state.setActiveFile(path);
+    }
     this.emit("currentFileChanged", path);
   }
 

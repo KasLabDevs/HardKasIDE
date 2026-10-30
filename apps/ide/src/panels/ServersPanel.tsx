@@ -189,9 +189,9 @@ export function ServersPanel() {
               <UserRound size={16} />
             </div>
             <div>
-              <div className="font-medium text-fg text-xs">Nodo local detenido</div>
+              <div className="font-medium text-fg text-xs">Local node stopped</div>
               <p className="text-fg-muted text-[11px] mt-1 leading-relaxed">
-                Las cuentas y balances de simnet están ocultas mientras el nodo <code>rusty-kaspad</code> esté apagado.
+                Simnet accounts and balances are hidden while the <code>rusty-kaspad</code> node is stopped.
               </p>
             </div>
             <button
@@ -200,7 +200,7 @@ export function ServersPanel() {
               disabled={Boolean(nodeBusy)}
               className="btn-primary w-full flex items-center justify-center gap-1.5 text-xs py-1.5 shadow-sm"
             >
-              <Play size={13} /> Iniciar nodo local
+              <Play size={13} /> Start local node
             </button>
           </div>
         ) : (
@@ -316,19 +316,11 @@ function AccountCard({ account, env, say }: { account: AccountInfo; env: Environ
         </button>
       </div>
       {funding && target === "localnet" && (
-        <div className="rounded bg-accent/10 border border-accent/30 p-2 space-y-1">
-          <div className="flex items-center justify-between text-[11px] text-accent">
-            <span className="flex items-center gap-1.5 font-medium">
-              <Pickaxe size={12} className="animate-spin" /> Minando en Docker...
-            </span>
-            <span className="font-mono text-[10px]">Maduración Coinbase</span>
+        <div role="status" className="rounded bg-accent/10 border border-accent/30 p-2 space-y-1">
+          <div className="flex items-center gap-1.5 text-[11px] text-accent font-medium">
+            <Pickaxe size={12} className="animate-spin" /> Funding on the local node…
           </div>
-          <div className="w-full bg-bg rounded-full h-1.5 overflow-hidden">
-            <div className="bg-accent h-1.5 rounded-full animate-pulse w-3/4"></div>
-          </div>
-          <div className="text-[10px] text-fg-muted">
-            rusty-kaspad + cpuminer generando bloques para maduración de monedas (~60s)...
-          </div>
+          <div className="text-[10px] text-fg-muted">hardkas localnet fund: the miner mines the coins and waits for the coinbase to mature. Usually under a minute.</div>
         </div>
       )}
       <div className="flex items-center justify-between text-[10px] text-fg-muted tabular-nums">

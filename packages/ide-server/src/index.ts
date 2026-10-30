@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { AssistantError, kaspaDocs, loadConfig, providerDefaults, publicConfig, saveConfig, streamChat, streamAgent, type ChatRequest, type AgentRequest } from "./assistant.js";
+import { AssistantError, answerConfirm, kaspaDocs, loadConfig, providerDefaults, publicConfig, saveConfig, streamChat, streamAgent, type ChatRequest, type AgentRequest } from "./assistant.js";
 import { debugSession } from "./debug.js";
 import { listDevAccountNames, revealDevAccountKey } from "./devkeys.js";
 import * as wsfs from "./fs.js";
@@ -69,7 +69,8 @@ function localOnly(c: { req: { header(name: string): string | undefined } }): bo
     }
   }
 
-  return true;
+  // No Origin, Referer or Host at all: not a browser. Nothing local needs this, so refuse.
+  return false;
 }
 
 app.use(
@@ -496,16 +497,28 @@ app.post("/api/assistant/agent", async (c) => {
     const ac = new AbortController();
     stream.onAbort(() => ac.abort());
     try {
+      // streamAgent ends with its own "done" event (summary + ok); a second, empty one would wipe them in the UI.
       for await (const ev of streamAgent(body, ac.signal)) {
         await stream.writeSSE({ event: ev.type, data: JSON.stringify(ev) });
       }
-      await stream.writeSSE({ event: "done", data: "{}" });
     } catch (error) {
       if (ac.signal.aborted) return;
       const code = error instanceof AssistantError ? error.code : "INTERNAL";
       await stream.writeSSE({ event: "error", data: JSON.stringify({ code, message: error instanceof Error ? error.message : String(error) }) });
     }
   });
+});
+
+// The IDE's answer to a "confirm" event of a running agent: approve (once or for the whole run) or decline.
+app.post("/api/assistant/agent/confirm", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json()) as { id?: string; approved?: boolean; allForRun?: boolean };
+  if (typeof body.id !== "string" || typeof body.approved !== "boolean") {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: "id and approved are required" }, 400);
+  }
+  const found = answerConfirm(body.id, { approved: body.approved, allForRun: body.allForRun === true });
+  if (!found) return c.json({ ok: false, code: "NOT_FOUND", message: "no command is waiting for that confirmation" }, 404);
+  return c.json({ ok: true });
 });
 
 // ---------------------------------------------------------------- test debugger (vitest + Node inspector)

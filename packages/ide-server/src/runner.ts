@@ -247,6 +247,7 @@ export function waitForJob(job: Job, timeoutMs = 120_000): Promise<Job> {
     const timer = setTimeout(() => {
       if (!done) {
         done = true;
+        unsub();
         resolve(getJob(job.id) ?? job);
       }
     }, timeoutMs);

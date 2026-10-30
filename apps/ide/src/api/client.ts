@@ -209,7 +209,10 @@ export const api = {
         }
       }
     },
-    /** Streams an autonomous agent run; resolves when it ends. Events: step, thought, done, error. */
+    /** Answers a "confirm" event of the running agent: run the proposed terminal command (once, or for the rest of the run) or decline it. */
+    agentConfirm: (id: string, approved: boolean, allForRun = false) =>
+      request<{ ok: true }>("/api/assistant/agent/confirm", { method: "POST", body: JSON.stringify({ id, approved, allForRun }) }),
+    /** Streams an autonomous agent run; resolves when it ends. Events: step, thought, confirm, done, error. */
     agent: async (
       body: { goal: string; context?: unknown },
       signal: AbortSignal,
