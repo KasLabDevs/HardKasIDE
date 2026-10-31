@@ -11,7 +11,53 @@ import { getRoot, exists } from "./workspace.js";
  * text to stderr, so stdout is parsed as JSON at the end when possible.
  */
 
+/** The CLI version the IDE was built and tested against; the npx fallback pins it. */
 export const HARDKAS_CLI_VERSION = "0.12.0-rc.29";
+
+export interface CliInfo {
+  /** What `hardkas --version` printed, or null when it could not run. */
+  version: string | null;
+  /** The version this IDE was tested with. */
+  pinned: string;
+  /** Where the binary came from. */
+  source: "project" | "env" | "repo" | "npx";
+  command: string;
+  error: string | null;
+}
+
+const cliInfoCache = new Map<string, Promise<CliInfo>>();
+
+/**
+ * Which hardkas the IDE actually runs for `cwd` (the open workspace, or the server's folder before one is
+ * open) and its version. Cached per folder: resolving means spawning the CLI once.
+ */
+export function cliInfo(cwd: string, force = false): Promise<CliInfo> {
+  const cached = cliInfoCache.get(cwd);
+  if (cached && !force) return cached;
+  const p = (async (): Promise<CliInfo> => {
+    const resolved = await resolveHardkas(cwd);
+    const source: CliInfo["source"] = resolved.prefix.length > 0 ? "npx" : process.env.HARDKAS_BIN === resolved.command ? "env" : resolved.command.startsWith(cwd) ? "project" : "repo";
+    return new Promise((resolve) => {
+      let out = "";
+      let err = "";
+      const child = spawn(resolved.command, [...resolved.prefix, "--version"], { cwd, shell: resolved.shell, env: { ...process.env, NO_COLOR: "1" }, windowsHide: true });
+      const timer = setTimeout(() => child.kill(), 60_000); // npx may download the package the first time
+      child.stdout.on("data", (c: Buffer) => (out += c.toString("utf8")));
+      child.stderr.on("data", (c: Buffer) => (err += c.toString("utf8")));
+      child.on("error", (e) => {
+        clearTimeout(timer);
+        resolve({ version: null, pinned: HARDKAS_CLI_VERSION, source, command: resolved.command, error: e.message });
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        const version = /\d+\.\d+\.\d+[-\w.]*/.exec(out)?.[0] ?? null;
+        resolve({ version, pinned: HARDKAS_CLI_VERSION, source, command: resolved.command, error: version ? null : err.trim().split("\n")[0] || `exit code ${code}` });
+      });
+    });
+  })();
+  cliInfoCache.set(cwd, p);
+  return p;
+}
 
 export type JobStatus = "running" | "succeeded" | "failed";
 

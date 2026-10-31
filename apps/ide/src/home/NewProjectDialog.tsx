@@ -133,7 +133,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
                 Create
               </button>
               <p className="text-fg-muted text-[11px]">
-                The parent folder must exist. The project folder itself must not. Uses the HardKas CLI pinned to 0.12.0-rc.29 (via npx if not installed).
+                The parent folder must exist. The project folder itself must not. Uses the hardkas CLI the server resolves: the project's own, <code>HARDKAS_BIN</code>, or npx pinned to the version the IDE was tested with.
               </p>
             </div>
           </div>

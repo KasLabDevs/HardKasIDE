@@ -10,6 +10,7 @@ import { useSilver, type DeployRecord, type SilContractAbi, type SilEntry, type 
 import { useIde } from "@/store/ide";
 import { hexToBytes, pubkeyFromAddress } from "@/utils/kaspaAddress";
 import { generateTypeChain } from "@/utils/typechain";
+import { MinerNotice } from "./MinerNotice";
 
 /**
  * Contract GUI for SilverScript:
@@ -25,6 +26,9 @@ export function ContractGUI() {
   const busy = useSilver((s) => s.busy);
   const error = useSilver((s) => s.error);
   const accounts = useEnv((s) => s.accounts);
+  const node = useEnv((s) => s.node);
+  const cli = useEnv((s) => s.cli);
+  const recordProblems = useSilver((s) => s.recordProblems);
   const target = useIde((s) => s.target);
   const setTarget = useIde((s) => s.setTarget);
   const [from, setFrom] = useState("alice");
@@ -96,6 +100,14 @@ export function ContractGUI() {
           >
             Switch to Local Node
           </button>
+        </div>
+      )}
+
+      {/* Deploys and spends only confirm while blocks are mined; say so before the user sends one. */}
+      {target === "localnet" && (!node?.miner?.running || busy !== null) && <MinerNotice compact />}
+      {recordProblems.length > 0 && (
+        <div role="status" className="rounded border border-warn/40 bg-warn/10 p-2 text-[11px] text-warn break-words">
+          {recordProblems.length} record{recordProblems.length === 1 ? "" : "s"} under .hardkas/artifacts/silver could not be read as expected (see the Console). A newer HardKas CLI may have changed their format; the IDE was tested with {cli?.pinned ?? "0.12.0-rc.29"}.
         </div>
       )}
 

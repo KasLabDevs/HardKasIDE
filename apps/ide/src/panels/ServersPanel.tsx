@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
 import { copyText } from "@/utils/clipboard";
 import type { EnvironmentPlugin } from "@/plugins/environment";
-import { formatKas, useEnv, type AccountInfo } from "@/store/env";
+import { cliMismatch, formatKas, useEnv, type AccountInfo } from "@/store/env";
 import { ENVIRONMENTS, envOf, useIde } from "@/store/ide";
 import { OpSteps } from "@/shell/NodeOpProgress";
 import { ClusterCard } from "./ClusterCard";
 import { ExplorerCard } from "./ExplorerCard";
+import { MinerNotice } from "./MinerNotice";
 import { WalletCard } from "./WalletCard";
 
 /** Eclipse "Servers"-style view: the node (start/stop/restart) and the accounts with balances. */
@@ -60,6 +61,7 @@ export function ServersPanel() {
   const current = envOf(target);
   const dockerMissing = docker !== null && (!docker.installed || !docker.running);
   const nodeOp = useEnv((s) => s.nodeOp);
+  const cli = useEnv((s) => s.cli);
 
   return (
     <div className="text-xs">
@@ -131,11 +133,18 @@ export function ServersPanel() {
             {node?.ports && <Row k="ports" v={`grpc ${node.ports.rpc ?? "?"} · borsh ${node.ports.borshRpc ?? "?"} · json ${node.ports.jsonRpc ?? "?"}`} />}
             {node?.virtualDaaScore && <Row k="DAA" v={node.virtualDaaScore} />}
             {typeof node?.isSynced === "boolean" && <Row k="synced" v={node.isSynced ? "yes" : "no (local simnet never syncs)"} />}
-            {node?.miner && <Row k="miner" v={node.miner.running ? "running (cpuminer)" : node.miner.status || "stopped"} />}
             {node?.lastError && <div className="text-warn break-words">{node.lastError}</div>}
             {node?.status && <Row k="status" v={node.status} />}
           </div>
           {nodeOp && <div className="rounded border border-border bg-bg p-2"><OpSteps op={nodeOp} compact /></div>}
+          <MinerNotice />
+          {cli && (
+            <div className={clsx("text-[10px] break-words", cliMismatch(cli) ? "text-warn" : "text-fg-muted")} title={cli.command}>
+              CLI {cli.version ?? "not found"} · {cli.source === "project" ? "project node_modules" : cli.source === "npx" ? "npx" : cli.source === "env" ? "HARDKAS_BIN" : "repo"}
+              {cliMismatch(cli) ? ` · the IDE was tested with ${cli.pinned}` : ""}
+              {!cli.version && cli.error ? ` · ${cli.error}` : ""}
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-1">
             <button type="button" className="btn-ghost justify-center" disabled={nodeBusy !== null || node?.running === true || dockerMissing} onClick={() => void env.startNode()} title={dockerMissing ? "Docker is required" : "hardkas localnet start --toccata"}>
               <Play size={12} /> {nodeBusy === "start" ? "…" : "Start"}

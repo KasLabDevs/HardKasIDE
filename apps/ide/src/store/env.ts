@@ -64,10 +64,29 @@ export interface DockerStatus {
   error: string | null;
 }
 
+/** The hardkas CLI the server resolved, as /api/cli reports it. */
+export interface CliStatus {
+  version: string | null;
+  pinned: string;
+  source: "project" | "env" | "repo" | "npx";
+  command: string;
+  error: string | null;
+}
+
+/** True when the CLI runs but is not the version the IDE was tested with. */
+export function cliMismatch(cli: CliStatus | null): boolean {
+  return cli !== null && cli.version !== null && cli.version !== cli.pinned;
+}
+
 interface EnvState {
   node: NodeStatus | null;
   docker: DockerStatus | null;
   setDocker(d: DockerStatus | null): void;
+  cli: CliStatus | null;
+  setCli(c: CliStatus | null): void;
+  /** A miner start/stop/burst in flight. */
+  minerBusy: "start" | "stop" | "burst" | null;
+  setMinerBusy(b: EnvState["minerBusy"]): void;
   nodeBusy: string | null;
   nodeOp: NodeOp | null;
   setNodeOp(op: NodeOp | null): void;
@@ -90,6 +109,10 @@ export const useEnv = create<EnvState>((set) => ({
   node: null,
   docker: null,
   setDocker: (docker) => set({ docker }),
+  cli: null,
+  setCli: (cli) => set({ cli }),
+  minerBusy: null,
+  setMinerBusy: (minerBusy) => set({ minerBusy }),
   nodeBusy: null,
   accounts: [],
   accountsBusy: false,

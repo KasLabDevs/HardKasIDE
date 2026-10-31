@@ -11,9 +11,10 @@
   "sellerAddress": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn",
   "highestBidderAddress": "kaspasim:qryj23rch0n5rc7klfug58zcrnuc966qljwgzpu3mflqgxu6w2pjg6n575980",
   "minBidSompi": 1000000000,
-  "currentHighestBidKas": 10,
   "rpcUrl": "ws://127.0.0.1:18210",
   "deployedAt": "2026-10-26T19:50:51.168Z",
+  "deployRecordPath": ".hardkas/artifacts/silver/silverDeploy-c8e57a54873928b4.json",
+  "compileRecordPath": ".hardkas/artifacts/silver/silverCompile-17057d802ec0ee75.json",
   "entries": {
     "close": {
       "dispatchTag": "53422444",

@@ -1,64 +1,59 @@
 import { Background, Controls, Handle, MiniMap, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import clsx from "clsx";
-import { Check, Coins, Copy, FileCode2, FileJson, GitBranch, GitFork, Play, Rocket, ShieldCheck, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Check, Coins, Copy, FileCode2, FileJson, GitBranch, GitFork, Play, RadioTower, Rocket, ShieldCheck, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { ConsolePlugin } from "@/plugins/console";
-import { formatKas } from "@/store/env";
-import { useSilver, type DeployRecord, type SilContractAbi, type SpendRecord } from "@/store/silver";
+import { formatKas, useEnv } from "@/store/env";
+import { useSilver, type DeployRecord, type SpendRecord } from "@/store/silver";
 import { useIde } from "@/store/ide";
 import { copyText } from "@/utils/clipboard";
+import {
+  accepted,
+  buildGraph,
+  deploysFor,
+  parseUtxos,
+  reconcile,
+  selectSubjects,
+  spendsFor,
+  sumSompi,
+  type ChainCheck,
+  type CovenantNodeData,
+  type DeployNodeData,
+  type EntryNodeData,
+  type GraphNode,
+  type Reconciled,
+  type SpendNodeData,
+  type Subject,
+  type UnrecordedNodeData
+} from "./covenantGraph";
 
 /**
- * Covenant graph: the life of one compiled SilverScript contract, drawn only from HardKas records.
+ * Covenant graph: the life of one compiled SilverScript contract, drawn from HardKas records and, when the
+ * Local node is up, checked against it.
  *
  *   deploy records ──► covenant (the P2SH output) ──► one node per entry ──► spend records
  *
- * The contract and its entries come from the compile record (ABI), the left column from
- * silverDeploy records and the right column from silverSpend records. What has not happened is
- * not drawn: a contract that was never deployed has no deploy or spend nodes, and says so.
+ * The contract and its entries come from the compile record (ABI), the left column from silverDeploy
+ * records and the right column from silverSpend records. What has not happened is not drawn. The node
+ * check (`hardkas rpc utxos <address>`) then says which deploy outputs still exist, which are gone even
+ * without a spend record, and which outputs at the address have no record at all (a deploy whose
+ * confirmation the CLI stopped waiting for). The data side lives in covenantGraph.ts.
  */
 
-// ---------------------------------------------------------------- node data
-
-type DeployNodeData = { deploy: DeployRecord; selected: boolean; [key: string]: unknown };
-type CovenantNodeData = {
-  contract: SilContractAbi;
-  address: string | null;
-  deployCount: number;
-  liveCount: number;
-  selected: boolean;
-  [key: string]: unknown;
-};
-type EntryNodeData = { contractName: string; entry: SilContractAbi["entries"][number]; spendCount: number; selected: boolean; [key: string]: unknown };
-type SpendNodeData = { spend: SpendRecord; selected: boolean; [key: string]: unknown };
-
-type GraphNode = Node<DeployNodeData, "deploy"> | Node<CovenantNodeData, "covenant"> | Node<EntryNodeData, "entry"> | Node<SpendNodeData, "spend">;
-
-/** One contract the graph can show, with the compile record it comes from. */
-interface Subject {
-  key: string;
-  contract: SilContractAbi;
-  recordPath: string;
-  contentHash: string;
-  sourcePath?: string;
-  networkId?: string;
-  /** Known only through a deploy record (no compile in this session). */
-  fromDeploy: boolean;
-}
-
 const short = (hash: string, n = 10) => (hash.length > n * 2 + 1 ? `${hash.slice(0, n)}…${hash.slice(-6)}` : hash);
-const accepted = (status: string) => /accepted|confirmed|submitted/i.test(status) && !/reject/i.test(status);
 
 // ---------------------------------------------------------------- node views
 
-function Card({ selected, tone, children, left, right }: { selected: boolean; tone: "info" | "accent" | "warn" | "ok"; children: React.ReactNode; left?: boolean; right?: boolean }) {
+type Tone = "info" | "accent" | "warn" | "ok";
+
+function Card({ selected, tone, children, left, right, dashed }: { selected: boolean; tone: Tone; children: React.ReactNode; left?: boolean; right?: boolean; dashed?: boolean }) {
   const ring = { info: "border-info ring-2 ring-info/30", accent: "border-accent ring-2 ring-accent/30", warn: "border-warn ring-2 ring-warn/30", ok: "border-ok ring-2 ring-ok/30" }[tone];
   const hover = { info: "hover:border-info/60", accent: "border-accent/40 hover:border-accent", warn: "hover:border-warn/60", ok: "hover:border-ok/60" }[tone];
   const dot = { info: "!bg-info", accent: "!bg-accent", warn: "!bg-warn", ok: "!bg-ok" }[tone];
   return (
-    <div className={clsx("rounded-lg border bg-bg-elev/95 p-3 shadow-md transition-all select-none w-64", selected ? ring : clsx("border-border", hover))}>
+    <div className={clsx("rounded-lg border bg-bg-elev/95 p-3 shadow-md transition-all select-none w-64", dashed && "border-dashed", selected ? ring : clsx("border-border", hover))}>
       {left && <Handle type="target" position={Position.Left} className={clsx(dot, "!w-3 !h-3 !border-2 !border-bg")} />}
       {children}
       {right && <Handle type="source" position={Position.Right} className={clsx(dot, "!w-3 !h-3 !border-2 !border-bg")} />}
@@ -66,7 +61,7 @@ function Card({ selected, tone, children, left, right }: { selected: boolean; to
   );
 }
 
-function Head({ icon, title, badge, tone }: { icon: React.ReactNode; title: string; badge: string; tone: "info" | "accent" | "warn" | "ok" }) {
+function Head({ icon, title, badge, tone }: { icon: React.ReactNode; title: string; badge: string; tone: Tone }) {
   const color = { info: "text-info", accent: "text-accent", warn: "text-warn", ok: "text-ok" }[tone];
   const chip = { info: "bg-info/10 border-info/30", accent: "bg-accent/15 border-accent/40", warn: "bg-warn/10 border-warn/30", ok: "bg-ok/10 border-ok/30" }[tone];
   return (
@@ -91,11 +86,12 @@ function Row({ label, value, mono = true, className }: { label: string; value: R
 
 function DeployNodeView({ data }: NodeProps<Node<DeployNodeData, "deploy">>) {
   const d = data.deploy;
+  const gone = data.state === "spent" || data.state === "spent on chain";
   return (
     <Card selected={data.selected} tone="info" right>
-      <Head icon={<Rocket size={13} />} title="Deploy" badge={d.spent ? "spent" : accepted(d.status) ? "live" : d.status || "?"} tone="info" />
+      <Head icon={<Rocket size={13} />} title="Deploy" badge={data.state} tone="info" />
       <div className="pt-2 space-y-1.5">
-        <Row label="Locked" value={formatKas(d.valueSompi)} className="font-semibold text-info" />
+        <Row label="Locked" value={formatKas(d.valueSompi)} className={gone ? "text-fg-muted line-through" : "font-semibold text-info"} />
         <Row label="Tx" value={short(d.txId)} />
         <Row label="Output" value={`#${d.outpoint?.index ?? 0}`} />
         {d.createdAt && <Row label="When" value={new Date(d.createdAt).toLocaleString()} mono={false} />}
@@ -110,7 +106,7 @@ function CovenantNodeView({ data }: NodeProps<Node<CovenantNodeData, "covenant">
     <Card selected={data.selected} tone="accent" left right>
       <Head icon={<ShieldCheck size={14} />} title={data.contract.name} badge="P2SH covenant" tone="accent" />
       <div className="pt-2 space-y-1.5">
-        <Row label="State" value={state} mono={false} className={data.deployCount === 0 ? "text-fg-muted" : data.liveCount > 0 ? "text-ok" : "text-fg-muted"} />
+        <Row label={data.fromChain ? "On the node" : "State"} value={state} mono={false} className={data.deployCount === 0 ? "text-fg-muted" : data.liveCount > 0 ? "text-ok" : "text-fg-muted"} />
         <Row label="Deploys" value={String(data.deployCount)} />
         <Row label="Entries" value={String(data.contract.entries.length)} />
         {data.contract.constructorParams && data.contract.constructorParams.length > 0 && (
@@ -167,59 +163,21 @@ function SpendNodeView({ data }: NodeProps<Node<SpendNodeData, "spend">>) {
   );
 }
 
-const NODE_TYPES = { deploy: DeployNodeView, covenant: CovenantNodeView, entry: EntryNodeView, spend: SpendNodeView };
-
-// ---------------------------------------------------------------- graph
-
-const COL = { deploy: 40, covenant: 380, entry: 720, spend: 1060 };
-const GAP = 170;
-
-function buildGraph(contract: SilContractAbi, deploys: DeployRecord[], spends: SpendRecord[], selectedId: string | null): { nodes: GraphNode[]; edges: Edge[] } {
-  const nodes: GraphNode[] = [];
-  const edges: Edge[] = [];
-  const sel = (id: string) => id === selectedId;
-
-  // Entries, each followed by its spends, set the height of the right side.
-  const perEntry = contract.entries.map((entry) => ({ entry, spends: spends.filter((s) => s.entry === entry.name) }));
-  let y = 40;
-  const entryRows = perEntry.map(({ entry, spends: es }) => {
-    const top = y;
-    y += Math.max(1, es.length) * GAP;
-    return { entry, spends: es, top };
-  });
-  const rightHeight = Math.max(y - 40, GAP);
-  const leftHeight = Math.max(deploys.length, 1) * GAP;
-  const height = Math.max(rightHeight, leftHeight);
-  const centerY = 40 + height / 2 - GAP / 2;
-
-  const address = deploys[0]?.address ?? contract.address ?? null;
-  nodes.push({
-    id: "covenant",
-    type: "covenant",
-    position: { x: COL.covenant, y: centerY },
-    data: { contract, address, deployCount: deploys.length, liveCount: deploys.filter((d) => !d.spent).length, selected: sel("covenant") }
-  });
-
-  deploys.forEach((d, i) => {
-    const id = `deploy:${d.recordPath}`;
-    const top = 40 + (height - deploys.length * GAP) / 2 + i * GAP;
-    nodes.push({ id, type: "deploy", position: { x: COL.deploy, y: top }, data: { deploy: d, selected: sel(id) } });
-    edges.push({ id: `e:${id}`, source: id, target: "covenant", animated: !d.spent, label: formatKas(d.valueSompi), style: { stroke: "var(--info)", strokeWidth: 2 } });
-  });
-
-  entryRows.forEach(({ entry, spends: es, top }) => {
-    const id = `entry:${entry.name}`;
-    nodes.push({ id, type: "entry", position: { x: COL.entry, y: top }, data: { contractName: contract.name, entry, spendCount: es.length, selected: sel(id) } });
-    edges.push({ id: `e:${id}`, source: "covenant", target: id, animated: false, style: { stroke: "var(--accent)", strokeWidth: 2 } });
-    es.forEach((s, j) => {
-      const sid = `spend:${s.recordPath}`;
-      nodes.push({ id: sid, type: "spend", position: { x: COL.spend, y: top + j * GAP }, data: { spend: s, selected: sel(sid) } });
-      edges.push({ id: `e:${sid}`, source: id, target: sid, animated: false, label: accepted(s.status) ? "accepted" : s.status, style: { stroke: "var(--ok)", strokeWidth: 2 } });
-    });
-  });
-
-  return { nodes, edges };
+function UnrecordedNodeView({ data }: NodeProps<Node<UnrecordedNodeData, "unrecorded">>) {
+  return (
+    <Card selected={data.selected} tone="warn" right dashed>
+      <Head icon={<AlertTriangle size={13} />} title="Without a record" badge={`${data.utxos.length} on node`} tone="warn" />
+      <div className="pt-2 space-y-1.5">
+        <Row label="Locked" value={formatKas(sumSompi(data.utxos))} className="font-semibold text-warn" />
+        <p className="text-[10px] text-fg-muted leading-snug">
+          The node holds {data.utxos.length === 1 ? "an output" : "outputs"} at this address that no deploy record describes.
+        </p>
+      </div>
+    </Card>
+  );
 }
+
+const NODE_TYPES = { deploy: DeployNodeView, covenant: CovenantNodeView, entry: EntryNodeView, spend: SpendNodeView, unrecorded: UnrecordedNodeView };
 
 // ---------------------------------------------------------------- view
 
@@ -228,6 +186,8 @@ export function CovenantView() {
   const compiled = useSilver((s) => s.compiled);
   const deployments = useSilver((s) => s.deployments);
   const spends = useSilver((s) => s.spends);
+  const target = useIde((s) => s.target);
+  const nodeReady = useEnv((s) => s.node?.rpcReady === true);
 
   const [contractName, setContractName] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -235,43 +195,47 @@ export function CovenantView() {
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => void (copyTimer.current && clearTimeout(copyTimer.current)), []);
 
-  // What can be drawn: the contracts of the last compile in this session, plus every contract that has a
-  // deploy record in the workspace (its ABI comes from the compile record the deploy points at).
-  const subjects = useMemo<Subject[]>(() => {
-    const list: Subject[] = (compiled?.contracts ?? []).map((c) => ({
-      key: `c:${c.name}`,
-      contract: c,
-      recordPath: compiled!.recordPath,
-      contentHash: compiled!.contentHash,
-      sourcePath: compiled!.sourcePath,
-      networkId: compiled!.networkId,
-      fromDeploy: false
-    }));
-    for (const d of deployments) {
-      if (!d.abi || !d.compileRecordPath) continue;
-      if (list.some((s) => s.contract.name === d.contract && s.recordPath === d.compileRecordPath)) continue;
-      list.push({ key: `d:${d.contract}:${d.compileRecordPath}`, contract: d.abi, recordPath: d.compileRecordPath, contentHash: "", networkId: d.networkId, fromDeploy: true });
-    }
-    return list;
-  }, [compiled, deployments]);
+  const subjects = useMemo<Subject[]>(() => selectSubjects(compiled, deployments), [compiled, deployments]);
   const subject = subjects.find((s) => s.key === contractName) ?? subjects[0] ?? null;
   const contract = subject?.contract ?? null;
+  const deploys = useMemo(() => (subject ? deploysFor(subject, deployments) : []), [subject, deployments]);
+  const contractSpends = useMemo(() => (contract ? spendsFor(contract, deploys, spends) : []), [contract, deploys, spends]);
+  const address = deploys[0]?.address ?? contract?.address ?? null;
 
-  // Deploys made from this compile record; for a contract compiled in this session and never deployed from
-  // that record, earlier deploys of a contract with the same name.
-  const deploys = useMemo(() => {
-    if (!subject) return [];
-    const own = deployments.filter((d) => d.contract === subject.contract.name && d.compileRecordPath === subject.recordPath);
-    return own.length > 0 || subject.fromDeploy ? own : deployments.filter((d) => d.contract === subject.contract.name);
-  }, [subject, deployments]);
-  const contractSpends = useMemo(() => {
-    if (!contract) return [];
-    const hashes = new Set(deploys.map((d) => d.contentHash));
-    return spends.filter((s) => s.contract === contract.name && (!s.deployContentHash || hashes.has(s.deployContentHash)));
-  }, [contract, deploys, spends]);
+  // ---- the node's view of the address: one check per address, refreshed on demand or after a deploy/spend
+  const canAskNode = target === "localnet" && nodeReady && address !== null;
+  const [checks, setChecks] = useState<Record<string, ChainCheck>>({});
+  const [checking, setChecking] = useState(false);
+  const [checkError, setCheckError] = useState<string | null>(null);
+  const checkChain = useCallback(
+    async (addr: string) => {
+      setChecking(true);
+      setCheckError(null);
+      try {
+        const run = await engine.get<ConsolePlugin>("console").runHardkas(["rpc", "utxos", addr, "--json"], { quiet: true });
+        const utxos = run.status === "succeeded" ? parseUtxos(run.result) : null;
+        if (!utxos) throw new Error((run.result as { message?: string } | null)?.message ?? `rpc utxos failed (exit ${run.exitCode})`);
+        setChecks((c) => ({ ...c, [addr]: { address: addr, checkedAt: Date.now(), utxos } }));
+      } catch (e) {
+        setCheckError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setChecking(false);
+      }
+    },
+    [engine]
+  );
+  useEffect(() => {
+    if (canAskNode && address && !checks[address]) void checkChain(address);
+  }, [canAskNode, address, checks, checkChain]);
+  useEffect(() => {
+    // A deploy or spend from the IDE changes what the node holds.
+    const off = [engine.on("silverContracts", "deployed", () => address && canAskNode && void checkChain(address)), engine.on("silverContracts", "spent", () => address && canAskNode && void checkChain(address))];
+    return () => off.forEach((f) => f());
+  }, [engine, address, canAskNode, checkChain]);
 
-  const { nodes, edges } = useMemo(() => (contract ? buildGraph(contract, deploys, contractSpends, selectedId) : { nodes: [], edges: [] }), [contract, deploys, contractSpends, selectedId]);
-  const deploySubjects = subjects.filter((s) => s.fromDeploy).length;
+  const chain = useMemo<Reconciled | null>(() => (address && checks[address] ? reconcile(deploys, checks[address]) : null), [address, checks, deploys]);
+
+  const { nodes, edges } = useMemo(() => (contract ? buildGraph(contract, deploys, contractSpends, selectedId, chain) : { nodes: [], edges: [] }), [contract, deploys, contractSpends, selectedId, chain]);
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
 
   const copy = async (key: string, text: string) => {
@@ -300,6 +264,10 @@ export function CovenantView() {
       </div>
     );
   }
+
+  const chainSummary = chain
+    ? `${chain.unspent.size} of ${deploys.filter((d) => d.address === chain.address).length} deploy outputs on the node${chain.unrecorded.length > 0 ? ` · ${chain.unrecorded.length} without a record` : ""}`
+    : null;
 
   return (
     <div className="h-full flex flex-col min-w-0 bg-bg text-fg select-none">
@@ -334,6 +302,15 @@ export function CovenantView() {
           <button type="button" onClick={() => open(subject.recordPath)} className="btn-ghost !py-1 !h-7 text-[11px]" title="Open the compile record (JSON)">
             <FileJson size={12} /> Compile record
           </button>
+          <button
+            type="button"
+            onClick={() => address && void checkChain(address)}
+            disabled={!canAskNode || checking}
+            className="btn-ghost !py-1 !h-7 text-[11px]"
+            title={canAskNode ? `hardkas rpc utxos ${address}` : target !== "localnet" ? "Switch the environment to Local node to compare the records with the chain" : "Start the local node to compare the records with the chain"}
+          >
+            <RadioTower size={12} className={clsx(canAskNode ? "text-ok" : "text-fg-muted", checking && "animate-pulse")} /> {checking ? "Asking the node…" : chain ? "Check again" : "Check on node"}
+          </button>
           <button type="button" onClick={() => useIde.getState().setActiveSidePlugin("deployRun")} className="btn-primary !py-1 !h-7 text-[11px]" title="Deploy or call the contract from Deploy & Run">
             <Play size={11} /> Deploy &amp; Run
           </button>
@@ -359,14 +336,30 @@ export function CovenantView() {
           >
             <Background color="var(--border)" gap={20} size={1} />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable nodeColor={(n) => ({ deploy: "var(--info)", covenant: "var(--accent)", entry: "var(--warn)", spend: "var(--ok)" })[n.type ?? "covenant"] ?? "#888"} />
+            <MiniMap pannable zoomable nodeColor={(n) => ({ deploy: "var(--info)", covenant: "var(--accent)", entry: "var(--warn)", spend: "var(--ok)", unrecorded: "var(--warn)" })[n.type ?? "covenant"] ?? "#888"} />
           </ReactFlow>
 
-          <div className="absolute bottom-3 left-3 z-10 flex items-center gap-3 px-3 py-1.5 rounded-lg border border-border bg-bg-elev/90 backdrop-blur-sm text-[11px] shadow-sm">
-            <span className="flex items-center gap-1 text-info font-medium"><span className="w-2 h-2 rounded-full bg-info" /> Deploys ({deploys.length})</span>
-            <span className="flex items-center gap-1 text-accent font-medium"><span className="w-2 h-2 rounded-full bg-accent" /> Covenant</span>
-            <span className="flex items-center gap-1 text-warn font-medium"><span className="w-2 h-2 rounded-full bg-warn" /> Entries ({contract.entries.length})</span>
-            <span className="flex items-center gap-1 text-ok font-medium"><span className="w-2 h-2 rounded-full bg-ok" /> Spends ({contractSpends.length})</span>
+          <div className="absolute bottom-3 left-3 z-10 flex flex-col gap-1 px-3 py-1.5 rounded-lg border border-border bg-bg-elev/90 backdrop-blur-sm text-[11px] shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1 text-info font-medium"><span className="w-2 h-2 rounded-full bg-info" /> Deploys ({deploys.length})</span>
+              <span className="flex items-center gap-1 text-accent font-medium"><span className="w-2 h-2 rounded-full bg-accent" /> Covenant</span>
+              <span className="flex items-center gap-1 text-warn font-medium"><span className="w-2 h-2 rounded-full bg-warn" /> Entries ({contract.entries.length})</span>
+              <span className="flex items-center gap-1 text-ok font-medium"><span className="w-2 h-2 rounded-full bg-ok" /> Spends ({contractSpends.length})</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-fg-muted tabular-nums">
+              <RadioTower size={10} className={chain ? "text-ok" : "text-fg-muted"} />
+              {checkError ? (
+                <span className="text-error">{checkError}</span>
+              ) : chain ? (
+                <span>
+                  {chainSummary} · checked {new Date(chain.checkedAt).toLocaleTimeString(undefined, { hour12: false })}
+                </span>
+              ) : canAskNode ? (
+                <span>Asking the node what it holds at this address…</span>
+              ) : (
+                <span>Records only: {target !== "localnet" ? "the Local node environment" : "a running local node"} is needed to compare them with the chain.</span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -379,30 +372,35 @@ export function CovenantView() {
                   {selected.type === "covenant" && <ShieldCheck size={14} className="text-accent" />}
                   {selected.type === "entry" && <GitBranch size={14} className="text-warn" />}
                   {selected.type === "spend" && <Coins size={14} className="text-ok" />}
-                  <span>{{ deploy: "Deploy record", covenant: "Covenant", entry: "Entry", spend: "Spend record" }[selected.type!]}</span>
+                  {selected.type === "unrecorded" && <AlertTriangle size={14} className="text-warn" />}
+                  <span>{{ deploy: "Deploy record", covenant: "Covenant", entry: "Entry", spend: "Spend record", unrecorded: "Outputs without a record" }[selected.type!]}</span>
                 </div>
                 <button type="button" onClick={() => setSelectedId(null)} className="p-1 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer" aria-label="Close inspector">
                   <X size={13} />
                 </button>
               </div>
               <div className="flex-1 overflow-auto p-3.5 space-y-3 text-xs">
-                {selected.type === "covenant" && <CovenantInspector data={selected.data} compiled={subject} copied={copied} onCopy={copy} onOpen={open} />}
-                {selected.type === "deploy" && <DeployInspector d={selected.data.deploy} copied={copied} onCopy={copy} onOpen={open} />}
+                {selected.type === "covenant" && <CovenantInspector data={selected.data} compiled={subject} chain={chain} copied={copied} onCopy={copy} onOpen={open} />}
+                {selected.type === "deploy" && <DeployInspector d={selected.data.deploy} state={selected.data.state} copied={copied} onCopy={copy} onOpen={open} />}
                 {selected.type === "entry" && <EntryInspector data={selected.data} spends={contractSpends.filter((s) => s.entry === selected.data.entry.name)} onOpen={open} />}
                 {selected.type === "spend" && <SpendInspector s={selected.data.spend} copied={copied} onCopy={copy} onOpen={open} />}
+                {selected.type === "unrecorded" && <UnrecordedInspector data={selected.data} copied={copied} onCopy={copy} />}
               </div>
             </>
           ) : (
             <div className="p-4 text-xs space-y-3">
               <div className="font-semibold text-fg">Inspector</div>
-              <p className="text-fg-muted text-[11px] leading-relaxed">Click a node to see the record behind it: the compile record for the covenant and its entries, the silverDeploy and silverSpend records for the rest. Every value shown comes from those files.</p>
+              <p className="text-fg-muted text-[11px] leading-relaxed">Click a node to see the record behind it: the compile record for the covenant and its entries, the silverDeploy and silverSpend records for the rest. Every value shown comes from those files, or from the node when it has been asked.</p>
               {deploys.length === 0 && (
                 <p className="text-fg-muted text-[11px] leading-relaxed">
                   <span className="text-fg font-medium">{contract.name}</span> has not been deployed from this compile record, so there are no deploy or spend nodes yet. Deploy it from Deploy &amp; Run and they appear here.
                 </p>
               )}
-              {subject.fromDeploy && deploySubjects > 0 && (
-                <p className="text-fg-muted text-[11px] leading-relaxed">Shown from its deploy record and the compile record that deploy points at. Compile the source again to refresh the ABI.</p>
+              {subject.fromDeploy && <p className="text-fg-muted text-[11px] leading-relaxed">Shown from its deploy record and the compile record that deploy points at. Compile the source again to refresh the ABI.</p>}
+              {chain && chain.unrecorded.length > 0 && (
+                <p className="text-warn text-[11px] leading-relaxed">
+                  The node holds {chain.unrecorded.length} output{chain.unrecorded.length === 1 ? "" : "s"} at this address with no deploy record: usually a deploy whose confirmation the CLI stopped waiting for. The coins are locked by the covenant all the same; they can be spent from Deploy &amp; Run only once a record exists.
+                </p>
               )}
             </div>
           )}
@@ -441,7 +439,7 @@ function RecordButton({ path, onOpen, label = "Open record (JSON)" }: { path: st
 
 type CopyProps = { copied: string | null; onCopy: (key: string, text: string) => void; onOpen: (path: string) => void };
 
-function CovenantInspector({ data, compiled, copied, onCopy, onOpen }: { data: CovenantNodeData; compiled: { recordPath: string; contentHash: string; networkId?: string } } & CopyProps) {
+function CovenantInspector({ data, compiled, chain, copied, onCopy, onOpen }: { data: CovenantNodeData; compiled: { recordPath: string; contentHash: string; networkId?: string }; chain: Reconciled | null } & CopyProps) {
   const c = data.contract;
   return (
     <>
@@ -449,10 +447,22 @@ function CovenantInspector({ data, compiled, copied, onCopy, onOpen }: { data: C
         <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Contract</div>
         <div className="font-semibold text-sm text-accent">{c.name}</div>
         <div className="text-[10px] text-fg-muted">
-          {data.deployCount === 0 ? "compiled, not deployed" : `${data.deployCount} deploy${data.deployCount === 1 ? "" : "s"}, ${data.liveCount} live`}
+          {data.deployCount === 0 ? "compiled, not deployed" : `${data.deployCount} deploy${data.deployCount === 1 ? "" : "s"}, ${data.liveCount} live${data.fromChain ? " on the node" : " by the records"}`}
           {compiled.networkId ? ` · ${compiled.networkId}` : ""}
         </div>
       </div>
+      {chain && (
+        <div className="p-2.5 rounded-lg border border-border bg-bg space-y-1 text-[11px]">
+          <div className="flex items-center gap-1.5 text-ok font-semibold">
+            <RadioTower size={12} /> On the node
+          </div>
+          <div className="text-fg-muted">
+            {chain.unspent.size} deploy output{chain.unspent.size === 1 ? "" : "s"} unspent, {chain.spent.size} gone
+            {chain.unrecorded.length > 0 ? `, ${chain.unrecorded.length} without a record (${formatKas(sumSompi(chain.unrecorded))})` : ""}
+          </div>
+          <div className="text-[10px] text-fg-muted tabular-nums">hardkas rpc utxos · {new Date(chain.checkedAt).toLocaleTimeString(undefined, { hour12: false })}</div>
+        </div>
+      )}
       {data.address && <Field label="P2SH address" value={data.address} copyKey="addr" copied={copied} onCopy={onCopy} />}
       {c.lockingScript && <Field label="Locking script (hex)" value={c.lockingScript} copyKey="script" copied={copied} onCopy={onCopy} />}
       {c.constructorParams && c.constructorParams.length > 0 && (
@@ -482,18 +492,20 @@ function CovenantInspector({ data, compiled, copied, onCopy, onOpen }: { data: C
   );
 }
 
-function DeployInspector({ d, copied, onCopy, onOpen }: { d: DeployRecord } & CopyProps) {
+function DeployInspector({ d, state, copied, onCopy, onOpen }: { d: DeployRecord; state: string } & CopyProps) {
   return (
     <>
       <div className="p-2.5 rounded-lg border border-border bg-bg space-y-1">
         <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Locked in the covenant</div>
         <div className="text-base font-mono font-semibold text-fg tabular-nums">{formatKas(d.valueSompi)}</div>
         <div className="text-[10px] text-fg-muted">
-          {d.spent ? "spent" : accepted(d.status) ? "live" : d.status}
+          {state}
           {d.feeSompi ? ` · fee ${formatKas(d.feeSompi)}` : ""}
           {d.networkId ? ` · ${d.networkId}` : ""}
           {d.createdAt ? ` · ${new Date(d.createdAt).toLocaleString()}` : ""}
         </div>
+        {state === "spent on chain" && <div className="text-[10px] text-warn leading-snug">The node no longer holds this output, but no spend record names it: it was spent outside the IDE, or the CLI stopped waiting before the spend confirmed.</div>}
+        {d.hardkasVersion && <div className="text-[10px] text-fg-muted">written by HardKas {d.hardkasVersion}</div>}
       </div>
       <Field label="Transaction" value={d.txId} copyKey="tx" copied={copied} onCopy={onCopy} />
       <Field label="Outpoint" value={`${d.outpoint?.transactionId ?? d.txId}:${d.outpoint?.index ?? 0}`} copyKey="outpoint" copied={copied} onCopy={onCopy} />
@@ -559,8 +571,35 @@ function SpendInspector({ s, copied, onCopy, onOpen }: { s: SpendRecord } & Copy
         </div>
       </div>
       <Field label="Transaction" value={s.txId} copyKey="stx" copied={copied} onCopy={onCopy} />
+      {s.spentOutpoint && <Field label="Consumed outpoint" value={`${s.spentOutpoint.transactionId}:${s.spentOutpoint.index}`} copyKey="sout" copied={copied} onCopy={onCopy} />}
       <Field label="Paid to" value={s.to} copyKey="to" copied={copied} onCopy={onCopy} />
       <RecordButton path={s.recordPath} onOpen={onOpen} />
+    </>
+  );
+}
+
+function UnrecordedInspector({ data, copied, onCopy }: { data: UnrecordedNodeData; copied: string | null; onCopy: (key: string, text: string) => void }) {
+  return (
+    <>
+      <div className="p-2.5 rounded-lg border border-warn/40 bg-warn/5 space-y-1">
+        <div className="text-[10px] text-warn uppercase tracking-wider font-semibold">Locked, unrecorded</div>
+        <div className="text-base font-mono font-semibold text-fg tabular-nums">{formatKas(sumSompi(data.utxos))}</div>
+        <p className="text-[10px] text-fg-muted leading-relaxed">
+          These outputs sit at the covenant address on the node, but no silverDeploy record describes them. The usual cause: <code>hardkas silver deploy --wait</code> gave up before the block arrived and wrote nothing, although the transaction confirmed later. The IDE now waits up to ten minutes to avoid this. The coins are spendable through the entries, but Deploy &amp; Run needs a deploy record to build the spend.
+        </p>
+      </div>
+      <Field label="Address" value={data.address} copyKey="uaddr" copied={copied} onCopy={onCopy} />
+      <div className="space-y-1">
+        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Outpoints on the node</div>
+        {data.utxos.map((u) => (
+          <div key={`${u.txId}:${u.index}`} className="flex items-center justify-between gap-2 text-[11px] font-mono">
+            <button type="button" onClick={() => onCopy(`u:${u.txId}:${u.index}`, `${u.txId}:${u.index}`)} className="truncate hover:text-accent cursor-pointer text-left" title={`${u.txId}:${u.index} · copy`}>
+              {copied === `u:${u.txId}:${u.index}` ? "copied" : `${short(u.txId)}:${u.index}`}
+            </button>
+            <span className="text-warn shrink-0">{formatKas(u.amountSompi)}</span>
+          </div>
+        ))}
+      </div>
     </>
   );
 }

@@ -36,8 +36,8 @@ export class EnvironmentPlugin extends Plugin {
       location: "sidePanel",
       icon: Server,
       order: 15,
-      methods: ["refresh", "refreshNode", "refreshDocker", "refreshAccounts", "startNode", "stopNode", "restartNode", "resetNode", "createAccount", "copyPrivateKey", "getPrivateKey", "fund"],
-      events: ["nodeChanged", "accountsChanged"]
+      methods: ["refresh", "refreshNode", "refreshDocker", "refreshCli", "refreshAccounts", "startNode", "stopNode", "restartNode", "resetNode", "createAccount", "copyPrivateKey", "getPrivateKey", "fund", "startMiner", "stopMiner", "mineBurst"],
+      events: ["nodeChanged", "accountsChanged", "minerChanged"]
     });
   }
 
@@ -65,8 +65,23 @@ export class EnvironmentPlugin extends Plugin {
   }
 
   async refresh(): Promise<void> {
-    await Promise.all([this.refreshNode(true), this.refreshAccounts()]);
+    await Promise.all([this.refreshNode(true), this.refreshAccounts(), this.refreshCli()]);
     useEnv.getState().touch();
+  }
+
+  /** Which hardkas the server runs for this workspace; the status bar warns when it is not the tested version. */
+  async refreshCli(): Promise<void> {
+    try {
+      const cli = await api.cli();
+      useEnv.getState().setCli(cli);
+      if (cli.version && cli.version !== cli.pinned) {
+        this.console().warn(`HardKas CLI ${cli.version} (${cli.source}); this IDE was tested with ${cli.pinned}. Records and command output may differ.`);
+      } else if (!cli.version) {
+        this.console().warn(`The hardkas CLI did not answer --version (${cli.command}): ${cli.error ?? "unknown error"}`);
+      }
+    } catch {
+      useEnv.getState().setCli(null);
+    }
   }
 
   /** Is Docker there? Checked once per refresh; the Servers view explains what to do when it is not. */
@@ -299,6 +314,54 @@ export class EnvironmentPlugin extends Plugin {
     await this.refreshAccounts();
   }
 
+  // ---- blocks: nothing confirms on simnet unless the CPU miner runs, and a miner running flat out floods the node ----
+
+  /** Starts the existing miner container; it mines to whichever account HardKas last funded. */
+  async startMiner(): Promise<void> {
+    await this.minerOp("start", async () => {
+      await api.node.miner("start");
+    });
+  }
+
+  /** Stops the miner so the node can catch up ("route is full" in its log means it was falling behind). */
+  async stopMiner(): Promise<void> {
+    await this.minerOp("stop", async () => {
+      await api.node.miner("stop");
+    });
+  }
+
+  /**
+   * Mines a short burst: `localnet fund <account> --amount 1` runs the miner until one more mature KAS reaches
+   * the account, then stops it. Enough blocks for pending transactions to confirm, without flooding the node.
+   */
+  async mineBurst(account: string): Promise<void> {
+    await this.minerOp("burst", async () => {
+      await this.runCli(["localnet", "fund", account, "--amount", "1", "--profile", "toccata-v2", "--json"], "Mining burst failed");
+      await this.refreshAccounts();
+    });
+  }
+
+  private async minerOp(kind: "start" | "stop" | "burst", run: () => Promise<void>): Promise<void> {
+    const env = useEnv.getState();
+    if (env.minerBusy) return;
+    env.setMinerBusy(kind);
+    env.setError(null);
+    let failed: string | null = null;
+    try {
+      await run();
+    } catch (e) {
+      failed = e instanceof Error ? e.message : String(e);
+      this.console().error(failed);
+      throw new Error(failed);
+    } finally {
+      useEnv.getState().setMinerBusy(null);
+      // refreshNode clears the error on success, so the miner's failure is set afterwards to stay visible.
+      const node = await this.refreshNode(true);
+      if (failed) useEnv.getState().setError(failed);
+      this.emit("minerChanged", node?.miner ?? null);
+    }
+  }
+
   /**
    * Copies the raw hex private key to the clipboard without rendering it.
    * Works for both accounts.real.json and HardKas dev keystores (.hardkas/dev-accounts).
@@ -329,7 +392,8 @@ interface OpStep {
   run: (note: (text: string) => void) => Promise<void>;
 }
 
-function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {
+/** Reads `hardkas localnet status --json` (either of its two shapes) into the IDE's NodeStatus. */
+export function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {
   const container = (raw.container ?? {}) as Record<string, unknown>;
   const rpc = (raw.rpc ?? {}) as Record<string, unknown>;
   const node = (raw.node ?? {}) as Record<string, unknown>;
@@ -340,9 +404,17 @@ function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {
   const miner = (raw.miner ?? {}) as Record<string, unknown>;
 
   // `localnet status` has two shapes: a full one (container/rpc/ports) and, when the node answers, a short
-  // one where `node.ready` is true and there is no `running` flag. A node that answers RPC is running.
-  const rpcReady = Boolean(rpc.ready ?? node.rpcReady ?? node.ready);
-  const running = rpcReady || Boolean(container.running ?? node.running);
+  // one where `node.ready` is true and there is no `running` flag. A node that answers RPC is running,
+  // unless the CLI also saw that the container is not: then something else holds the port (seen with a
+  // test suite's mock node on 18210) and the answers are not the HardKas node's.
+  const observedContainer = (observed.container ?? {}) as Record<string, unknown>;
+  const containerRunning = (container.running ?? observedContainer.running) as boolean | undefined;
+  const rpcAnswers = Boolean(rpc.ready ?? node.rpcReady ?? node.ready);
+  const foreign = rpcAnswers && containerRunning === false;
+  const rpcReady = rpcAnswers && !foreign;
+  const running = rpcReady || Boolean(containerRunning ?? node.running);
+  const rpcUrlSeen = (rpc.url as string | undefined) ?? (node.rpcUrl as string | undefined) ?? "ws://127.0.0.1:18210";
+  const containerSeen = (container.name as string | undefined) ?? (observedContainer.name as string | undefined) ?? (expected.containerName as string | undefined) ?? "the node container";
 
   const rpcTransports = (rpc.transports ?? {}) as Record<string, { port?: number; ready?: boolean }>;
   const nodeTransports = (node.transports ?? {}) as Record<string, { port?: number; ready?: boolean }>;
@@ -357,10 +429,10 @@ function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {
 
   return {
     profile: String(raw.profile ?? "toccata-v2"),
-    status: String(raw.status ?? (rpcReady ? "READY" : running ? "STARTING" : "STOPPED")),
+    status: foreign ? "FOREIGN RPC" : String(raw.status ?? (rpcReady ? "READY" : running ? "STARTING" : "STOPPED")),
     running,
     rpcReady,
-    containerName: (container.name as string | undefined) ?? (node.containerName as string | undefined) ?? (expected.containerName as string | undefined),
+    containerName: (container.name as string | undefined) ?? (observedContainer.name as string | undefined) ?? (node.containerName as string | undefined) ?? (expected.containerName as string | undefined),
     image: (container.image as string | undefined) ?? (node.image as string | undefined) ?? (expected.image as string | undefined),
     network: (node.network as string | undefined) ?? (node.networkId as string | undefined) ?? (expected.network as string | undefined) ?? "simnet",
     rpcUrl: (rpc.url as string | undefined) ?? (node.rpcUrl as string | undefined),
@@ -368,8 +440,11 @@ function parseNodeStatus(raw: Record<string, unknown>): NodeStatus {
     serverVersion: (server.serverVersion as string | undefined) ?? (node.serverVersion as string | undefined) ?? (expected.serverVersion as string | undefined),
     isSynced: (server.isSynced as boolean | undefined) ?? (node.isSynced as boolean | undefined),
     virtualDaaScore: (server.virtualDaaScore as string | undefined) ?? (node.virtualDaaScore as string | undefined),
-    miner: miner && typeof miner.running === "boolean" ? { running: Boolean(miner.running), status: String(miner.status ?? "") } : undefined,
-    lastError: (rpc.lastError as string | null | undefined) ?? (node.lastError as string | null | undefined) ?? null,
+    // `miner.exists === false` means no container at all (HardKas creates it on the first fund).
+    miner: miner && typeof miner.running === "boolean" && miner.exists !== false ? { running: Boolean(miner.running), status: String(miner.status ?? "") } : undefined,
+    lastError: foreign
+      ? `Something answers on ${rpcUrlSeen}, but ${containerSeen} is not running: another process holds the port, and its answers are not this node's. Stop it, then start the node.`
+      : ((rpc.lastError as string | null | undefined) ?? (node.lastError as string | null | undefined) ?? null),
     checkedAt: identity.checkedAt as string | undefined,
     raw: { ...raw, transports }
   };

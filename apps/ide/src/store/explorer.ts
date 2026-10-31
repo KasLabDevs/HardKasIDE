@@ -28,6 +28,8 @@ export interface MinerInfo {
   running: boolean;
   perSecond: number;
   windowBlocks: number;
+  /** How many times, in the log window, the node refused a block because it could not keep up. */
+  routeFull: number;
   blocks: MinedBlock[];
 }
 

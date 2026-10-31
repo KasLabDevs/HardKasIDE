@@ -1,6 +1,6 @@
 import { Clock, FolderOpen, FolderPlus } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api, IdeApiError, type RecentEntry, type WorkspaceInfo } from "@/api/client";
+import { api, IdeApiError, type CliInfo, type RecentEntry, type WorkspaceInfo } from "@/api/client";
 import { HardKasMark, HardKasWordmark } from "@/shell/Logo";
 import { NewProjectDialog } from "./NewProjectDialog";
 
@@ -16,6 +16,8 @@ export function HomeScreen({ onOpened }: Props) {
   const [showNew, setShowNew] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // undefined while asking, null when the server could not tell.
+  const [cli, setCli] = useState<CliInfo | null | undefined>(undefined);
 
   useEffect(() => {
     api.workspace
@@ -25,6 +27,7 @@ export function HomeScreen({ onOpened }: Props) {
         setHome(r.home);
       })
       .catch((e) => setError(String(e)));
+    api.cli().then(setCli, () => setCli(null));
   }, []);
 
   const open = async (path: string) => {
@@ -84,7 +87,10 @@ export function HomeScreen({ onOpened }: Props) {
 
             <div className="text-[11px] text-fg-muted space-y-1">
               <p>Workbench for Kaspa and SilverScript. Project flow shaped after Visual Studio.</p>
-              <p>Engine: HardKas 0.12.0-rc.29 · silverc 1.0.0 · simulator / localnet / rpc.</p>
+              <p>
+                Engine: HardKas CLI {cli === undefined ? "…" : cli?.version ?? `not found (tested with ${cli?.pinned ?? "0.12.0-rc.29"})`}
+                {cli?.version && cli.version !== cli.pinned ? ` (tested with ${cli.pinned})` : ""} · simulator / localnet / rpc.
+              </p>
             </div>
           </section>
 

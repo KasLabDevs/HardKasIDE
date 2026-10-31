@@ -2,7 +2,14 @@
 // Compiles and deploys KaspaAuction contract on Kaspa simnet/localnet
 
 import fs from "fs";
+import path from "path";
 import { execSync } from "child_process";
+
+// The CLI reports record paths as absolute paths; the dApp passes them back to
+// `hardkas silver spend` through the IDE server, which resolves relative to the workspace.
+function workspaceRelative(absolutePath) {
+  return path.relative(process.cwd(), absolutePath).split(path.sep).join("/");
+}
 
 const CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 function decodeKaspaAddress(address) {
@@ -70,7 +77,7 @@ async function main() {
   // 4. Deploy contract to Localnet
   console.log("Deploying contract to Localnet via Alice (5 KAS reserve)...");
   const deployOut = execSync(
-    `npx hardkas silver deploy "${compileRecord.recordPath}" --from alice --amount 5 --wait --json`,
+    `npx hardkas silver deploy "${compileRecord.recordPath}" --from alice --amount 5 --wait --timeout 600 --json`,
     { encoding: "utf8" }
   );
   const deployRecord = JSON.parse(deployOut);
@@ -91,9 +98,10 @@ async function main() {
     sellerAddress: alice.address,
     highestBidderAddress: bob.address,
     minBidSompi: minBidSompi,
-    currentHighestBidKas: 10,
     rpcUrl: "ws://127.0.0.1:18210",
     deployedAt: new Date().toISOString(),
+    deployRecordPath: workspaceRelative(deployRecord.recordPath),
+    compileRecordPath: workspaceRelative(compileRecord.recordPath),
     entries: {
       close: { dispatchTag: "53422444", description: "Seller closes auction and takes winning bid" },
       claim: { dispatchTag: "dd9ab092", description: "Highest bidder claims auction lot" },

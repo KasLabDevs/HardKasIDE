@@ -5,6 +5,7 @@ import { useEngine } from "@/engine/context";
 import type { CompilerPlugin } from "@/plugins/compiler";
 import type { DebugPlugin } from "@/plugins/debug";
 import { useDebug } from "@/store/debug";
+import { useEnv } from "@/store/env";
 import type { EnvironmentPlugin } from "@/plugins/environment";
 import type { LineagePlugin } from "@/plugins/lineage";
 import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, envOf, useIde, type ExecutionTarget } from "@/store/ide";
@@ -420,6 +421,7 @@ function MenuBar({ menus }: { menus: Menu[] }) {
 }
 
 function AboutDialog({ onClose }: { onClose: () => void }) {
+  const cli = useEnv((s) => s.cli);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -432,7 +434,10 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
           <HardKasMark size={36} />
           <div>
             <div className="text-sm font-semibold text-fg">HardKas IDE</div>
-            <div className="text-fg-muted">Version 0.1 · HardKas CLI 0.12.0-rc.29</div>
+            <div className="text-fg-muted">
+              Version {__APP_VERSION__} · HardKas CLI {cli?.version ?? "not found"}
+              {cli && cli.version !== cli.pinned ? ` (tested with ${cli.pinned})` : ""}
+            </div>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="ml-auto p-1 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer">
             <X size={14} />

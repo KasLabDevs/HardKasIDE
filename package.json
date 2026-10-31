@@ -14,7 +14,8 @@
     "dev:server": "pnpm --filter @hardkas-ide/server run dev",
     "dev:ide": "pnpm --filter @hardkas-ide/ide run dev",
     "build": "pnpm -r run build",
-    "typecheck": "pnpm -r run typecheck"
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm --filter @hardkas-ide/ide run test"
   },
   "devDependencies": {
     "typescript": "^5.8.3"

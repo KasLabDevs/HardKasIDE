@@ -60,6 +60,15 @@ export interface AssistantConfigView {
   keyHint: string;
 }
 
+/** Which `hardkas` the server runs and whether it is the version this IDE was tested with. */
+export interface CliInfo {
+  version: string | null;
+  pinned: string;
+  source: "project" | "env" | "repo" | "npx";
+  command: string;
+  error: string | null;
+}
+
 export interface ApiError {
   ok: false;
   code: string;
@@ -249,6 +258,15 @@ export const api = {
   },
   system: () =>
     request<{ docker: { installed: boolean; running: boolean; clientVersion: string | null; serverVersion: string | null; error: string | null }; node: string; platform: string }>("/api/system"),
+  /** The hardkas binary the server runs for the open workspace, and its version against the one the IDE was tested with. */
+  cli: (refresh = false) => request<{ cli: CliInfo }>(`/api/cli${refresh ? "?refresh=1" : ""}`).then((r) => r.cli),
+  node: {
+    /** Blocks the local CPU miner found, its state, and how often the node refused its blocks ("route is full"). */
+    blocks: (limit = 30) =>
+      request<{ exists: boolean; running: boolean; perSecond: number; windowBlocks: number; routeFull: number; blocks: Array<{ hash: string; at: string }> }>(`/api/node/blocks?limit=${limit}`),
+    /** Starts or stops the existing miner container (HardKas creates it on the first fund). */
+    miner: (action: "start" | "stop") => request<{ running: boolean }>("/api/node/miner", { method: "POST", body: JSON.stringify({ action }) })
+  },
   vsx: {
     search: (q: string, size = 24) => request<{ total: number; hits: import("@/store/vsx").VsxSearchHit[] }>(`/api/vsx/search?q=${encodeURIComponent(q)}&size=${size}`),
     installed: () => request<{ installed: import("@/store/vsx").InstalledVsx[] }>("/api/vsx/installed").then((r) => r.installed),

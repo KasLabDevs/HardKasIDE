@@ -201,6 +201,11 @@ function BlocksTab() {
         </span>
         <span className="text-fg-muted tabular-nums">{miner.perSecond > 0 ? `${miner.perSecond} blocks/s` : "—"}</span>
       </div>
+      {miner.routeFull > 0 && (
+        <div role="status" className="rounded border border-warn/40 bg-warn/10 p-1.5 text-[10px] text-warn leading-snug">
+          The node refused {miner.routeFull} block{miner.routeFull === 1 ? "" : "s"} in this log window ("route is full"): the miner is faster than the node can accept, and transactions confirm slowly while that lasts. Stop the miner and mine in bursts (Local node card above).
+        </div>
+      )}
       <div className="text-[10px] text-fg-muted">The last {miner.blocks.length} of the {miner.windowBlocks} blocks in the miner log, newest first.</div>
       <ul className="space-y-0.5">
         {miner.blocks.map((b) => (

@@ -13,6 +13,9 @@ A single-purpose IDE for [HardKas](https://github.com/KasLabDevs/HardKas) projec
 - **Test debugger**: breakpoints, stepping, variables and watches for the project's vitest tests (F5, F9, F10, F11). See [docs/debugging.md](docs/debugging.md).
 - **Desktop app** (`apps/desktop`): a frameless Tauri window around the IDE with a Windows installer; it starts the IDE server itself. See [docs/desktop.md](docs/desktop.md).
 - **MCP server** (`packages/mcp-server`): lets an AI agent compile SilverScript, run the local node, move test coins and deploy contracts through the IDE. See [docs/mcp.md](docs/mcp.md).
+- **Covenant graph**: a compiled contract, its deploys, entries and spends drawn from HardKas records and checked against the local node. See [docs/covenant-graph.md](docs/covenant-graph.md).
+- **Assistant / agent**: chat grounded in the Kaspa docs, and an agent that edits files and runs commands with your approval. See [docs/assistant.md](docs/assistant.md).
+- **Local node, miner and confirmations**: why a deploy can sit unconfirmed, and the miner controls. See [docs/local-node.md](docs/local-node.md).
 
 Design notes: [docs/design-notes.md](docs/design-notes.md).
 
@@ -40,4 +43,13 @@ To start with a workspace already open:
 pnpm dev:server -- --workspace C:/path/to/my-hardkas-project
 ```
 
-Requirements: Node >= 22.5, pnpm, and `@hardkas/cli` (the server uses the project's own `node_modules/.bin/hardkas` when present, otherwise `npx @hardkas/cli@0.12.0-rc.29`).
+Requirements: Node >= 22.5, pnpm, and `@hardkas/cli` (the server uses the project's own `node_modules/.bin/hardkas` when present, then `HARDKAS_BIN`, otherwise `npx @hardkas/cli@<pinned>`). The IDE is tested against one CLI version (`HARDKAS_CLI_VERSION` in `packages/ide-server/src/runner.ts`); the status bar shows the version actually running and warns when it differs.
+
+## Check
+
+```bash
+pnpm typecheck
+pnpm test
+```
+
+Unit tests (vitest, `apps/ide/src/**/*.test.ts`) cover the record readers, the Covenant graph's data side and the node-status parser, against real HardKas records kept in `apps/ide/src/__fixtures__`. CI runs both on every push and pull request.
