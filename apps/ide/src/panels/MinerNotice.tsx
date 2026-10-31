@@ -48,7 +48,7 @@ export function MinerNotice({ compact = false }: { compact?: boolean }) {
         </p>
       )}
       <div className="flex gap-1">
-        <button type="button" className="btn-primary flex-1 justify-center !py-1" disabled={disabled} onClick={() => act(() => env.mineBurst(account))} title={`hardkas localnet fund ${account} --amount 1 (mines until one more KAS matures, then stops)`}>
+        <button type="button" className="btn-primary flex-1 justify-center !py-1" disabled={disabled} onClick={() => act(() => env.mineBurst(account))} title={`hardkas localnet fund ${account} --amount 1 --stop-miner (mines until one more KAS matures, then stops)`}>
           <Zap size={12} /> Mine a burst
         </button>
         {running ? (

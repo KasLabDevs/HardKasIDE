@@ -331,12 +331,13 @@ export class EnvironmentPlugin extends Plugin {
   }
 
   /**
-   * Mines a short burst: `localnet fund <account> --amount 1` runs the miner until one more mature KAS reaches
-   * the account, then stops it. Enough blocks for pending transactions to confirm, without flooding the node.
+   * Mines a short burst: `localnet fund <account> --amount 1 --stop-miner` runs the miner until one more mature
+   * KAS reaches the account, then stops it (without --stop-miner the CLI has been seen leaving it running).
+   * Enough blocks for pending transactions to confirm, without flooding the node.
    */
   async mineBurst(account: string): Promise<void> {
     await this.minerOp("burst", async () => {
-      await this.runCli(["localnet", "fund", account, "--amount", "1", "--profile", "toccata-v2", "--json"], "Mining burst failed");
+      await this.runCli(["localnet", "fund", account, "--amount", "1", "--stop-miner", "--profile", "toccata-v2", "--json"], "Mining burst failed");
       await this.refreshAccounts();
     });
   }

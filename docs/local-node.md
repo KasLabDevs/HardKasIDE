@@ -13,7 +13,7 @@ The **Local node** card in the Servers view (and the top of Deploy & Run) says w
 
 | action | what runs | when to use it |
 | --- | --- | --- |
-| **Mine a burst** | `hardkas localnet fund <first account> --amount 1` | You sent a transaction and want it confirmed: mines until one more mature KAS reaches the account, then stops. |
+| **Mine a burst** | `hardkas localnet fund <first account> --amount 1 --stop-miner` | You sent a transaction and want it confirmed: mines until one more mature KAS reaches the account (a few minutes on a long chain), then stops. |
 | **Start miner** | `docker start hardkas-toccata-miner` | You want continuous blocks for a while (several deploys and spends in a row). Stop it afterwards. |
 | **Stop miner** | `docker stop -t 2 hardkas-toccata-miner` | The explorer's Blocks tab shows `route is full`, or you are done. |
 
