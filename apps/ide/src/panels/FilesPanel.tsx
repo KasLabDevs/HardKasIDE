@@ -579,28 +579,28 @@ function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }
     });
   }
 
-  const menuWidth = 224;
-  const subWidth = 236;
+  const menuWidth = 196;
+  const subWidth = 190;
   const x = Math.min(menu.x, Math.max(8, window.innerWidth - menuWidth - 16));
-  const y = Math.min(menu.y, Math.max(8, window.innerHeight - 380));
+  const y = Math.min(menu.y, Math.max(8, window.innerHeight - 320));
   const openRight = x + menuWidth + subWidth + 12 <= window.innerWidth;
 
   return (
     <ul
       role="menu"
       aria-label={`Actions for ${n.name}`}
-      className="fixed z-50 w-56 rounded border border-border bg-bg-elev shadow-2xl py-1 text-xs select-none"
+      className="fixed z-50 w-max min-w-[172px] max-w-[240px] rounded border border-border bg-bg-elev shadow-2xl py-0.5 text-[12px] select-none"
       style={{ left: x, top: y }}
       onClick={(e) => e.stopPropagation()}
     >
       {n.path && (
-        <li role="presentation" className="px-3 py-1 text-[10px] font-mono text-fg-muted border-b border-border/60 mb-1 truncate">
+        <li role="presentation" className="px-2.5 py-[3px] text-[10px] font-mono text-fg-muted border-b border-border/60 mb-0.5 truncate">
           {n.type === "dir" ? `📁 ${n.path}/` : n.path}
         </li>
       )}
       {entries.map((it, i) =>
         it === "sep" ? (
-          <li key={`sep-${i}`} role="separator" className="my-1 border-t border-border" />
+          <li key={`sep-${i}`} role="separator" className="my-0.5 border-t border-border" />
         ) : (
           <li
             key={it.id}
@@ -622,7 +622,7 @@ function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }
                 it.run?.();
               }}
               className={clsx(
-                "w-full text-left px-3 py-1.5 flex items-center justify-between gap-2 cursor-pointer hover:bg-bg-hover",
+                "w-full text-left px-2.5 py-[3px] flex items-center justify-between gap-4 whitespace-nowrap cursor-pointer hover:bg-bg-hover",
                 activeSubmenu === it.id && it.children && "bg-bg-hover",
                 it.danger ? "text-error" : "text-fg"
               )}
@@ -641,12 +641,12 @@ function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }
               <ul
                 role="menu"
                 aria-label={`${it.label} submenu`}
-                className="absolute top-0 w-60 rounded border border-border bg-bg-elev shadow-2xl py-1 text-xs z-50"
+                className="absolute top-0 w-max min-w-[162px] max-w-[240px] rounded border border-border bg-bg-elev shadow-2xl py-0.5 text-[12px] z-50"
                 style={openRight ? { left: "100%", marginLeft: 2 } : { right: "100%", marginRight: 2 }}
               >
                 {it.children.map((sub, si) =>
                   sub === "sep" ? (
-                    <li key={`subsep-${si}`} role="separator" className="my-1 border-t border-border" />
+                    <li key={`subsep-${si}`} role="separator" className="my-0.5 border-t border-border" />
                   ) : (
                     <li key={sub.id} role="none">
                       <button
@@ -656,7 +656,7 @@ function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }
                           onClose();
                           sub.run?.();
                         }}
-                        className="w-full text-left px-3 py-1.5 flex items-center justify-between gap-2 cursor-pointer hover:bg-bg-hover text-fg"
+                        className="w-full text-left px-2.5 py-[3px] flex items-center justify-between gap-4 whitespace-nowrap cursor-pointer hover:bg-bg-hover text-fg"
                       >
                         <span className="flex items-center gap-2 min-w-0 truncate">
                           {sub.icon}

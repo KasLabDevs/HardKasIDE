@@ -1,11 +1,138 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GREATEST_LOWER_BOUND, LEAST_UPPER_BOUND, TraceMap, generatedPositionFor, originalPositionFor } from "@jridgewell/trace-mapping";
 import { getRoot } from "./workspace.js";
+
+const IGNORED_DEBUG_DIRS = new Set(["node_modules", "dist", "coverage"]);
+const DEBUG_TEST_FILE_RE = /\.(test|spec)\.[cm]?[jt]sx?$/;
+const DEBUG_VITEST_CONFIG_RE = /^vitest\.config\.[cm]?[jt]sx?$/;
+
+export interface VitestDebugTarget {
+  cwd: string;
+  entry: string;
+  fileArg?: string;
+}
+
+function isInsideRoot(root: string, candidate: string): boolean {
+  const rel = path.relative(root, candidate);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+function findNearestVitestEntry(startDir: string, root: string): { dir: string; entry: string } | null {
+  let dir = path.resolve(startDir);
+  while (isInsideRoot(root, dir)) {
+    const entry = path.join(dir, "node_modules", "vitest", "vitest.mjs");
+    if (existsSync(entry)) return { dir, entry };
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+function hasSubprojectMarker(dir: string): boolean {
+  if (!existsSync(dir)) return false;
+  if (existsSync(path.join(dir, "package.json"))) return true;
+  try {
+    return readdirSync(dir).some((name) => DEBUG_VITEST_CONFIG_RE.test(name));
+  } catch {
+    return false;
+  }
+}
+
+function findNearestSubprojectDir(startDir: string, root: string): string {
+  let dir = path.resolve(startDir);
+  while (isInsideRoot(root, dir) && dir !== root) {
+    if (hasSubprojectMarker(dir)) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return root;
+}
+
+function scanWorkspaceTests(root: string): { subprojects: string[]; testFiles: string[] } {
+  const subprojects: string[] = [];
+  const testFiles: string[] = [];
+
+  const visit = (dir: string, depth: number) => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    if (dir !== root && entries.some((e) => e.isFile() && (e.name === "package.json" || DEBUG_VITEST_CONFIG_RE.test(e.name)))) {
+      subprojects.push(dir);
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (entry.name.startsWith(".") || IGNORED_DEBUG_DIRS.has(entry.name) || depth >= 4) continue;
+        visit(path.join(dir, entry.name), depth + 1);
+      } else if (entry.isFile() && DEBUG_TEST_FILE_RE.test(entry.name)) {
+        testFiles.push(path.join(dir, entry.name));
+      }
+    }
+  };
+
+  visit(root, 0);
+  return { subprojects: subprojects.sort(), testFiles };
+}
+
+/**
+ * Resolves the Vitest entry script and working directory for debugging. Nested subprojects
+ * (such as `hardkas-workspace/`) run from their own directory so their `vitest.config.*`
+ * and `node_modules/vitest` instance are used consistently.
+ */
+export function resolveVitestDebugTarget(workspaceRoot: string, file?: string): VitestDebugTarget {
+  const root = path.resolve(workspaceRoot);
+  const missingErr = "vitest is not installed in this project (run npm install in the project folder).";
+
+  if (file) {
+    const absFile = path.resolve(root, file);
+    if (!isInsideRoot(root, absFile)) {
+      throw new Error(`Debug target path escapes workspace root: ${file}`);
+    }
+    const startDir = path.dirname(absFile);
+    const nearestVitest = findNearestVitestEntry(startDir, root);
+    if (!nearestVitest) throw new Error(missingErr);
+    const nearestSubproject = findNearestSubprojectDir(startDir, root);
+    const cwd = nearestSubproject.length >= nearestVitest.dir.length ? nearestSubproject : nearestVitest.dir;
+    return {
+      cwd,
+      entry: nearestVitest.entry,
+      fileArg: path.relative(cwd, absFile).replace(/\\/g, "/")
+    };
+  }
+
+  const { subprojects, testFiles } = scanWorkspaceTests(root);
+  const owners = new Set(testFiles.map((tf) => findNearestSubprojectDir(path.dirname(tf), root)));
+
+  let cwd = root;
+  if (!owners.has(root) && owners.size === 1) {
+    cwd = Array.from(owners)[0];
+  } else if (!owners.has(root) && owners.size === 0 && subprojects.length === 1) {
+    cwd = subprojects[0];
+  }
+
+  let vitest = findNearestVitestEntry(cwd, root);
+  if (!vitest) {
+    for (const sub of subprojects) {
+      const candidate = findNearestVitestEntry(sub, root);
+      if (candidate) {
+        cwd = sub;
+        vitest = candidate;
+        break;
+      }
+    }
+  }
+  if (!vitest) throw new Error(missingErr);
+  return { cwd, entry: vitest.entry };
+}
 
 /**
  * Test debugger: runs the project's vitest with the Node inspector open (paused before the first line), attaches over the
@@ -137,8 +264,7 @@ export class DebugSession extends EventEmitter {
     const root = getRoot();
     if (!root) throw new Error("No workspace is open");
     this.root = root;
-    const entry = path.join(root, "node_modules", "vitest", "vitest.mjs");
-    if (!existsSync(entry)) throw new Error("vitest is not installed in this project (run npm install in the project folder).");
+    const target = resolveVitestDebugTarget(root, options.file);
 
     this.scripts.clear();
     this.placed.clear();
@@ -151,11 +277,11 @@ export class DebugSession extends EventEmitter {
     this.setState("starting", "Starting vitest with the inspector…");
 
     const port = await freePort();
-    const args = [entry, "run", ...(options.file ? [options.file] : []), `--inspect-brk=127.0.0.1:${port}`, "--pool=forks", "--poolOptions.forks.singleFork", "--no-file-parallelism", "--reporter=verbose", "--testTimeout=0", "--hookTimeout=0"];
+    const args = [target.entry, "run", ...(target.fileArg ? [target.fileArg] : []), `--inspect-brk=127.0.0.1:${port}`, "--pool=forks", "--poolOptions.forks.singleFork", "--no-file-parallelism", "--reporter=verbose", "--testTimeout=0", "--hookTimeout=0"];
     // (a test paused at a breakpoint would otherwise time out while you look at it, so the limits are off while debugging)
     if (options.testName) args.push("-t", options.testName);
     this.log(`node vitest ${args.slice(1).join(" ")}`);
-    const child = spawn(process.execPath, args, { cwd: root, env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1", HARDKAS_ROOT: root }, windowsHide: true });
+    const child = spawn(process.execPath, args, { cwd: target.cwd, env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1", HARDKAS_ROOT: target.cwd }, windowsHide: true });
     this.child = child;
     child.stdout.on("data", (b: Buffer) => this.emitEvent({ type: "output", stream: "stdout", text: b.toString("utf8") }));
     child.stderr.on("data", (b: Buffer) => this.emitEvent({ type: "output", stream: "stderr", text: b.toString("utf8") }));

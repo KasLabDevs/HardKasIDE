@@ -15,7 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { argon2id } from "hash-wasm";
-import { listDevAccountNames, networkFromAddress, revealDevAccountKey } from "../src/devkeys.js";
+import { listDevAccountAddresses, listDevAccountNames, networkFromAddress, revealDevAccountKey } from "../src/devkeys.js";
 import { FsError } from "../src/fs.js";
 import { allowedHostnames, isAllowedHost } from "../src/guard.js";
 import { isHardkasMiner, LocalNodeError, resetWorkspaceChainState } from "../src/localNode.js";
@@ -708,5 +708,31 @@ describe("Host allowlist: cases security.test.ts misses", () => {
       if (saved === undefined) delete process.env.HARDKAS_IDE_ALLOWED_HOSTS;
       else process.env.HARDKAS_IDE_ALLOWED_HOSTS = saved;
     }
+  });
+});
+
+describe("listDevAccountAddresses", () => {
+  it("returns public simnet addresses from dev-accounts metadata and ignores non-simnet stores", async () => {
+    const root = await makeWorkspace();
+    const devDir = path.join(root, ".hardkas", "dev-accounts");
+    await fs.mkdir(devDir, { recursive: true });
+    await fs.writeFile(
+      path.join(devDir, "alice.json"),
+      JSON.stringify({ version: 2, type: "hardkas.encryptedKeystore.v2", metadata: { network: "simnet", address: "kaspasim:qfakealice" } })
+    );
+    await fs.writeFile(
+      path.join(devDir, "testnet_user.json"),
+      JSON.stringify({ version: 2, type: "hardkas.encryptedKeystore.v2", metadata: { network: "testnet-10", address: "kaspatest:qfaketest" } })
+    );
+    await writeRealStore(root, {
+      realSim: { privateKey: fakeKey(), network: "simnet", address: "kaspasim:qfakereal" },
+      realTest: { privateKey: fakeKey(), network: "testnet-10", address: "kaspatest:qfakereal" }
+    });
+
+    const addrs = await listDevAccountAddresses(root);
+    assert.deepEqual(addrs, {
+      alice: "kaspasim:qfakealice",
+      realSim: "kaspasim:qfakereal"
+    });
   });
 });

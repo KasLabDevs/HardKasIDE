@@ -76,7 +76,7 @@ export function MainArea() {
   return (
     <div className="h-full flex flex-col min-w-0 bg-bg panel-card">
       {!isEmpty && (
-        <div role="tablist" aria-label="Open files" className="h-[1.8rem] shrink-0 flex items-end px-1 gap-0.5 border-b border-border bg-bg-panel overflow-x-auto">
+        <div role="tablist" aria-label="Open files" className="h-[26px] shrink-0 flex items-end px-1 gap-0.5 border-b border-border bg-bg-panel overflow-x-auto">
           {openFiles.map((f) => {
             const isView = f.kind === "view";
             const dirty = !isView && f.content !== f.savedContent;
@@ -112,7 +112,7 @@ export function MainArea() {
                   }
                 }}
                 className={clsx(
-                  "group h-[calc(100%-3px)] flex items-center gap-1.5 pl-2 pr-1 text-[12px] rounded-t-[5px] border-t border-x cursor-pointer select-none whitespace-nowrap outline-none focus-visible:ring-1 focus-visible:ring-accent max-w-[220px]",
+                  "group h-[calc(100%-2px)] flex items-center gap-1 pl-2 pr-1 text-[12px] leading-none rounded-t-[4px] border-t border-x cursor-pointer select-none whitespace-nowrap outline-none focus-visible:ring-1 focus-visible:ring-accent max-w-[220px]",
                   isActive
                     ? "bg-bg text-fg border-border border-t-accent relative z-10 -mb-px pb-px"
                     : "text-fg-muted border-transparent hover:text-fg hover:bg-bg-hover/70"
@@ -293,8 +293,8 @@ function TabContextMenu({ menu, openFiles, onCloseMenu, onClosePaths, onDetach }
     }
   ];
 
-  const menuWidth = 208;
-  const menuHeight = 220;
+  const menuWidth = 176;
+  const menuHeight = 185;
   const left = Math.min(menu.x, Math.max(8, window.innerWidth - menuWidth - 8));
   const top = Math.min(menu.y, Math.max(8, window.innerHeight - menuHeight - 8));
   const label = target.kind === "view" ? (target.title ?? target.path) : (target.path.split("/").pop() ?? target.path);
@@ -304,13 +304,13 @@ function TabContextMenu({ menu, openFiles, onCloseMenu, onClosePaths, onDetach }
       ref={menuRef}
       role="menu"
       aria-label={`Tab actions for ${label}`}
-      className="fixed z-50 w-52 rounded border border-border bg-bg-elev shadow-2xl py-1 text-xs select-none"
+      className="fixed z-50 w-max min-w-[160px] max-w-[220px] rounded border border-border bg-bg-elev shadow-2xl py-0.5 text-[12px] select-none"
       style={{ left, top }}
       onContextMenu={(e) => e.preventDefault()}
     >
       {items.map((item, i) =>
         item === "sep" ? (
-          <li key={`sep-${i}`} role="separator" className="my-1 border-t border-border" />
+          <li key={`sep-${i}`} role="separator" className="my-0.5 border-t border-border" />
         ) : (
           <li key={item.id} role="none">
             <button
@@ -323,7 +323,7 @@ function TabContextMenu({ menu, openFiles, onCloseMenu, onClosePaths, onDetach }
                 item.onSelect();
               }}
               className={clsx(
-                "w-full text-left px-3 py-1.5 flex items-center justify-between transition-colors",
+                "w-full text-left px-2.5 py-[3px] flex items-center justify-between gap-4 whitespace-nowrap transition-colors",
                 item.disabled
                   ? "text-fg-muted/45 cursor-default"
                   : "text-fg hover:bg-bg-hover cursor-pointer"

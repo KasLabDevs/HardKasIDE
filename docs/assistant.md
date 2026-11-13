@@ -14,7 +14,7 @@ The sections below (tools table, approvals) describe the IDE's own agent, used w
 
 ## Setup
 
-Settings → Assistant, or the gear in the panel:
+Settings → Assistant, or the model name at the top of the panel:
 
 - **Provider**: OpenCode (the default, see above), Anthropic (Messages API) or any OpenAI-compatible endpoint (`baseUrl` + model).
 - **API key**: stored in `~/.hardkas-ide/assistant.json` on this machine, shown back only as a hint (`sk-…abcd`). `PUT /api/assistant/config` accepts it only from the IDE's own origin.

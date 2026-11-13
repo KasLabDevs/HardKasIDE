@@ -29,7 +29,7 @@ function EnvTargetPicker({ target, onChange }: { target: ExecutionTarget; onChan
   }, [open]);
 
   return (
-    <div ref={rootRef} className="relative flex items-center gap-1.5 whitespace-nowrap shrink-0">
+    <div ref={rootRef} className="relative flex items-center gap-1 whitespace-nowrap shrink-0">
       <Cpu size={12} />
       <span>env</span>
       <button
@@ -39,7 +39,7 @@ function EnvTargetPicker({ target, onChange }: { target: ExecutionTarget; onChan
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         title={current.description}
-        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded border border-border/80 bg-bg/60 hover:bg-bg-hover text-accent font-medium text-[11px] leading-tight cursor-pointer transition-colors"
+        className="inline-flex items-center gap-1 px-1.5 py-[2px] rounded border border-border/80 bg-bg/60 hover:bg-bg-hover text-accent font-medium text-[11px] leading-none cursor-pointer transition-colors"
       >
         <span>{current.label}</span>
         <ChevronDown size={11} className={clsx("text-fg-muted transition-transform", open && "rotate-180")} />
@@ -48,7 +48,7 @@ function EnvTargetPicker({ target, onChange }: { target: ExecutionTarget; onChan
         <ul
           role="listbox"
           aria-label="Execution environment options"
-          className="absolute left-0 top-full mt-1 z-50 w-72 py-1 rounded-md border border-border bg-bg-elev shadow-2xl"
+          className="absolute left-0 top-full mt-1 z-50 w-64 py-0.5 rounded-md border border-border bg-bg-elev shadow-2xl"
         >
           {ENVIRONMENTS.map((e) => {
             const selected = e.id === target;
@@ -118,12 +118,12 @@ export function EnvBar() {
   }
 
   return (
-    <div className="h-7 shrink-0 flex items-center gap-2.5 px-2.5 mb-[3px] rounded-[6px] border border-border bg-bg-panel text-[11px] text-fg-muted select-none overflow-visible relative z-20">
+    <div className="h-[25px] shrink-0 flex items-center gap-2 px-2 mb-[3px] rounded-[6px] border border-border bg-bg-panel text-[11px] text-fg-muted select-none overflow-visible relative z-20">
       <EnvTargetPicker target={target} onChange={setTarget} />
       <button
         type="button"
         onClick={() => setActiveSidePlugin("environment")}
-        className="flex items-center gap-1.5 hover:text-fg whitespace-nowrap min-w-0 shrink overflow-hidden cursor-pointer rounded px-1 py-0.5 hover:bg-bg-hover transition-colors"
+        className="flex items-center gap-1 hover:text-fg whitespace-nowrap min-w-0 shrink overflow-hidden cursor-pointer rounded px-1 py-[2px] leading-none hover:bg-bg-hover transition-colors"
         title={`${nodeText}${current.needsNode && node?.virtualDaaScore ? ` · DAA ${node.virtualDaaScore}` : ""} (Open Servers view)`}
       >
         <Server size={12} className="shrink-0" />

@@ -96,7 +96,7 @@ export function Breadcrumbs({ file }: { file: OpenFile }) {
     <div
       ref={wrapRef}
       aria-label="Breadcrumbs"
-      className="relative h-6 shrink-0 flex items-center gap-1 px-2.5 border-b border-border/70 bg-bg text-[11px] text-fg-muted select-none"
+      className="relative h-[22px] shrink-0 flex items-center gap-1 px-2 border-b border-border/70 bg-bg text-[11px] leading-none text-fg-muted select-none"
     >
       <div className="flex items-center gap-0.5 min-w-0 flex-1 overflow-x-auto [scrollbar-width:none]">
         {folders.map((seg) => {

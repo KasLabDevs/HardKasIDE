@@ -210,7 +210,11 @@ export class RunPlugin extends Plugin {
   }
 
   async localnetFund(account: string, amount: string) {
-    return this.console().runHardkas(["localnet", "fund", account, "--treasury", "--amount", amount, "--json"]);
+    const run = await this.console().runHardkas(["localnet", "fund", account, "--treasury", "--amount", amount, "--json"]);
+    if (run.status === "failed" && run.stderr && /unknown option\s+['"]?--treasury['"]?/i.test(run.stderr)) {
+      return this.console().runHardkas(["localnet", "fund", account, "--amount", amount, "--json"]);
+    }
+    return run;
   }
 }
 

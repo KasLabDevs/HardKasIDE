@@ -251,7 +251,7 @@ export async function* streamChat(req: ChatRequest, signal: AbortSignal): AsyncG
   if (!cfg.model) throw new AssistantError(400, "NO_MODEL", "Pick a model in the assistant settings first.");
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(cfg.baseUrl);
   if (!cfg.apiKey && !(cfg.provider === "openai" && isLocal)) {
-    throw new AssistantError(400, "NO_KEY", "Add your API key in the assistant settings (gear icon). A local Ollama or LM Studio endpoint needs no key.");
+    throw new AssistantError(400, "NO_KEY", "Add your API key in the assistant settings (click the model name at the top of the panel). A local Ollama or LM Studio endpoint needs no key.");
   }
   if (!req.messages?.length) throw new AssistantError(400, "BAD_REQUEST", "messages is required");
 
@@ -611,8 +611,12 @@ async function executeAgentTool(name: string, args: Record<string, unknown>, sig
       case "fund_account": {
         const acc = String(args.name ?? "alice");
         const amount = String(args.amountKas ?? "100");
-        const job = await startJob({ args: ["localnet", "fund", acc, "--treasury", "--amount", amount, "--profile", "toccata-v2", "--json"] });
+        let job = await startJob({ args: ["localnet", "fund", acc, "--treasury", "--amount", amount, "--profile", "toccata-v2", "--json"] });
         await waitForJob(job, 180_000);
+        if (job.status === "failed" && /unknown option\s+['"]?--treasury['"]?/i.test(job.stderr)) {
+          job = await startJob({ args: ["localnet", "fund", acc, "--amount", amount, "--profile", "toccata-v2", "--json"] });
+          await waitForJob(job, 180_000);
+        }
         const ok = job.status === "succeeded";
         return {
           ok,
@@ -658,7 +662,7 @@ export async function* streamAgent(req: AgentRequest, signal: AbortSignal): Asyn
   if (!cfg.model) throw new AssistantError(400, "NO_MODEL", "Pick a model in the assistant settings first.");
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(cfg.baseUrl);
   if (!cfg.apiKey && !(cfg.provider === "openai" && isLocal)) {
-    throw new AssistantError(400, "NO_KEY", "Add your API key in assistant settings (gear icon) to run Agent Mode.");
+    throw new AssistantError(400, "NO_KEY", "Add your API key in the assistant settings (click the model name at the top of the panel) to run the agent.");
   }
   if (!req.goal?.trim()) throw new AssistantError(400, "BAD_REQUEST", "goal is required");
 

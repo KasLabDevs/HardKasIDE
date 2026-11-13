@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AssistantError, answerConfirm, kaspaDocs, loadConfig, providerDefaults, publicConfig, saveConfig, streamChat, streamAgent, type ChatRequest, type AgentRequest } from "./assistant.js";
 import { debugSession } from "./debug.js";
-import { listDevAccountNames, revealDevAccountKey } from "./devkeys.js";
+import { listDevAccountAddresses, listDevAccountNames, revealDevAccountKey } from "./devkeys.js";
 import * as wsfs from "./fs.js";
 import { FsError } from "./fs.js";
 import * as store from "./store.js";
@@ -510,7 +510,9 @@ app.all("/api/dev/*", async (c) => {
 
 // ---------------------------------------------------------------- simnet dev-account keys (KasWare import)
 
-app.get("/api/devkeys", async (c) => c.json({ ok: true, names: await listDevAccountNames() }));
+app.get("/api/devkeys", async (c) =>
+  c.json({ ok: true, names: await listDevAccountNames(), addresses: await listDevAccountAddresses() })
+);
 
 app.post("/api/devkeys/reveal", async (c) => {
   // Private keys: only the IDE page itself (local origin, JSON body => CORS preflight) may ask.
