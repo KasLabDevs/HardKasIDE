@@ -5,7 +5,6 @@ import type { EnvironmentPlugin } from "@/plugins/environment";
 import { cliMismatch, formatKas, useEnv } from "@/store/env";
 import { ENVIRONMENTS, envOf, useIde } from "@/store/ide";
 import { OpSteps } from "@/shell/NodeOpProgress";
-import { ClusterCard } from "./ClusterCard";
 import { ExplorerCard } from "./ExplorerCard";
 import { MinerNotice } from "./MinerNotice";
 import { confirmDialog } from "@/utils/dialog";
@@ -142,8 +141,6 @@ export function ServersPanel() {
           {error && <div role="alert" className="text-error break-words">{error}</div>}
         </div>
       </section>
-
-      <ClusterCard />
 
       <ExplorerCard />
 

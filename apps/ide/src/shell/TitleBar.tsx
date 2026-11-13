@@ -586,7 +586,7 @@ export function TitleBar({ onHome, mainRef }: Props) {
 
   return (
     <>
-      <header ref={headerRef} data-tauri-drag-region className="titlebar relative z-40 h-8 shrink-0 flex items-center justify-between border-b border-border bg-bg-panel select-none">
+      <header ref={headerRef} data-tauri-drag-region className="titlebar relative z-40 h-8 shrink-0 flex items-center justify-between bg-bg-panel select-none">
         <div ref={leftRef} data-tauri-drag-region className="flex items-center gap-0.5 h-full shrink-0">
           <button
             type="button"

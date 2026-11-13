@@ -5,6 +5,7 @@
   --bg: #1f1f1f;
   --bg-elev: #252526;
   --bg-panel: #181818;
+  --bg-shell: #181818;
   --bg-hover: #2a2d2e;
   --border: #2b2b2b;
   --fg: #d7e0ea;
@@ -22,6 +23,7 @@
   --color-bg: var(--bg);
   --color-bg-elev: var(--bg-elev);
   --color-bg-panel: var(--bg-panel);
+  --color-bg-shell: var(--bg-shell);
   --color-bg-hover: var(--bg-hover);
   --color-border: var(--border);
   --color-fg: var(--fg);
@@ -55,10 +57,12 @@ body {
   font-size: 14.3px;
 }
 
-select,
-option {
-  background: var(--bg-elev);
-  color: var(--fg);
+@layer base {
+  select,
+  option {
+    background: var(--bg-elev);
+    color: var(--fg);
+  }
 }
 
 * {
@@ -101,13 +105,37 @@ a:focus-visible {
   outline-offset: -1px;
 }
 
-/* Ergonomic resize handles with wider invisible hit area */
+/* Floating card surfaces & ergonomic split gutters between workbench panes */
+.panel-card {
+  @apply rounded-[6px] border border-border overflow-hidden;
+}
+.ide-split-h {
+  width: 3px;
+}
+.ide-split-v {
+  height: 3px;
+}
 [data-panel-resize-handle-id] {
   position: relative;
   outline: none;
+  background: transparent;
+}
+[data-panel-resize-handle-id]::before {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+  background: transparent;
+  transition: background-color 150ms ease;
+  pointer-events: none;
 }
 [data-panel-resize-handle-id][data-panel-group-direction="horizontal"] {
   cursor: col-resize;
+}
+[data-panel-resize-handle-id][data-panel-group-direction="horizontal"]::before {
+  top: 6px;
+  bottom: 6px;
+  left: 0.5px;
+  width: 2px;
 }
 [data-panel-resize-handle-id][data-panel-group-direction="horizontal"]::after {
   content: "";
@@ -121,6 +149,12 @@ a:focus-visible {
 [data-panel-resize-handle-id][data-panel-group-direction="vertical"] {
   cursor: row-resize;
 }
+[data-panel-resize-handle-id][data-panel-group-direction="vertical"]::before {
+  left: 6px;
+  right: 6px;
+  top: 0.5px;
+  height: 2px;
+}
 [data-panel-resize-handle-id][data-panel-group-direction="vertical"]::after {
   content: "";
   position: absolute;
@@ -130,9 +164,10 @@ a:focus-visible {
   bottom: -3px;
   z-index: 10;
 }
-[data-panel-resize-handle-id]:focus-visible,
-[data-panel-resize-handle-id][data-resize-handle-state="drag"] {
-  background-color: var(--accent) !important;
+[data-panel-resize-handle-id]:hover::before,
+[data-panel-resize-handle-id]:focus-visible::before,
+[data-panel-resize-handle-id][data-resize-handle-state="drag"]::before {
+  background-color: var(--accent);
 }
 
 /* Debugger marks in the editor gutter and on the line where the debuggee is stopped. */

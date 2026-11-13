@@ -33,51 +33,53 @@ export function Workbench({ onHome }: Props) {
   const showRight = outlineOpen || rightDocked;
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-bg-panel">
       <TitleBar onHome={onHome} mainRef={mainRef} />
       <div className="flex-1 min-h-0 flex">
         <IconRail />
-        <PanelGroup direction="horizontal" className="flex-1 min-w-0">
-          {sidebarOpen && (
-            <>
-              <Panel id="side" order={1} defaultSize={22} minSize={14} maxSize={45}>
-                <SidePanel />
-              </Panel>
-              <PanelResizeHandle className="w-px bg-border hover:bg-accent transition-colors" />
-            </>
-          )}
-          <Panel id="main" order={2} minSize={30}>
-            <div ref={mainRef} className="h-full flex flex-col min-w-0">
-              <EnvBar />
-              <NodeOpBanner />
-              <div className="flex-1 min-h-0">
-                <PanelGroup direction="vertical">
-                  <Panel id="editor" order={1} minSize={20}>
-                    <MainArea />
-                  </Panel>
-                  {terminalOpen && (
-                    <>
-                      <PanelResizeHandle className="h-px bg-border hover:bg-accent transition-colors" />
-                      <Panel id="bottom" order={2} defaultSize={30} minSize={10}>
-                        <BottomPanel />
-                      </Panel>
-                    </>
-                  )}
-                </PanelGroup>
+        <div className="flex-1 min-w-0 flex p-[3px] bg-bg-shell">
+          <PanelGroup direction="horizontal" className="flex-1 min-w-0">
+            {sidebarOpen && (
+              <>
+                <Panel id="side" order={1} defaultSize={22} minSize={14} maxSize={45}>
+                  <SidePanel />
+                </Panel>
+                <PanelResizeHandle className="ide-split-h" />
+              </>
+            )}
+            <Panel id="main" order={2} minSize={30}>
+              <div ref={mainRef} className="h-full flex flex-col min-w-0">
+                <EnvBar />
+                <NodeOpBanner />
+                <div className="flex-1 min-h-0">
+                  <PanelGroup direction="vertical">
+                    <Panel id="editor" order={1} minSize={20}>
+                      <MainArea />
+                    </Panel>
+                    {terminalOpen && (
+                      <>
+                        <PanelResizeHandle className="ide-split-v" />
+                        <Panel id="bottom" order={2} defaultSize={30} minSize={10}>
+                          <BottomPanel />
+                        </Panel>
+                      </>
+                    )}
+                  </PanelGroup>
+                </div>
               </div>
-            </div>
-          </Panel>
-          {showRight && (
-            <>
-              <PanelResizeHandle className="w-px bg-border hover:bg-accent transition-colors" />
-              <Panel id="right" order={3} defaultSize={20} minSize={12} maxSize={40}>
-                <RightDock />
-              </Panel>
-            </>
-          )}
-        </PanelGroup>
+            </Panel>
+            {showRight && (
+              <>
+                <PanelResizeHandle className="ide-split-h" />
+                <Panel id="right" order={3} defaultSize={20} minSize={12} maxSize={40}>
+                  <RightDock />
+                </Panel>
+              </>
+            )}
+          </PanelGroup>
+        </div>
       </div>
-      <StatusBar />
+      <StatusBar borderless />
       <CommandPalette />
       <NewArtifactDialog />
       <SearchDialog />

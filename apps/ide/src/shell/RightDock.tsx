@@ -32,7 +32,7 @@ export function RightDock() {
         const View = p.view!;
         return (
           <PanelGroupItem key={p.profile.name} id={`dock-${p.profile.name}`} order={i + 1} size={viewSize} first={i === 0 && !outlineOpen}>
-            <section className="h-full bg-bg-panel border-l border-border flex flex-col min-w-0">
+            <section className="h-full bg-bg-panel panel-card flex flex-col min-w-0">
               <header className="panel-title flex items-center justify-between gap-2">
                 <span className="truncate">{p.profile.displayName}</span>
                 <span className="flex items-center gap-0.5 shrink-0">
@@ -64,7 +64,7 @@ export function RightDock() {
 function PanelGroupItem({ first, id, order, size, children }: { first: boolean; id: string; order: number; size: number; children: React.ReactNode }) {
   return (
     <>
-      {!first && <PanelResizeHandle className="h-px bg-border hover:bg-accent transition-colors" />}
+      {!first && <PanelResizeHandle className="ide-split-v" />}
       <Panel id={id} order={order} minSize={12} defaultSize={size}>{children}</Panel>
     </>
   );

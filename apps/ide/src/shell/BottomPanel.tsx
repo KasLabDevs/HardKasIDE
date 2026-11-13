@@ -85,7 +85,7 @@ export function BottomPanel() {
   const activeTerminal = active.kind === "terminal" ? terminals.find((t) => t.id === active.id) : undefined;
 
   return (
-    <div className="h-full flex flex-col bg-bg border-t border-border">
+    <div className="h-full flex flex-col bg-bg panel-card">
       <div role="tablist" aria-label="Bottom panel tabs" className="h-7 shrink-0 flex items-stretch border-b border-border bg-bg-panel text-[11px] select-none">
         <TabButton active={active.kind === "console"} onClick={() => setActive({ kind: "console" })} icon={<ScrollText size={13} />} label="Console" />
         {bottomSearchOpen && (

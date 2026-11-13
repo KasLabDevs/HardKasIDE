@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tauri::{AppHandle, Manager, RunEvent};
+use tauri::{webview::NewWindowResponse, AppHandle, Manager, RunEvent, Url, WebviewWindowBuilder};
 
 /// The IDE server (HTTP + WebSocket API and the built UI) listens here; see packages/ide-server.
 const PORT: u16 = 7421;
@@ -78,6 +78,52 @@ fn stop_server(app: &AppHandle) {
     let _ = child.wait();
 }
 
+/// What may load inside the IDE window: the IDE itself and its plugin pages (served on loopback names), the dev UI
+/// and the splash page. Every other web link opens in the system browser instead: the window has no tabs, so a
+/// `target="_blank"` link (Download installer, Release notes, docs) did nothing, and a plain link would replace the IDE.
+fn stays_in_app(url: &Url) -> bool {
+    match url.scheme() {
+        "tauri" | "about" | "data" | "blob" => true,
+        "http" | "https" => matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]" | "tauri.localhost")),
+        _ => false,
+    }
+}
+
+/// Only web pages and mail links are handed to the system; anything else (file:, custom schemes) is dropped.
+fn opens_in_browser(url: &Url) -> bool {
+    matches!(url.scheme(), "http" | "https" | "mailto")
+}
+
+#[cfg(windows)]
+fn browser_command(url: &str) -> Command {
+    // No shell: cmd's `start` would read `&` in a URL as a command separator.
+    let mut cmd = Command::new("rundll32");
+    cmd.args(["url.dll,FileProtocolHandler", url]);
+    no_console(&mut cmd);
+    cmd
+}
+
+#[cfg(target_os = "macos")]
+fn browser_command(url: &str) -> Command {
+    let mut cmd = Command::new("open");
+    cmd.arg(url);
+    cmd
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn browser_command(url: &str) -> Command {
+    let mut cmd = Command::new("xdg-open");
+    cmd.arg(url);
+    cmd
+}
+
+/// Hands a link to the default browser (or mail client). The URL is already parsed and normalised.
+fn open_in_browser(url: &Url) {
+    if opens_in_browser(url) {
+        let _ = browser_command(url.as_str()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    }
+}
+
 fn show_error(app: &AppHandle, message: &str) {
     if let Some(w) = app.get_webview_window("main") {
         thread::sleep(Duration::from_millis(600)); // let the splash page finish loading
@@ -93,6 +139,33 @@ pub fn run() {
     let app = tauri::Builder::default()
         .manage(Server(Mutex::new(None)))
         .setup(|app| {
+            // The window is described in tauri.conf.json ("create": false) and built here so that links leaving the
+            // IDE open in the system browser.
+            let config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .cloned()
+                .ok_or("tauri.conf.json has no \"main\" window")?;
+            WebviewWindowBuilder::from_config(app.handle(), &config)?
+                .on_navigation(|url| {
+                    if stays_in_app(url) {
+                        return true;
+                    }
+                    open_in_browser(url);
+                    false
+                })
+                .on_new_window(|url, _features| {
+                    if stays_in_app(&url) {
+                        return NewWindowResponse::Allow;
+                    }
+                    open_in_browser(&url);
+                    NewWindowResponse::Deny
+                })
+                .build()?;
+
             // Development (`tauri dev`): `pnpm dev` already runs Vite and the IDE server and the window loads Vite.
             if cfg!(debug_assertions) {
                 return Ok(());
@@ -131,4 +204,54 @@ pub fn run() {
             stop_server(handle);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{opens_in_browser, stays_in_app};
+    use tauri::Url;
+
+    fn u(s: &str) -> Url {
+        Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn the_ide_its_plugins_and_the_splash_stay_in_the_window() {
+        for s in [
+            "http://127.0.0.1:7421/",
+            "http://127.0.0.1:7421/?detachView=covenant",
+            "http://localhost:5173/",
+            "http://localhost:7421/plugins/x/index.html",
+            "http://[::1]:7421/",
+            "tauri://localhost/index.html",
+            "http://tauri.localhost/index.html",
+            "about:blank",
+        ] {
+            assert!(stays_in_app(&u(s)), "{s}");
+        }
+    }
+
+    #[test]
+    fn web_links_go_to_the_system_browser() {
+        for s in [
+            "https://github.com/KasLabDevs/HardKasIDE/releases/download/v0.3.0/HardKas.IDE_0.3.0_x64-setup.exe",
+            "https://github.com/KasLabDevs/HardKasIDE/releases/tag/v0.3.0",
+            "https://docs.kaspa.org/llms.txt",
+            "http://example.com/a?b=1&c=2",
+            "https://localhost.evil.example/",
+            "https://127.0.0.1.evil.example/",
+            "mailto:dev@example.com",
+        ] {
+            assert!(!stays_in_app(&u(s)), "{s}");
+            assert!(opens_in_browser(&u(s)), "{s}");
+        }
+    }
+
+    #[test]
+    fn other_schemes_neither_load_nor_open() {
+        for s in ["file:///C:/Windows/System32/calc.exe", "ms-settings:privacy", "javascript:alert(1)", "vscode://file/x"] {
+            assert!(!stays_in_app(&u(s)), "{s}");
+            assert!(!opens_in_browser(&u(s)), "{s}");
+        }
+    }
 }

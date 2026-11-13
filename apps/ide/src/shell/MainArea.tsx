@@ -74,7 +74,7 @@ export function MainArea() {
   );
 
   return (
-    <div className="h-full flex flex-col min-w-0 bg-bg">
+    <div className="h-full flex flex-col min-w-0 bg-bg panel-card">
       {!isEmpty && (
         <div role="tablist" aria-label="Open files" className="h-[1.8rem] shrink-0 flex items-end px-1 gap-0.5 border-b border-border bg-bg-panel overflow-x-auto">
           {openFiles.map((f) => {
