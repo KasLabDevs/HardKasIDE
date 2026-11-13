@@ -345,3 +345,232 @@ export async function runSql(sql: string): Promise<{ columns: string[]; rows: Ar
   const rows = result.rows ?? [];
   return { columns: rows.length ? Object.keys(rows[0]) : [], rows, total: result.total ?? rows.length, truncated: (result.total ?? 0) > rows.length, ms: result.ms ?? 0 };
 }
+
+// ------------------------------------------------------------------ lineage fallback (store + disk)
+
+export interface StoreLineageArtifact {
+  artifactId: string;
+  contentHash?: string;
+  schema: string;
+  kind?: string;
+  mode?: string;
+  networkId?: string;
+  txId?: string;
+  createdAt?: string;
+  path?: string;
+  integrityStatus?: string;
+  parentArtifactId?: string;
+  flowId?: string;
+}
+
+export interface StoreLineageEdge {
+  id: string;
+  source: string;
+  target: string;
+}
+
+export interface StoreLineageResult {
+  artifacts: StoreLineageArtifact[];
+  edges: StoreLineageEdge[];
+  source: "store" | "disk";
+}
+
+const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 ? v : undefined);
+
+const rec = (v: unknown): Record<string, unknown> | undefined =>
+  v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
+
+const hex64FromFilename = (file: string): string | undefined => {
+  const m = path.basename(file).match(/([0-9a-f]{64})/i);
+  return m?.[1];
+};
+
+function parseArtifactRecord(json: Record<string, unknown>, filePath?: string): StoreLineageArtifact | null {
+  const schema = str(json.schema);
+  if (!schema) return null;
+  const lineageObj = rec(json.lineage);
+  const executionObj = rec(json.execution);
+  const subjectObj = rec(json.subject);
+  const contentHash = str(json.contentHash);
+  const artifactId =
+    str(json.artifactId) ??
+    str(lineageObj?.artifactId) ??
+    contentHash ??
+    (filePath ? hex64FromFilename(filePath) : undefined);
+  if (!artifactId) return null;
+
+  const parentArtifactId =
+    str(lineageObj?.parentArtifactId) ??
+    str(json.parentArtifactId) ??
+    str(json.sourceSignedId) ??
+    str(json.sourcePlanId);
+  const txId = str(json.txId) ?? str(subjectObj?.txId);
+  const flowId =
+    str(json.workflowId) ??
+    str(lineageObj?.flowId) ??
+    str(lineageObj?.lineageId) ??
+    txId ??
+    parentArtifactId ??
+    artifactId;
+
+  return {
+    artifactId,
+    ...(contentHash ? { contentHash } : {}),
+    schema,
+    kind: str(json.kind) ?? schema,
+    ...(str(json.mode) ?? str(executionObj?.mode) ? { mode: str(json.mode) ?? str(executionObj?.mode) } : {}),
+    ...(str(json.networkId) ?? str(executionObj?.network) ? { networkId: str(json.networkId) ?? str(executionObj?.network) } : {}),
+    ...(txId ? { txId } : {}),
+    ...(str(json.createdAt) ?? str(json.timestamp) ? { createdAt: str(json.createdAt) ?? str(json.timestamp) } : {}),
+    ...(filePath ? { path: filePath } : {}),
+    ...(str(json.integrityStatus) ? { integrityStatus: str(json.integrityStatus) } : {}),
+    ...(parentArtifactId ? { parentArtifactId } : {}),
+    flowId
+  };
+}
+
+async function collectArtifactJsonFiles(dir: string, maxFiles: number): Promise<string[]> {
+  const files: string[] = [];
+  const walk = async (current: string) => {
+    if (files.length >= maxFiles) return;
+    let entries;
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (files.length >= maxFiles) return;
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.name.endsWith(".json")) files.push(full);
+    }
+  };
+  await walk(dir);
+  // Canonical `<kind>-<hash>.json` before timestamped `.plan.json` mirrors when deduplicating by artifactId.
+  files.sort((a, b) => Number(a.endsWith(".plan.json")) - Number(b.endsWith(".plan.json")));
+  return files;
+}
+
+/**
+ * Non-strict workspace fallback for Lineage & Artifacts when the HardKAS dev-server (:7420) is stopped or
+ * refuses strict boot due to an unrelated corrupted file: reads `.hardkas/store.db` and merges any valid
+ * JSON artifacts found under `.hardkas/artifacts/` while skipping malformed files.
+ */
+export async function lineage(workspaceRoot?: string): Promise<StoreLineageResult> {
+  const root = workspaceRoot ?? getRoot();
+  if (!root) throw new StoreError(409, "NO_WORKSPACE", "No workspace is open");
+
+  const byId = new Map<string, StoreLineageArtifact>();
+  const edgeMap = new Map<string, StoreLineageEdge>();
+  let fromStore = false;
+
+  const dbFile = path.join(root, ".hardkas", "store.db");
+  if (existsSync(dbFile)) {
+    try {
+      const sqlite = (await import("node:sqlite")) as unknown as {
+        DatabaseSync: new (f: string, o?: { readOnly?: boolean }) => Db;
+      };
+      const db = new sqlite.DatabaseSync(dbFile, { readOnly: true });
+      try {
+        const artifactRows = db
+          .prepare(
+            "SELECT artifact_id, content_hash, schema, kind, mode, network_id, tx_id, created_at, file_path, raw_json FROM artifacts ORDER BY created_at DESC LIMIT 500"
+          )
+          .all() as Array<Record<string, unknown>>;
+
+        for (const r of artifactRows) {
+          const artifactId = str(r.artifact_id);
+          const schema = str(r.schema);
+          if (!artifactId || !schema) continue;
+          let rawObj: Record<string, unknown> | undefined;
+          const rawJson = str(r.raw_json);
+          if (rawJson) {
+            try {
+              rawObj = rec(JSON.parse(rawJson));
+            } catch {
+              // ignore malformed raw_json cell
+            }
+          }
+          const parsed = rawObj ? parseArtifactRecord(rawObj, str(r.file_path)) : null;
+          const txId = str(r.tx_id) ?? parsed?.txId;
+          const parentArtifactId = parsed?.parentArtifactId;
+          const kind = str(r.kind) ?? parsed?.kind ?? schema;
+          byId.set(artifactId, {
+            artifactId,
+            ...(str(r.content_hash) ?? parsed?.contentHash ? { contentHash: str(r.content_hash) ?? parsed?.contentHash } : {}),
+            schema,
+            kind,
+            ...(str(r.mode) ?? parsed?.mode ? { mode: str(r.mode) ?? parsed?.mode } : {}),
+            ...(str(r.network_id) ?? parsed?.networkId ? { networkId: str(r.network_id) ?? parsed?.networkId } : {}),
+            ...(txId ? { txId } : {}),
+            ...(str(r.created_at) ?? parsed?.createdAt ? { createdAt: str(r.created_at) ?? parsed?.createdAt } : {}),
+            ...(str(r.file_path) ? { path: str(r.file_path) } : {}),
+            integrityStatus: kind === "CORRUPTED" ? "CORRUPTED" : "OK",
+            ...(parentArtifactId ? { parentArtifactId } : {}),
+            flowId: parsed?.flowId ?? txId ?? parentArtifactId ?? artifactId
+          });
+        }
+
+        const edgeRows = db
+          .prepare("SELECT parent_artifact_id, child_artifact_id FROM lineage_edges LIMIT 1000")
+          .all() as Array<Record<string, unknown>>;
+        for (const e of edgeRows) {
+          const source = str(e.parent_artifact_id);
+          const target = str(e.child_artifact_id);
+          if (!source || !target) continue;
+          const key = `${source}->${target}`;
+          edgeMap.set(key, { id: key, source, target });
+        }
+
+        fromStore = true;
+      } finally {
+        db.close();
+      }
+    } catch {
+      // Fall back to tolerant disk scan when store.db cannot be opened or queried.
+    }
+  }
+
+  const artifactsDir = path.join(root, ".hardkas", "artifacts");
+  if (existsSync(artifactsDir)) {
+    const files = await collectArtifactJsonFiles(artifactsDir, 600);
+    for (const file of files) {
+      let json: Record<string, unknown> | undefined;
+      try {
+        json = rec(JSON.parse(await fs.readFile(file, "utf8")));
+      } catch {
+        continue;
+      }
+      if (!json) continue;
+      const diskRow = parseArtifactRecord(json, file);
+      if (!diskRow) continue;
+      const existing = byId.get(diskRow.artifactId);
+      if (!existing) {
+        byId.set(diskRow.artifactId, diskRow);
+      } else {
+        // Fill missing metadata without overwriting indexed integrity/path.
+        if (!existing.path && diskRow.path) existing.path = diskRow.path;
+        if (!existing.txId && diskRow.txId) existing.txId = diskRow.txId;
+        if (!existing.parentArtifactId && diskRow.parentArtifactId) existing.parentArtifactId = diskRow.parentArtifactId;
+        if (!existing.flowId && diskRow.flowId) existing.flowId = diskRow.flowId;
+      }
+    }
+  }
+
+  for (const a of byId.values()) {
+    if (a.parentArtifactId && byId.has(a.parentArtifactId)) {
+      const key = `${a.parentArtifactId}->${a.artifactId}`;
+      if (!edgeMap.has(key)) {
+        edgeMap.set(key, { id: key, source: a.parentArtifactId, target: a.artifactId });
+      }
+    }
+  }
+
+  const artifacts = [...byId.values()].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  return {
+    artifacts,
+    edges: [...edgeMap.values()],
+    source: fromStore ? "store" : "disk"
+  };
+}

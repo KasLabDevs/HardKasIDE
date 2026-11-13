@@ -1,5 +1,5 @@
 import { GitBranch } from "lucide-react";
-import { api } from "@/api/client";
+import { api, IdeApiError } from "@/api/client";
 import { Plugin } from "@/engine/engine";
 import { useLineage, type ArtifactRow, type LineageEdge } from "@/store/lineage";
 import { useIde } from "@/store/ide";
@@ -112,15 +112,36 @@ export class LineagePlugin extends Plugin {
     const store = useLineage.getState();
     store.setLoading(true);
     try {
-      const [artifacts, lineage] = await Promise.all([
-        api.dev<{ artifacts: ArtifactRow[] }>("/artifacts"),
-        api.dev<{ nodes: Array<{ id: string }>; edges: LineageEdge[] }>("/lineage")
-      ]);
-      store.setGraph(artifacts.artifacts ?? [], lineage.edges ?? []);
+      const status = await api.devStatus().catch(() => ({ available: false, url: "", error: null }));
+      if (status.available) {
+        if (!this.source) this.connect();
+        try {
+          const [artifacts, lineage] = await Promise.all([
+            api.dev<{ artifacts: ArtifactRow[] }>("/artifacts"),
+            api.dev<{ nodes: Array<{ id: string }>; edges: LineageEdge[] }>("/lineage")
+          ]);
+          store.setGraph(artifacts.artifacts ?? [], lineage.edges ?? []);
+          store.setError(null);
+          this.emit("updated");
+          return;
+        } catch {
+          store.setLive(false);
+        }
+      } else {
+        store.setLive(false);
+      }
+
+      const fallback = await api.store.lineage();
+      store.setGraph(fallback.artifacts ?? [], fallback.edges ?? []);
       store.setError(null);
       this.emit("updated");
     } catch (e) {
-      store.setError(e instanceof Error ? e.message : String(e));
+      if (e instanceof IdeApiError && e.code === "NO_WORKSPACE") {
+        store.setGraph([], []);
+        store.setError(null);
+      } else {
+        store.setError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       store.setLoading(false);
     }

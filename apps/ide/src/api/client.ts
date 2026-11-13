@@ -294,6 +294,27 @@ export const api = {
       };
     }) => request<{ job: JobSummary; dest: string }>("/api/project/create", { method: "POST", body: JSON.stringify(body) })
   },
+  store: {
+    lineage: () =>
+      request<{
+        artifacts: Array<{
+          artifactId: string;
+          contentHash?: string;
+          schema: string;
+          kind?: string;
+          mode?: string;
+          networkId?: string;
+          txId?: string;
+          createdAt?: string;
+          path?: string;
+          integrityStatus?: string;
+          parentArtifactId?: string;
+          flowId?: string;
+        }>;
+        edges: Array<{ id: string; source: string; target: string }>;
+        source: "store" | "disk";
+      }>("/api/store/lineage")
+  },
   plugins: {
     /** Fetches a remote text/JSON document through ide-server (no CORS issues). */
     fetch: (url: string) => request<{ text: string }>(`/api/plugins/fetch?url=${encodeURIComponent(url)}`).then((r) => r.text),

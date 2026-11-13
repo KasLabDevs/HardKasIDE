@@ -707,6 +707,8 @@ app.post("/api/cluster/node", async (c) => {
 
 app.get("/api/store/health", async (c) => c.json({ ok: true, ...(await store.health()) }));
 
+app.get("/api/store/lineage", async (c) => c.json({ ok: true, ...(await store.lineage()) }));
+
 app.get("/api/store/artifacts", async (c) => {
   const q = c.req.query();
   return c.json({ ok: true, ...(await store.artifacts({ schema: q.schema, mode: q.mode, network: q.network, q: q.q, limit: Number(q.limit) || undefined, offset: Number(q.offset) || undefined })) });

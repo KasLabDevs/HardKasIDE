@@ -35,6 +35,7 @@ export function ArtifactsPanel() {
   const workspace = useIde((s) => s.workspace);
   const [rows, setRows] = useState<ArtifactRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [offlineSnapshot, setOfflineSnapshot] = useState(false);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState("");
 
@@ -42,12 +43,32 @@ export function ArtifactsPanel() {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.dev<{ artifacts: ArtifactRow[] }>("/artifacts");
-      const list = data.artifacts ?? [];
+      const status = await api.devStatus().catch(() => ({ available: false, url: "", error: null }));
+      if (status.available) {
+        try {
+          const data = await api.dev<{ artifacts: ArtifactRow[] }>("/artifacts");
+          const list = [...(data.artifacts ?? [])];
+          list.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+          setRows(list);
+          setOfflineSnapshot(false);
+          return;
+        } catch {
+          // Fall through to workspace store/disk snapshot if dev-server drops mid-request.
+        }
+      }
+
+      const fallback = await api.store.lineage();
+      const list = [...(fallback.artifacts ?? [])];
       list.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
       setRows(list);
+      setOfflineSnapshot(true);
     } catch (e) {
-      setError(e instanceof IdeApiError ? e.message : String(e));
+      if (e instanceof IdeApiError && e.code === "NO_WORKSPACE") {
+        setRows([]);
+        setOfflineSnapshot(false);
+      } else {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setLoading(false);
     }
@@ -100,6 +121,23 @@ export function ArtifactsPanel() {
           <div className="text-fg-muted">Start the HardKas dev-server in the project folder, then refresh:</div>
           <button type="button" className="btn-ghost w-full justify-center" onClick={() => void engine.get<ConsolePlugin>("console").runHardkas(["dev", "--headless"])}>
             Run hardkas dev --headless
+          </button>
+        </div>
+      )}
+      {!error && offlineSnapshot && (
+        <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border bg-bg-elev/60 text-[11px] text-fg-muted">
+          <span title="Dev-server (:7420) is off; showing .hardkas/store.db and workspace artifacts">
+            Snapshot (dev-server off)
+          </span>
+          <button
+            type="button"
+            className="text-fg hover:text-accent cursor-pointer"
+            onClick={() => {
+              void engine.get<ConsolePlugin>("console").runHardkas(["dev", "--headless"]);
+              setTimeout(() => void load(), 2500);
+            }}
+          >
+            Start dev-server
           </button>
         </div>
       )}
