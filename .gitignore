@@ -25,3 +25,4 @@ apps/desktop/src-tauri/gen/
 # HardKas runtime state created when the CLI runs from the repo root (node database, dev keystores)
 /.hardkas/
 
+apps/desktop/.opencode-cache/

@@ -1,15 +1,16 @@
 import clsx from "clsx";
-import { Check, ChevronDown, ChevronRight, FileCode2, FileJson, FolderOpen, Lock, PackageCheck, Rocket, Send, Sparkles } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, FileCode2, FileJson, FolderOpen, GitBranch, Lock, PackageCheck, Rocket, Send, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import { useEngine } from "@/engine/context";
 import type { CompilerPlugin } from "@/plugins/compiler";
 import type { SilverPlugin } from "@/plugins/silver";
 import { formatKas, useEnv } from "@/store/env";
-import { useSilver, type DeployRecord, type SilContractAbi, type SilEntry, type SilParam } from "@/store/silver";
+import { useSilver, type DeployRecord, type SilContractAbi, type SilEntry } from "@/store/silver";
 import { useIde } from "@/store/ide";
-import { hexToBytes, pubkeyFromAddress } from "@/utils/kaspaAddress";
+import { pubkeyFromAddress } from "@/utils/kaspaAddress";
 import { generateTypeChain } from "@/utils/typechain";
+import { CovenantChainSection, silverPlaceholderFor, toSilverArg } from "./CovenantGUI";
 import { MinerNotice } from "./MinerNotice";
 
 /**
@@ -18,7 +19,7 @@ import { MinerNotice } from "./MinerNotice";
  *   - deployed instances → one button per entry, typed inputs, account signatures
  *   - TypeChain SDK generator for TypeScript
  */
-export function ContractGUI() {
+export function ContractGUI({ includeCovenants = true }: { includeCovenants?: boolean } = {}) {
   const engine = useEngine();
   const silver = engine.get<SilverPlugin>("silverContracts");
   const compiled = useSilver((s) => s.compiled);
@@ -58,34 +59,47 @@ export function ContractGUI() {
     }
   };
 
-  const handleDeploy = async (c: SilContractAbi) => {
-    if (!compiled) return;
+  const compileWithConstructorArgs = async (c: SilContractAbi): Promise<string> => {
+    if (!compiled) throw new Error("No compiled contract");
     const params = c.constructorParams ?? [];
-    if (params.length > 0) {
-      const currentVals = constructorValues[c.name] ?? {};
-      // Every constructor value comes from the form: an empty field is an error, never a silent default.
-      const args = params.map((p, idx) => {
-        if (p.kind === "pubkey") {
-          const chosenAccountName = currentVals[p.name] ?? (accounts[idx]?.name ?? accounts[0]?.name ?? "alice");
-          const acct = accounts.find((a) => a.name === chosenAccountName) ?? accounts[0];
-          const pk = acct ? pubkeyFromAddress(acct.address) : null;
-          if (!pk) throw new Error(`Could not derive Schnorr pubkey for account ${chosenAccountName}`);
-          return { kind: "bytes", value: pk };
-        }
-        return toArg(p, currentVals[p.name] ?? "");
-      });
+    if (params.length === 0) return compiled.recordPath;
 
-      // Recompile with the constructor arguments through the compiler plugin: it writes the args file next to the
-      // source, refreshes the tree and emits the compile events the other panels listen to.
-      const source = compiled.sourcePath ?? `contracts/${c.name}.sil`;
-      const compileRes = await engine.get<CompilerPlugin>("silverCompiler").compile(source, { args: JSON.stringify(args) });
-      if (!compileRes.ok) throw new Error(compileRes.errorText || "Compilation with constructor arguments failed");
-      const recordToDeploy = useSilver.getState().compiled?.recordPath ?? compiled.recordPath;
-      await silver.deploy({ compileRecordPath: recordToDeploy, from, amountKas: amount, contract: compiled.contracts.length > 1 ? c.name : undefined });
-      return;
-    }
+    const currentVals = constructorValues[c.name] ?? {};
+    const args = params.map((p, idx) => {
+      if (p.kind === "pubkey") {
+        const chosenAccountName = currentVals[p.name] ?? (accounts[idx]?.name ?? accounts[0]?.name ?? "alice");
+        const acct = accounts.find((a) => a.name === chosenAccountName) ?? accounts[0];
+        const pk = acct ? pubkeyFromAddress(acct.address) : null;
+        if (!pk) throw new Error(`Could not derive Schnorr pubkey for account ${chosenAccountName}`);
+        return { kind: "bytes", value: pk };
+      }
+      return toSilverArg(p, currentVals[p.name] ?? "");
+    });
 
-    await silver.deploy({ compileRecordPath: compiled.recordPath, from, amountKas: amount, contract: compiled.contracts.length > 1 ? c.name : undefined });
+    const source = compiled.sourcePath ?? `contracts/${c.name}.sil`;
+    const compileRes = await engine.get<CompilerPlugin>("silverCompiler").compile(source, { args: JSON.stringify(args) });
+    if (!compileRes.ok) throw new Error(compileRes.errorText || "Compilation with constructor arguments failed");
+    return useSilver.getState().compiled?.recordPath ?? compiled.recordPath;
+  };
+
+  const handleDeploy = async (c: SilContractAbi) => {
+    const recordToDeploy = await compileWithConstructorArgs(c);
+    await silver.deploy({
+      compileRecordPath: recordToDeploy,
+      from,
+      amountKas: amount,
+      contract: compiled && compiled.contracts.length > 1 ? c.name : undefined
+    });
+  };
+
+  const handleCovenantGenesis = async (c: SilContractAbi) => {
+    const recordToDeploy = await compileWithConstructorArgs(c);
+    await silver.covenantGenesis({
+      compileRecordPath: recordToDeploy,
+      from,
+      amountKas: amount,
+      contract: compiled && compiled.contracts.length > 1 ? c.name : undefined
+    });
   };
 
   return (
@@ -107,7 +121,7 @@ export function ContractGUI() {
       {target === "localnet" && (!node?.miner?.running || busy !== null) && <MinerNotice compact />}
       {recordProblems.length > 0 && (
         <div role="status" className="rounded border border-warn/40 bg-warn/10 p-2 text-[11px] text-warn break-words">
-          {recordProblems.length} record{recordProblems.length === 1 ? "" : "s"} under .hardkas/artifacts/silver could not be read as expected (see the Console). A newer HardKas CLI may have changed their format; the IDE was tested with {cli?.pinned ?? "0.12.0-rc.29"}.
+          {recordProblems.length} record{recordProblems.length === 1 ? "" : "s"} under .hardkas/artifacts/silver could not be read as expected (see the Console). A newer HardKas CLI may have changed their format; the IDE was tested with {cli?.pinned ?? "0.13.0-rc.1"}.
         </div>
       )}
 
@@ -117,126 +131,172 @@ export function ContractGUI() {
         {!compiled ? (
           <div className="text-fg-muted">Compile a .sil file (Compiler panel or Ctrl+Enter) to deploy it here.</div>
         ) : (
-          compiled.contracts.map((c) => (
-            <div key={c.name} className="rounded border border-border bg-bg-elev p-2.5 space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-semibold text-fg truncate">{c.name}</span>
-                <span className="text-fg-muted shrink-0 tabular-nums">{c.entries.length} entr{c.entries.length === 1 ? "y" : "ies"}</span>
-              </div>
-              {c.address && (
-                <div className="font-mono text-[10px] text-fg-muted break-all" title="P2SH address of this contract (locking script hash)">
-                  {c.address}
-                </div>
-              )}
+          compiled.contracts.map((c) => {
+            const policyMap = c.covenantPolicies ?? {};
+            const policyNames = Object.keys(policyMap);
+            const policyEntriesSet = new Set(Object.values(policyMap));
+            const nonPolicyEntries = c.entries.filter((e) => !policyEntriesSet.has(e.name));
+            const hasPolicies = policyNames.length > 0;
+            const showPlainDeploy = !hasPolicies || nonPolicyEntries.length > 0;
 
-              {/* Constructor Arguments Selector (Auto Schnorr Keys) */}
-              {c.constructorParams && c.constructorParams.length > 0 && (
-                <div className="space-y-1.5 p-2 rounded bg-bg border border-border/80">
-                  <div className="text-[11px] font-semibold text-fg flex items-center justify-between">
-                    <span>Constructor Arguments</span>
-                    <span className="text-[10px] text-accent font-mono flex items-center gap-1">
-                      <Sparkles size={11} /> Auto Schnorr Keys
-                    </span>
-                  </div>
-                  {c.constructorParams.map((p, idx) => (
-                    <div key={p.name} className="flex items-center gap-2">
-                      <span className="w-24 shrink-0 text-fg-muted truncate text-[11px]" title={`${p.kind} ${p.name}`}>
-                        {p.name} <span className="text-[10px]">({p.kind})</span>
+            return (
+              <div key={c.name} className="rounded border border-border bg-bg-elev p-2.5 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="font-semibold text-fg truncate">{c.name}</span>
+                    {hasPolicies && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-accent/15 text-accent border border-accent/30 shrink-0">
+                        Covenant v1
                       </span>
-                      {p.kind === "pubkey" ? (
-                        <select
-                          aria-label={`Constructor argument ${p.name}`}
-                          className="input text-xs"
-                          value={constructorValues[c.name]?.[p.name] ?? accounts[idx]?.name ?? accounts[0]?.name ?? "alice"}
-                          onChange={(e) =>
-                            setConstructorValues((prev) => ({
-                              ...prev,
-                              [c.name]: { ...(prev[c.name] ?? {}), [p.name]: e.target.value }
-                            }))
-                          }
-                        >
-                          {(accounts.length ? accounts : [{ name: "alice", address: "" }, { name: "bob", address: "" }]).map((a) => (
-                            <option key={a.name} value={a.name}>
-                              {a.name} {a.address ? `(${a.address.slice(0, 14)}...)` : ""}
-                            </option>
-                          ))}
-                        </select>
-                      ) : p.kind === "int" ? (
-                        <input
-                          aria-label={`Constructor argument ${p.name}`}
-                          className="input font-mono text-xs"
-                          placeholder="integer e.g. 1000000000"
-                          value={constructorValues[c.name]?.[p.name] ?? ""}
-                          onChange={(e) =>
-                            setConstructorValues((prev) => ({
-                              ...prev,
-                              [c.name]: { ...(prev[c.name] ?? {}), [p.name]: e.target.value }
-                            }))
-                          }
-                        />
-                      ) : (
-                        <input
-                          aria-label={`Constructor argument ${p.name}`}
-                          className="input font-mono text-xs"
-                          placeholder={p.kind}
-                          value={constructorValues[c.name]?.[p.name] ?? ""}
-                          onChange={(e) =>
-                            setConstructorValues((prev) => ({
-                              ...prev,
-                              [c.name]: { ...(prev[c.name] ?? {}), [p.name]: e.target.value }
-                            }))
-                          }
-                        />
-                      )}
-                    </div>
-                  ))}
+                    )}
+                  </div>
+                  <span className="text-fg-muted shrink-0 tabular-nums">
+                    {hasPolicies
+                      ? `${policyNames.length} polic${policyNames.length === 1 ? "y" : "ies"}`
+                      : `${c.entries.length} entr${c.entries.length === 1 ? "y" : "ies"}`}
+                  </span>
                 </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <div className="text-fg-muted mb-0.5">Fund from</div>
-                  <select aria-label="Fund contract from account" className="input" value={from} onChange={(e) => setFrom(e.target.value)}>
-                    {(accounts.length ? accounts : [{ name: "alice" }]).map((a) => (
-                      <option key={a.name} value={a.name}>
-                        {a.name}
-                      </option>
+                {c.stateFields && c.stateFields.length > 0 && (
+                  <div className="flex flex-wrap gap-1 text-[10px] font-mono">
+                    {c.stateFields.map((sf) => (
+                      <span key={sf.name} className="px-1.5 py-0.5 rounded bg-bg border border-border/80 text-fg-muted">
+                        State {sf.kind} <span className="text-fg">{sf.name}</span>
+                        {c.stateValues?.[sf.name] !== undefined ? ` = ${c.stateValues[sf.name]}` : ""}
+                      </span>
                     ))}
-                  </select>
-                </div>
-                <div>
-                  <div className="text-fg-muted mb-0.5">Value (KAS)</div>
-                  <input aria-label="Contract value in KAS" className="input tabular-nums" value={amount} onChange={(e) => setAmount(e.target.value)} />
-                </div>
-              </div>
+                  </div>
+                )}
+                {c.address && (
+                  <div className="font-mono text-[10px] text-fg-muted break-all" title="P2SH address of this contract (locking script hash)">
+                    {c.address}
+                  </div>
+                )}
 
-              <div className="flex gap-1.5 pt-0.5">
-                <button
-                  type="button"
-                  className="btn-primary flex-1 justify-center truncate"
-                  disabled={busy !== null}
-                  onClick={() => void handleDeploy(c).catch((e) => useSilver.getState().setError(e instanceof Error ? e.message : String(e)))}
-                  title="Deploy contract to localnet"
-                >
-                  <Rocket size={13} className="shrink-0" /> <span className="truncate">{busy === "deploy" ? "Deploying…" : `Deploy ${c.name}`}</span>
-                </button>
-                <button
-                  type="button"
-                  className="btn-ghost shrink-0 px-2.5 text-accent hover:text-accent-hover"
-                  onClick={() => void handleGenerateSdk(c)}
-                  title="Generate strongly-typed TypeScript SDK (TypeChain) for this contract"
-                >
-                  <FileCode2 size={13} /> SDK
-                </button>
-              </div>
+                {/* Constructor Arguments Selector (Auto Schnorr Keys) */}
+                {c.constructorParams && c.constructorParams.length > 0 && (
+                  <div className="space-y-1.5 p-2 rounded bg-bg border border-border/80">
+                    <div className="text-[11px] font-semibold text-fg flex items-center justify-between">
+                      <span>Constructor Arguments</span>
+                      <span className="text-[10px] text-accent font-mono flex items-center gap-1">
+                        <Sparkles size={11} /> Auto Schnorr Keys
+                      </span>
+                    </div>
+                    {c.constructorParams.map((p, idx) => (
+                      <div key={p.name} className="flex items-center gap-2">
+                        <span className="w-24 shrink-0 text-fg-muted truncate text-[11px]" title={`${p.kind} ${p.name}`}>
+                          {p.name} <span className="text-[10px]">({p.kind})</span>
+                        </span>
+                        {p.kind === "pubkey" ? (
+                          <select
+                            aria-label={`Constructor argument ${p.name}`}
+                            className="input text-xs"
+                            value={constructorValues[c.name]?.[p.name] ?? accounts[idx]?.name ?? accounts[0]?.name ?? "alice"}
+                            onChange={(e) =>
+                              setConstructorValues((prev) => ({
+                                ...prev,
+                                [c.name]: { ...(prev[c.name] ?? {}), [p.name]: e.target.value }
+                              }))
+                            }
+                          >
+                            {(accounts.length ? accounts : [{ name: "alice", address: "" }, { name: "bob", address: "" }]).map((a) => (
+                              <option key={a.name} value={a.name}>
+                                {a.name} {a.address ? `(${a.address.slice(0, 14)}...)` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        ) : p.kind === "int" ? (
+                          <input
+                            aria-label={`Constructor argument ${p.name}`}
+                            className="input font-mono text-xs"
+                            placeholder="integer e.g. 7"
+                            value={constructorValues[c.name]?.[p.name] ?? (c.stateMapDefault ? Object.entries(c.stateMapDefault).find(([, i]) => i === idx)?.[0] ? c.stateValues?.[Object.entries(c.stateMapDefault).find(([, i]) => i === idx)![0]] ?? "" : "" : "")}
+                            onChange={(e) =>
+                              setConstructorValues((prev) => ({
+                                ...prev,
+                                [c.name]: { ...(prev[c.name] ?? {}), [p.name]: e.target.value }
+                              }))
+                            }
+                          />
+                        ) : (
+                          <input
+                            aria-label={`Constructor argument ${p.name}`}
+                            className="input font-mono text-xs"
+                            placeholder={p.kind}
+                            value={constructorValues[c.name]?.[p.name] ?? ""}
+                            onChange={(e) =>
+                              setConstructorValues((prev) => ({
+                                ...prev,
+                                [c.name]: { ...(prev[c.name] ?? {}), [p.name]: e.target.value }
+                              }))
+                            }
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-              {sdkNotice && (
-                <div role="status" className="text-ok text-[11px] flex items-center gap-1">
-                  <Check size={11} /> {sdkNotice}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="text-fg-muted mb-0.5">Fund from</div>
+                    <select aria-label="Fund contract from account" className="input" value={from} onChange={(e) => setFrom(e.target.value)}>
+                      {(accounts.length ? accounts : [{ name: "alice" }]).map((a) => (
+                        <option key={a.name} value={a.name}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <div className="text-fg-muted mb-0.5">Value (KAS)</div>
+                    <input aria-label="Contract value in KAS" className="input tabular-nums" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                  </div>
                 </div>
-              )}
-            </div>
-          ))
+
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {hasPolicies && (
+                    <button
+                      type="button"
+                      data-testid={`covenant-genesis-btn-${c.name}`}
+                      className="btn-primary flex-1 justify-center truncate"
+                      disabled={busy !== null}
+                      onClick={() => void handleCovenantGenesis(c).catch((e) => useSilver.getState().setError(e instanceof Error ? e.message : String(e)))}
+                      title="Create Toccata Covenant v1 genesis output bound to covenantId"
+                    >
+                      <GitBranch size={13} className="shrink-0" />
+                      <span className="truncate">{busy === "covenant:genesis" ? "Creating Genesis…" : `Genesis ${c.name}`}</span>
+                    </button>
+                  )}
+                  {showPlainDeploy && (
+                    <button
+                      type="button"
+                      className={clsx(hasPolicies ? "btn-ghost border border-border" : "btn-primary", "flex-1 justify-center truncate")}
+                      disabled={busy !== null}
+                      onClick={() => void handleDeploy(c).catch((e) => useSilver.getState().setError(e instanceof Error ? e.message : String(e)))}
+                      title="Deploy contract P2SH output to localnet"
+                    >
+                      <Rocket size={13} className="shrink-0" />
+                      <span className="truncate">{busy === "deploy" ? "Deploying…" : `Deploy ${c.name}`}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="btn-ghost shrink-0 px-2.5 text-accent hover:text-accent-hover"
+                    onClick={() => void handleGenerateSdk(c)}
+                    title="Generate strongly-typed TypeScript SDK (TypeChain) for this contract"
+                  >
+                    <FileCode2 size={13} /> SDK
+                  </button>
+                </div>
+
+                {sdkNotice && (
+                  <div role="status" className="text-ok text-[11px] flex items-center gap-1">
+                    <Check size={11} /> {sdkNotice}
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
         <div className="flex gap-1">
           <input aria-label="Deploy record path" className="input font-mono" placeholder="At record: .hardkas/artifacts/silver/silverDeploy-….json" value={atPath} onChange={(e) => setAtPath(e.target.value)} />
@@ -253,6 +313,9 @@ export function ContractGUI() {
         </div>
         {error && <div role="alert" className="text-error whitespace-pre-wrap break-words">{error}</div>}
       </div>
+
+      {/* ---------------------------------------------------- Toccata Covenants v1 */}
+      {includeCovenants && <CovenantChainSection />}
 
       {/* ---------------------------------------------------- deployed instances */}
       <div className="space-y-2">
@@ -345,7 +408,7 @@ function EntryCall({ deploy, entry, disabled, onCall }: { deploy: DeployRecord; 
     setErr(null);
     let args: unknown[];
     try {
-      args = entry.params.map((p, i) => toArg(p, values[i] ?? ""));
+      args = entry.params.map((p, i) => toSilverArg(p, values[i] ?? ""));
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
       return;
@@ -394,7 +457,7 @@ function EntryCall({ deploy, entry, disabled, onCall }: { deploy: DeployRecord; 
               <option value="false">false</option>
             </select>
           ) : (
-            <input aria-label={`${p.name} (${p.kind})`} className="input font-mono" placeholder={placeholderFor(p)} value={values[i]} onChange={(e) => setValues((v) => v.map((x, j) => (j === i ? e.target.value : x)))} />
+            <input aria-label={`${p.name} (${p.kind})`} className="input font-mono" placeholder={silverPlaceholderFor(p)} value={values[i]} onChange={(e) => setValues((v) => v.map((x, j) => (j === i ? e.target.value : x)))} />
           )}
         </div>
       ))}
@@ -428,35 +491,4 @@ function EntryCall({ deploy, entry, disabled, onCall }: { deploy: DeployRecord; 
       {err && <div role="alert" className="text-error whitespace-pre-wrap break-words">{err}</div>}
     </div>
   );
-}
-
-function placeholderFor(p: SilParam): string {
-  switch (p.kind) {
-    case "int":
-      return "integer, e.g. 1000000000";
-    case "pubkey":
-    case "bytes":
-      return "hex bytes, e.g. 3e1b14…";
-    default:
-      return p.kind;
-  }
-}
-
-/** Builds a CLI entry argument from a typed input. */
-function toArg(p: SilParam, raw: string): unknown {
-  const v = raw.trim();
-  switch (p.kind) {
-    case "sig":
-      if (!v) throw new Error(`${p.name}: choose the signing account`);
-      return { kind: "signature", account: v };
-    case "int":
-      if (!/^-?\d+$/.test(v)) throw new Error(`${p.name}: expected an integer`);
-      return { kind: "int", value: Number(v) };
-    case "bool":
-      if (v !== "true" && v !== "false") throw new Error(`${p.name}: expected true or false`);
-      return { kind: "bool", value: v === "true" };
-    default:
-      if (!v) throw new Error(`${p.name}: expected hex bytes`);
-      return { kind: "bytes", value: hexToBytes(v) };
-  }
 }

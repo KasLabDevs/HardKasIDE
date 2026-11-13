@@ -55,20 +55,23 @@ export class ConsolePlugin extends Plugin {
     const quiet = Boolean(options?.quiet); // background polling: no echo, no result block
     if (!quiet) state.log("command", label);
     state.setStatus(`Running: ${label}`);
-    const job = await api.jobs.run(args, { cwd: options?.cwd, command: options?.command });
+    const job = await api.jobs.run(args, { cwd: options?.cwd, command: options?.command, wait: quiet });
     this.emit("jobStarted", job);
     let stdoutBuffer = "";
-    const done = await api.jobs.follow(job.id, (type, data) => {
-      if (type === "stdout") {
-        // --json output is one document; keep it for the structured block, don't spam lines.
-        stdoutBuffer += data;
-        if (!args.includes("--json")) state.log("log", data.trimEnd());
-      } else if (type === "stderr") {
-        if (!options?.quiet) state.log(data.toLowerCase().includes("error") ? "error" : "log", data.trimEnd());
-      } else {
-        state.log("error", data);
-      }
-    });
+    const done =
+      job.status !== "running"
+        ? { status: job.status, exitCode: job.exitCode, result: job.result }
+        : await api.jobs.follow(job.id, (type, data) => {
+            if (type === "stdout") {
+              // --json output is one document; keep it for the structured block, don't spam lines.
+              stdoutBuffer += data;
+              if (!args.includes("--json")) state.log("log", data.trimEnd());
+            } else if (type === "stderr") {
+              if (!options?.quiet) state.log(data.toLowerCase().includes("error") ? "error" : "log", data.trimEnd());
+            } else {
+              state.log("error", data);
+            }
+          });
     const result: RunResult = { ...done, job: { ...job, status: done.status, exitCode: done.exitCode, result: done.result } };
     if (!quiet) {
       if (done.result !== null && done.result !== undefined) {

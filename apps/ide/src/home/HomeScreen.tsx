@@ -88,7 +88,7 @@ export function HomeScreen({ onOpened }: Props) {
             <div className="text-[11px] text-fg-muted space-y-1">
               <p>Workbench for Kaspa and SilverScript. Project flow shaped after Visual Studio.</p>
               <p>
-                Engine: HardKas CLI {cli === undefined ? "…" : cli?.version ?? `not found (tested with ${cli?.pinned ?? "0.12.0-rc.29"})`}
+                Engine: HardKas CLI {cli === undefined ? "…" : cli?.version ?? `not found (tested with ${cli?.pinned ?? "0.13.0-rc.1"})`}
                 {cli?.version && cli.version !== cli.pinned ? ` (tested with ${cli.pinned})` : ""} · simulator / localnet / rpc.
               </p>
             </div>

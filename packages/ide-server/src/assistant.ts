@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import * as wsfs from "./fs.js";
 import { startJob, waitForJob } from "./runner.js";
+import { runAcpTurn } from "./acpAgent.js";
+import { getRoot } from "./workspace.js";
 
 /**
  * Assistant backend: provider-agnostic chat, grounded in the official Kaspa docs.
@@ -13,7 +15,8 @@ import { startJob, waitForJob } from "./runner.js";
  * AIs is docs.kaspa.org/llms.txt and /llms-full.txt, plus an "Agent Brief" for Toccata/Silverscript.
  * Feeding those to any model gives the same grounding without depending on one vendor.
  *
- * Providers: "anthropic" (Messages API) and "openai" (any OpenAI-compatible Chat Completions
+ * Providers: "opencode" (the default: the IDE hosts the OpenCode agent over ACP, see acpAgent.ts; free models,
+ * no key), "anthropic" (Messages API) and "openai" (any OpenAI-compatible Chat Completions
  * endpoint: OpenAI, OpenRouter, LM Studio, Ollama at http://localhost:11434/v1, …).
  * The API key is stored in ~/.hardkas-ide/assistant.json on this machine and never sent to the browser.
  */
@@ -24,7 +27,7 @@ const CACHE_DIR = path.join(HOME, "cache");
 const DOCS_BASE = "https://docs.kaspa.org";
 const DOCS_TTL_MS = 24 * 60 * 60 * 1000;
 
-export type Provider = "anthropic" | "openai";
+export type Provider = "opencode" | "anthropic" | "openai";
 export type DocsMode = "off" | "core" | "full";
 
 export interface AssistantConfig {
@@ -37,11 +40,12 @@ export interface AssistantConfig {
 }
 
 const DEFAULTS: Record<Provider, { baseUrl: string; model: string }> = {
+  opencode: { baseUrl: "", model: "opencode/big-pickle" },
   anthropic: { baseUrl: "https://api.anthropic.com", model: "claude-sonnet-5-5" },
   openai: { baseUrl: "https://api.openai.com/v1", model: "" }
 };
 
-export const defaultConfig: AssistantConfig = { provider: "anthropic", baseUrl: DEFAULTS.anthropic.baseUrl, model: DEFAULTS.anthropic.model, apiKey: "", docs: "core", maxTokens: 4096 };
+export const defaultConfig: AssistantConfig = { provider: "opencode", baseUrl: DEFAULTS.opencode.baseUrl, model: DEFAULTS.opencode.model, apiKey: "", docs: "core", maxTokens: 4096 };
 
 export function providerDefaults(): typeof DEFAULTS {
   return DEFAULTS;
@@ -65,7 +69,7 @@ export function publicConfig(c: AssistantConfig) {
 export async function saveConfig(patch: Partial<AssistantConfig> & { clearKey?: boolean }): Promise<AssistantConfig> {
   const current = await loadConfig();
   const next: AssistantConfig = { ...current };
-  if (patch.provider && (patch.provider === "anthropic" || patch.provider === "openai")) {
+  if (patch.provider && (patch.provider === "opencode" || patch.provider === "anthropic" || patch.provider === "openai")) {
     next.provider = patch.provider;
     // Switching provider without touching URL/model resets them to that provider's defaults.
     if (patch.baseUrl === undefined) next.baseUrl = DEFAULTS[patch.provider].baseUrl;
@@ -158,6 +162,45 @@ function systemPrompt(req: ChatRequest, docs: { text: string; mode: DocsMode } |
   return lines.join("\n");
 }
 
+// ---------------------------------------------------------------- prompts for a hosted ACP agent (OpenCode)
+
+const HARDKAS_BRIEF = [
+  "You are working inside HardKas IDE on a HardKas project (Kaspa L1). HardKas plans, signs, simulates and replays Kaspa transactions and compiles SilverScript (.sil) covenant contracts with silverc.",
+  "Use the hardkas-ide MCP tools for HardKas work: compile_silverscript, deploy_contract, spend_contract, send_payment, account_balance, accounts_list, fund_account, tx_status, run_tests, list_artifacts, query_index, environment_status, hardkas_help, and kaspa_docs for the official Kaspa documentation (prefer it over memory: Toccata is UTXO-native, not an Ethereum contract model).",
+  "Targets: simulator (in-memory, the default), localnet (Docker rusty-kaspad, simnet), testnet (testnet-10). Use the simulator unless the user asks for a real node. Mainnet is not supported.",
+  "The user approves every action in the IDE. Never read or print private keys, .env files, accounts.real.json or dev-account keystores."
+];
+
+function contextLines(ctx: ChatRequest["context"]): string[] {
+  const lines: string[] = [];
+  if (!ctx) return lines;
+  if (ctx.workspace) lines.push(`Open project: ${ctx.workspace}`);
+  if (ctx.environment) lines.push(`Selected environment: ${ctx.environment}`);
+  if (ctx.file && !isSensitivePath(ctx.file.path)) {
+    const body = ctx.file.content.length > 24000 ? ctx.file.content.slice(0, 24000) + "\n…(truncated)" : ctx.file.content;
+    lines.push(`The user has this file open (${ctx.file.path}):\n\`\`\`\n${body}\n\`\`\``);
+  }
+  return lines;
+}
+
+function chatPromptForAgent(req: ChatRequest): string {
+  const history = req.messages.slice(-12, -1).map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`);
+  const lastUser = req.messages[req.messages.length - 1]?.content ?? "";
+  return [
+    ...HARDKAS_BRIEF,
+    "This is the IDE's chat: answer, explain and suggest. Do not run commands or edit files; read-only tools only.",
+    ...contextLines(req.context),
+    history.length ? `\nConversation so far:\n${history.join("\n\n")}` : "",
+    `\nUser: ${lastUser}`
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function agentPromptForAgent(req: AgentRequest): string {
+  return [...HARDKAS_BRIEF, ...contextLines(req.context), `\nGoal: ${req.goal.trim()}`].join("\n");
+}
+
 export class AssistantError extends Error {
   constructor(
     public status: number,
@@ -171,6 +214,21 @@ export class AssistantError extends Error {
 /** Streams the model's answer as text deltas. Throws AssistantError before the first byte for config problems. */
 export async function* streamChat(req: ChatRequest, signal: AbortSignal): AsyncGenerator<{ type: "delta"; text: string } | { type: "meta"; docs: { mode: DocsMode; chars: number; stale: boolean } | null; model: string }> {
   const cfg = await loadConfig();
+  if (cfg.provider === "opencode") {
+    if (!req.messages?.length) throw new AssistantError(400, "BAD_REQUEST", "messages is required");
+    yield { type: "meta", docs: null, model: cfg.model || "opencode default" };
+    let produced = false;
+    // Chat is read-only ("plan" mode): any permission request is declined without asking.
+    for await (const ev of runAcpTurn({ cwd: getRoot() ?? os.homedir(), prompt: chatPromptForAgent(req), model: cfg.model, mode: "plan", streamText: true, decide: async () => false, signal })) {
+      if (ev.type === "delta") {
+        produced = true;
+        yield ev;
+      } else if (ev.type === "done" && !ev.ok && !produced) {
+        throw new AssistantError(502, "AGENT_FAILED", ev.summary);
+      }
+    }
+    return;
+  }
   if (!cfg.model) throw new AssistantError(400, "NO_MODEL", "Pick a model in the assistant settings first.");
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(cfg.baseUrl);
   if (!cfg.apiKey && !(cfg.provider === "openai" && isLocal)) {
@@ -315,7 +373,7 @@ export function answerConfirm(id: string, answer: ConfirmAnswer): boolean {
   return true;
 }
 
-function waitForConfirm(id: string, signal: AbortSignal): Promise<ConfirmAnswer> {
+export function waitForConfirm(id: string, signal: AbortSignal): Promise<ConfirmAnswer> {
   return new Promise((resolve) => {
     const finish = (answer: ConfirmAnswer) => {
       clearTimeout(timer);
@@ -534,7 +592,7 @@ async function executeAgentTool(name: string, args: Record<string, unknown>, sig
       case "fund_account": {
         const acc = String(args.name ?? "alice");
         const amount = String(args.amountKas ?? "100");
-        const job = await startJob({ args: ["localnet", "fund", acc, "--amount", amount, "--profile", "toccata-v2", "--json"] });
+        const job = await startJob({ args: ["localnet", "fund", acc, "--treasury", "--amount", amount, "--profile", "toccata-v2", "--json"] });
         await waitForJob(job, 180_000);
         const ok = job.status === "succeeded";
         return {
@@ -555,6 +613,28 @@ async function executeAgentTool(name: string, args: Record<string, unknown>, sig
 
 export async function* streamAgent(req: AgentRequest, signal: AbortSignal): AsyncGenerator<AgentEvent> {
   const cfg = await loadConfig();
+  if (cfg.provider === "opencode") {
+    if (!req.goal?.trim()) throw new AssistantError(400, "BAD_REQUEST", "goal is required");
+    const root = getRoot();
+    if (!root) throw new AssistantError(409, "NO_WORKSPACE", "Open a project first: the agent works inside the open project.");
+    const run = { autoApprove: false };
+    for await (const ev of runAcpTurn({
+      cwd: root,
+      prompt: agentPromptForAgent(req),
+      model: cfg.model,
+      mode: "build",
+      shouldAsk: () => !run.autoApprove,
+      decide: async (r) => {
+        const answer = await waitForConfirm(r.id, signal);
+        if (answer.approved && answer.allForRun) run.autoApprove = true;
+        return answer.approved;
+      },
+      signal
+    })) {
+      if (ev.type !== "delta") yield ev;
+    }
+    return;
+  }
   if (!cfg.model) throw new AssistantError(400, "NO_MODEL", "Pick a model in the assistant settings first.");
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(cfg.baseUrl);
   if (!cfg.apiKey && !(cfg.provider === "openai" && isLocal)) {

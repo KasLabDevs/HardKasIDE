@@ -5,7 +5,19 @@ import deployAuction from "@/__fixtures__/silver/deploy-kaspaauction.json";
 import deployLive from "@/__fixtures__/silver/deploy-signedrelease-live.json";
 import deploySpent from "@/__fixtures__/silver/deploy-signedrelease-spent.json";
 import spendRelease from "@/__fixtures__/silver/spend-signedrelease.json";
-import { markSpent, newestFirst, parseCompileRecord, parseDeployRecord, parseJsonRecord, parseSchema, parseSpendRecord, schemaProblems } from "./silverRecords";
+import {
+  groupCovenantChains,
+  markSpent,
+  markSupersededCovenants,
+  newestFirst,
+  parseCompileRecord,
+  parseCovenantRecord,
+  parseDeployRecord,
+  parseJsonRecord,
+  parseSchema,
+  parseSpendRecord,
+  schemaProblems
+} from "./silverRecords";
 
 // The fixtures are real records written by HardKas 0.12.0-rc.29 for the demo workspace.
 const raw = (o: unknown) => o as Record<string, unknown>;
@@ -136,5 +148,95 @@ describe("markSpent + newestFirst", () => {
   it("orders by createdAt, newest first, undated last", () => {
     const list = newestFirst([{ createdAt: "2026-10-26T00:00:00Z", n: 1 }, { n: 3 }, { createdAt: "2026-10-30T00:00:00Z", n: 2 }]);
     expect(list.map((x) => x.n)).toEqual([2, 1, 3]);
+  });
+});
+
+describe("Toccata covenant records & ABI decoding", () => {
+  const sampleCounterCompile = {
+    schema: "hardkas.silverCompile.v1",
+    contentHash: "0b3fae3bd823117ad48e12e738311704b559b8d1d9baa86be82dfa8a7c27dc1f",
+    networkId: "simnet",
+    source: {
+      path: "contracts/counter.sil",
+      text: `pragma silverscript ^0.1.0;\ncontract Counter(int init_value) {\n  int value = init_value;\n  #[covenant(binding = auth, from = 1, to = 1, mode = transition)]\n  function bump(State prev_state, int delta) : (State) {\n    require(delta > 0);\n    return(State { value: prev_state.value + delta });\n  }\n}`
+    },
+    artifactJson: JSON.stringify({
+      schema_version: 1,
+      compiler_version: "0.1.0",
+      structs: {},
+      contracts: {
+        Counter: {
+          runtime_state: {
+            source: "State",
+            fields: [{ name: "value", type: { kind: "int" } }]
+          },
+          entries: {
+            __covenant_entrypoint_auth_bump: {
+              dispatch_tag: "f3489a39",
+              params: [{ name: "delta", type: { kind: "int" } }]
+            }
+          },
+          cov_decl_to_abi: { bump: "__covenant_entrypoint_auth_bump" },
+          compiled: {
+            bytecode: [107, 8, 8, 0, 0, 0, 0, 0, 0, 0, 108],
+            template_hash: new Array(32).fill(1),
+            state_span: { offset: 1, len: 9 }
+          }
+        }
+      }
+    }),
+    contracts: [{ name: "Counter", address: "kaspasim:prh9794z4vsajyjekcpcvmwc8fkxtnm3udz7dmjcqn9gedd8qr072w7cnfgp2" }]
+  };
+
+  it("decodes Toccata runtime_state values, policies, and default stateMap from compile artifacts", () => {
+    const { record, problems } = parseCompileRecord("compile.json", sampleCounterCompile);
+    expect(problems).toEqual([]);
+    const abi = record!.contracts[0];
+    expect(abi.stateFields).toEqual([{ name: "value", kind: "int" }]);
+    expect(abi.covenantPolicies).toEqual({ bump: "__covenant_entrypoint_auth_bump" });
+    expect(abi.stateValues).toEqual({ value: "8" });
+    expect(abi.stateMapDefault).toEqual({ value: 0 });
+  });
+
+  it("parses genesis + transition silverCovenant.v1 records and groups active head chains", () => {
+    const genesis = parseCovenantRecord("cov-gen.json", {
+      schema: "hardkas.silverCovenant.v1",
+      kind: "genesis",
+      createdAt: "2026-11-13T03:28:30.000Z",
+      contract: "Counter",
+      covenantId: "cov-abc",
+      address: "kaspasim:pqt",
+      txId: "tx0",
+      outpoint: { transactionId: "tx0", index: 0 },
+      valueSompi: "1000000000",
+      status: "confirmed",
+      contentHash: "h0"
+    });
+    const transition = parseCovenantRecord("cov-tr.json", {
+      schema: "hardkas.silverCovenant.v1",
+      kind: "transition",
+      createdAt: "2026-11-13T03:28:40.000Z",
+      contract: "Counter",
+      policy: "bump",
+      covenantId: "cov-abc",
+      address: "kaspasim:prh",
+      txId: "tx1",
+      outpoint: { transactionId: "tx1", index: 0 },
+      previous: { path: "cov-gen.json", contentHash: "h0", outpoint: { transactionId: "tx0", index: 0 } },
+      valueSompi: "999928100",
+      status: "confirmed",
+      contentHash: "h1"
+    });
+    expect(genesis.problems).toEqual([]);
+    expect(transition.problems).toEqual([]);
+
+    const marked = markSupersededCovenants([genesis.record!, transition.record!]);
+    expect(marked[0].superseded).toBe(true);
+    expect(marked[1].superseded).toBe(false);
+
+    const chains = groupCovenantChains(marked);
+    expect(chains).toHaveLength(1);
+    expect(chains[0].head.contentHash).toBe("h1");
+    expect(chains[0].history.map((h) => h.kind)).toEqual(["genesis", "transition"]);
   });
 });

@@ -1,8 +1,13 @@
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { ensureHardkasConfig, ensureWorkspaceBase, FRONTEND_STACKS, scaffoldFrontend, type FrontendStackId, type StarterContractSpec } from "./frontendScaffold.js";
 import { getRoot, exists } from "./workspace.js";
+
+const IDE_REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 /**
  * Runs `hardkas <args>` as a background job and streams its output.
@@ -12,7 +17,7 @@ import { getRoot, exists } from "./workspace.js";
  */
 
 /** The CLI version the IDE was built and tested against; the npx fallback pins it. */
-export const HARDKAS_CLI_VERSION = "0.12.0-rc.29";
+export const HARDKAS_CLI_VERSION = "0.13.0-rc.1";
 
 export interface CliInfo {
   /** What `hardkas --version` printed, or null when it could not run. */
@@ -36,7 +41,9 @@ export function cliInfo(cwd: string, force = false): Promise<CliInfo> {
   if (cached && !force) return cached;
   const p = (async (): Promise<CliInfo> => {
     const resolved = await resolveHardkas(cwd);
-    const source: CliInfo["source"] = resolved.prefix.length > 0 ? "npx" : process.env.HARDKAS_BIN === resolved.command ? "env" : resolved.command.startsWith(cwd) ? "project" : "repo";
+    const source: CliInfo["source"] =
+      resolved.source ??
+      (resolved.prefix.length > 0 ? "npx" : process.env.HARDKAS_BIN === resolved.command ? "env" : resolved.command.startsWith(cwd) ? "project" : "repo");
     return new Promise((resolve) => {
       let out = "";
       let err = "";
@@ -90,23 +97,41 @@ interface Resolved {
   command: string;
   prefix: string[];
   shell: boolean;
+  source?: CliInfo["source"];
 }
 
-/** Prefers the project's own hardkas binary, then a global one, then npx. */
+/** Prefers HARDKAS_BIN or sibling HardKas-repo build (when present), then workspace/repo binaries, then npx. */
 async function resolveHardkas(cwd: string): Promise<Resolved> {
   const isWin = process.platform === "win32";
-  const local = path.join(cwd, "node_modules", ".bin", isWin ? "hardkas.cmd" : "hardkas");
-  if (await exists(local)) {
-    return { command: local, prefix: [], shell: isWin };
-  }
   if (process.env.HARDKAS_BIN) {
-    return { command: process.env.HARDKAS_BIN, prefix: [], shell: isWin };
+    const bin = process.env.HARDKAS_BIN;
+    if (/\.(?:mjs|cjs|js)$/i.test(bin)) {
+      return { command: process.execPath, prefix: [bin], shell: false, source: "env" };
+    }
+    return { command: bin, prefix: [], shell: isWin, source: "env" };
   }
-  const repoFallback = path.resolve(process.cwd(), "examples", "demo-workspace", "node_modules", ".bin", isWin ? "hardkas.cmd" : "hardkas");
+  const siblingCli = path.resolve(IDE_REPO_ROOT, "..", "HardKas-repo", "packages", "cli", "dist", "index.js");
+  if (await exists(siblingCli)) {
+    return { command: process.execPath, prefix: [siblingCli], shell: false, source: "repo" };
+  }
+  const local = path.join(cwd, "node_modules", ".bin", isWin ? "hardkas.cmd" : "hardkas");
+  const repoFallback = path.join(IDE_REPO_ROOT, "examples", "demo-workspace", "node_modules", ".bin", isWin ? "hardkas.cmd" : "hardkas");
+  if (await exists(local)) {
+    let localVersion: string | null = null;
+    try {
+      const pkgRaw = await fs.readFile(path.join(cwd, "node_modules", "@hardkas", "cli", "package.json"), "utf8");
+      localVersion = (JSON.parse(pkgRaw) as { version?: string }).version ?? null;
+    } catch {
+      localVersion = null;
+    }
+    if (localVersion === HARDKAS_CLI_VERSION || !(await exists(repoFallback))) {
+      return { command: local, prefix: [], shell: isWin, source: "project" };
+    }
+  }
   if (await exists(repoFallback)) {
-    return { command: repoFallback, prefix: [], shell: isWin };
+    return { command: repoFallback, prefix: [], shell: isWin, source: "repo" };
   }
-  return { command: isWin ? "npx.cmd" : "npx", prefix: ["-y", `@hardkas/cli@${HARDKAS_CLI_VERSION}`], shell: isWin };
+  return { command: isWin ? "npx.cmd" : "npx", prefix: ["-y", `@hardkas/cli@${HARDKAS_CLI_VERSION}`], shell: isWin, source: "npx" };
 }
 
 const ALLOWED_COMMANDS = new Set(["hardkas", "npx", "npm"]);
@@ -138,6 +163,9 @@ export async function startJob(options: RunOptions): Promise<Job> {
   let args: string[];
   let shell = false;
   if (requestedCmd === "hardkas") {
+    if (options.args[0] === "node" || options.args[0] === "localnet") {
+      await ensureHardkasConfig(cwd).catch(() => {});
+    }
     const resolved = await resolveHardkas(cwd);
     command = resolved.command;
     args = [...resolved.prefix, ...options.args];
@@ -329,27 +357,313 @@ export interface CreateProjectOptions {
   name: string;
   parentDir: string;
   install?: boolean;
+  frontend?: FrontendStackId;
+  starterContract?: StarterContractSpec;
 }
 
-/** Creates a project folder through the HardKas CLI and returns the job plus the destination. */
+function runSubprocessToJob(
+  command: string,
+  args: string[],
+  cwd: string,
+  shell: boolean,
+  push: (type: JobEvent["type"], data: string) => void
+): Promise<number> {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(command, args, {
+        cwd,
+        shell,
+        env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1", HARDKAS_ROOT: cwd },
+        windowsHide: true
+      });
+    } catch (error) {
+      push("error", String(error));
+      resolve(1);
+      return;
+    }
+    child.stdout.on("data", (chunk: Buffer) => push("stdout", chunk.toString("utf8")));
+    child.stderr.on("data", (chunk: Buffer) => push("stderr", chunk.toString("utf8")));
+    child.on("error", (error) => {
+      push("error", error.message);
+      resolve(1);
+    });
+    child.on("close", (code) => resolve(code ?? 1));
+  });
+}
+
+/**
+ * Creates a project folder through the HardKas CLI, scaffolds the optional frontend in `dapp/`,
+ * and installs workspace + frontend dependencies while streaming progress over the job SSE channel.
+ */
 export async function createProject(options: CreateProjectOptions): Promise<{ job: Job; dest: string }> {
   const template = PROJECT_TEMPLATES.find((t) => t.id === options.template);
   if (!template) throw new Error(`Unknown template: ${options.template}`);
   if (!/^[A-Za-z0-9._-]+$/.test(options.name)) throw new Error("Project name may only contain letters, digits, dot, dash and underscore");
+  const frontendId: FrontendStackId =
+    options.frontend && FRONTEND_STACKS.some((f) => f.id === options.frontend) ? options.frontend : "none";
+  const shouldInstall = options.install !== false;
   const parent = path.resolve(options.parentDir);
   if (!(await exists(parent))) throw new Error(`Parent folder does not exist: ${parent}`);
   const dest = path.join(parent, options.name);
   if (await exists(dest)) throw new Error(`Destination already exists: ${dest}`);
 
-  let args: string[];
-  if (template.command === "init") {
-    await fs.mkdir(dest, { recursive: true });
-    args = ["init", "--json"];
-    const job = await startJob({ args, cwd: dest });
-    return { job, dest };
-  }
-  args = ["create", template.id, dest, "--json"];
-  if (options.install) args.push("--install");
-  const job = await startJob({ args, cwd: parent });
+  const cliArgs = template.command === "init" ? ["init", "--json"] : ["create", template.id, dest, "--json"];
+  const id = `job_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const job: Job = {
+    id,
+    command: "hardkas",
+    args: cliArgs,
+    cwd: parent,
+    status: "running",
+    exitCode: null,
+    startedAt: new Date().toISOString(),
+    endedAt: null,
+    events: [],
+    stdout: "",
+    stderr: "",
+    result: null
+  };
+  const emitter = new EventEmitter();
+  jobs.set(id, job);
+  emitters.set(id, emitter);
+  trimJobs();
+
+  const push = (type: JobEvent["type"], data: string) => {
+    if (type === "stdout") job.stdout += data;
+    else if (type === "stderr") job.stderr += data;
+    const event: JobEvent = { type, data, at: new Date().toISOString() };
+    job.events.push(event);
+    emitter.emit("event", event);
+  };
+
+  void (async () => {
+    try {
+      const isWin = process.platform === "win32";
+      const npmCmd = isWin ? "npm.cmd" : "npm";
+
+      // Step 1: Scaffold HardKas workspace
+      push("stdout", `[step 1/4] Scaffolding HardKas project (${template.label})...\n`);
+      if (template.command === "init") {
+        await fs.mkdir(dest, { recursive: true });
+      }
+      const resolved = await resolveHardkas(template.command === "init" ? dest : parent);
+      const step1Code = await runSubprocessToJob(
+        resolved.command,
+        [...resolved.prefix, ...cliArgs],
+        template.command === "init" ? dest : parent,
+        resolved.shell,
+        push
+      );
+      if (step1Code !== 0) {
+        finish(job, emitter, step1Code, `HardKas scaffold exited with code ${step1Code}`);
+        return;
+      }
+
+      // Step 2: Ensure starter contract + package.json + optional frontend stack
+      push("stdout", `\n[step 2/4] Configuring workspace & frontend (${frontendId})...\n`);
+      await ensureWorkspaceBase(dest, options.name, frontendId, (msg) => push("stdout", `  • ${msg}\n`), options.starterContract);
+      const fe = await scaffoldFrontend(dest, options.name, frontendId, (msg) => push("stdout", `  • ${msg}\n`));
+
+      // Step 3: Install root HardKas dependencies
+      if (shouldInstall) {
+        push("stdout", `\n[step 3/4] Installing HardKas & TypeScript dependencies in ${dest}...\n`);
+        const rootInstallCode = await runSubprocessToJob(
+          npmCmd,
+          ["install", "--no-audit", "--no-fund", "--loglevel=info"],
+          dest,
+          isWin,
+          push
+        );
+        if (rootInstallCode !== 0) {
+          finish(job, emitter, rootInstallCode, `npm install failed in root workspace (exit ${rootInstallCode})`);
+          return;
+        }
+      } else {
+        push("stdout", `\n[step 3/4] Skipping root npm install (unchecked).\n`);
+      }
+
+      // Step 4: Install frontend dependencies in dapp/ if applicable
+      if (shouldInstall && fe.needsInstall && fe.dappDir) {
+        push("stdout", `\n[step 4/4] Installing frontend (${frontendId}) dependencies in dapp/...\n`);
+        const feInstallCode = await runSubprocessToJob(
+          npmCmd,
+          ["install", "--no-audit", "--no-fund", "--loglevel=info"],
+          fe.dappDir,
+          isWin,
+          push
+        );
+        if (feInstallCode !== 0) {
+          finish(job, emitter, feInstallCode, `npm install failed in dapp/ (exit ${feInstallCode})`);
+          return;
+        }
+      } else {
+        push("stdout", `\n[step 4/4] Frontend ready.\n`);
+      }
+
+      push("stdout", `\n✓ Project ${options.name} is ready!\n`);
+      finish(job, emitter, 0, null);
+    } catch (error) {
+      finish(job, emitter, 1, error instanceof Error ? error.message : String(error));
+    }
+  })();
+
   return { job, dest };
+}
+
+export interface SilverCheckOptions {
+  cwd?: string;
+  filePath: string;
+  content?: string;
+  constructorArgs?: string;
+}
+
+export interface SilverCheckResult {
+  ok: boolean;
+  code?: string;
+  message: string;
+  contracts?: unknown[];
+  raw?: unknown;
+}
+
+function stripSilComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, "");
+}
+
+function dummyValueForSilType(silType: string): { kind: string; value: unknown } {
+  const t = silType.trim().toLowerCase();
+  if (t === "int") return { kind: "int", value: 1 };
+  if (t === "bool") return { kind: "bool", value: true };
+  if (t === "byte") return { kind: "byte", value: 1 };
+  if (t === "string") return { kind: "text", value: "test" };
+  if (t === "pubkey" || t === "bytes32") {
+    return { kind: "bytes", value: Array.from({ length: 32 }, (_, i) => (i === 0 ? 2 : 17)) };
+  }
+  const fixedBytes = /^bytes(\d+)$/.exec(t);
+  if (fixedBytes) {
+    const len = Math.max(1, Math.min(64, Number(fixedBytes[1]) || 32));
+    return { kind: "bytes", value: Array.from({ length: len }, () => 17) };
+  }
+  if (t === "bytes") return { kind: "bytes", value: Array.from({ length: 32 }, () => 17) };
+  return { kind: "int", value: 1 };
+}
+
+function synthesizeDummyConstructorArgs(source: string): string | null {
+  const clean = stripSilComments(source);
+  const match = /\bcontract\s+[A-Za-z_]\w*\s*\(([^)]*)\)\s*\{/.exec(clean);
+  if (!match) return null;
+  const rawParams = match[1]
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (rawParams.length === 0) return null;
+  const values = rawParams.map((param) => {
+    const parts = param.split(/\s+/);
+    parts.pop(); // identifier name
+    return dummyValueForSilType(parts.join(" ") || "int");
+  });
+  return JSON.stringify(values);
+}
+
+/**
+ * Runs `hardkas silver compile --out <tmp> --json` against an in-memory or workspace `.sil` file
+ * without writing any artifact into `.hardkas/artifacts/silver/`.
+ */
+export async function checkSilverSource(options: SilverCheckOptions): Promise<SilverCheckResult> {
+  const cwd = options.cwd ?? getRoot();
+  if (!cwd) throw new Error("No workspace is open");
+
+  const resolvedTarget = path.resolve(cwd, options.filePath);
+  const rel = path.relative(cwd, resolvedTarget);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error(`Path escapes workspace: ${options.filePath}`);
+  }
+
+  const sourceText = options.content !== undefined ? options.content : await fs.readFile(resolvedTarget, "utf8");
+  const resolved = await resolveHardkas(cwd);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "hardkas-silver-check-"));
+
+  try {
+    const tmpSil = path.join(tmpDir, path.basename(resolvedTarget) || "Contract.sil");
+    const tmpOut = path.join(tmpDir, "compile.json");
+    await fs.writeFile(tmpSil, sourceText, "utf8");
+
+    let argsText = options.constructorArgs?.trim() || "";
+    if (!argsText) {
+      const siblingArgs = `${resolvedTarget.replace(/\.sil$/i, "")}.constructor-args.json`;
+      try {
+        argsText = (await fs.readFile(siblingArgs, "utf8")).trim();
+      } catch {
+        // No sibling constructor-args.json; synthesize dummy typed values so parameterized contracts compile.
+      }
+    }
+    if (!argsText) {
+      argsText = synthesizeDummyConstructorArgs(sourceText) ?? "";
+    }
+
+    const cliArgs = [...resolved.prefix, "silver", "compile", tmpSil, "--out", tmpOut];
+    if (argsText) {
+      const tmpArgs = path.join(tmpDir, "args.json");
+      await fs.writeFile(tmpArgs, argsText, "utf8");
+      cliArgs.push("--args", tmpArgs);
+    }
+    cliArgs.push("--json");
+
+    return await new Promise<SilverCheckResult>((resolve) => {
+      let stdout = "";
+      let stderr = "";
+      let settled = false;
+      const child = spawn(resolved.command, cliArgs, {
+        cwd,
+        shell: resolved.shell,
+        env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1", HARDKAS_ROOT: cwd },
+        windowsHide: true
+      });
+      const finishCheck = (res: SilverCheckResult) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(res);
+      };
+      const timer = setTimeout(() => {
+        child.kill();
+        finishCheck({ ok: false, code: "CHECK_TIMEOUT", message: "silverc compile check timed out" });
+      }, 15_000);
+
+      child.stdout.on("data", (chunk: Buffer) => {
+        stdout += chunk.toString("utf8");
+      });
+      child.stderr.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString("utf8");
+      });
+      child.on("error", (err) => {
+        finishCheck({ ok: false, code: "SPAWN_ERROR", message: err.message });
+      });
+      child.on("close", (code) => {
+        const parsed = parseJsonLoose(stdout) as Record<string, unknown> | null;
+        if (code === 0 && parsed && parsed.ok !== false) {
+          finishCheck({
+            ok: true,
+            message: "Compiled cleanly with silverc",
+            contracts: Array.isArray(parsed.contracts) ? parsed.contracts : undefined,
+            raw: parsed
+          });
+          return;
+        }
+        const msg =
+          (parsed && typeof parsed.message === "string" && parsed.message) ||
+          stderr.trim() ||
+          stdout.trim() ||
+          `silverc failed with exit ${code ?? 1}`;
+        finishCheck({
+          ok: false,
+          code: parsed && typeof parsed.code === "string" ? parsed.code : "SILVERC_COMPILE_FAILED",
+          message: msg,
+          raw: parsed ?? (stderr.trim() || stdout.trim())
+        });
+      });
+    });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
 }

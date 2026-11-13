@@ -1,30 +1,61 @@
+import { Boxes } from "lucide-react";
 import { Plugin } from "@/engine/engine";
-import { useCluster, type ClusterStatus, type Sample } from "@/store/cluster";
+import { useCluster, type ClusterStatus, type NodeInspectDetail, type Sample } from "@/store/cluster";
+import { useIde } from "@/store/ide";
+import { ClusterNodeView } from "@/views/ClusterNodeView";
 
 /**
  * Local cluster controller: extra simnet nodes next to the HardKAS node, started and stopped through Docker by ide-server.
  * The Servers view calls start() while the Cluster card is on screen; nothing polls otherwise.
  */
 export class ClusterPlugin extends Plugin {
+  view = ClusterNodeView;
   private timer: ReturnType<typeof setInterval> | null = null;
   private viewers = 0;
   private logTimer: ReturnType<typeof setInterval> | null = null;
+  private inspectTimer: ReturnType<typeof setInterval> | null = null;
+  private inspectViewers = 0;
 
   constructor() {
     super({
       name: "cluster",
       displayName: "Cluster",
       location: "none",
-      methods: ["start", "stop", "refresh", "add", "scale", "action", "openLog", "closeLog"],
+      icon: Boxes,
+      methods: [
+        "start",
+        "stop",
+        "refresh",
+        "add",
+        "scale",
+        "action",
+        "openLog",
+        "closeLog",
+        "openNode",
+        "refreshInspect",
+        "startInspectPoll",
+        "stopInspectPoll"
+      ],
       events: ["updated"]
     });
   }
 
   onDeactivation(): void {
     this.viewers = 0;
+    this.inspectViewers = 0;
     this.halt();
+    this.haltInspect();
     this.closeLog();
-    useCluster.getState().set({ status: null, samples: {}, error: null });
+    useCluster.getState().set({
+      status: null,
+      samples: {},
+      error: null,
+      selectedNode: null,
+      inspect: null,
+      inspectLoading: false,
+      inspectError: null,
+      inspectLogs: ""
+    });
   }
 
   start(): void {
@@ -100,9 +131,75 @@ export class ClusterPlugin extends Plugin {
     return this.change(`Scaling to ${replicas} extra node${replicas === 1 ? "" : "s"}…`, "/scale", { replicas });
   }
 
-  action(name: string, action: "start" | "stop" | "restart" | "remove"): Promise<void> {
+  async action(name: string, action: "start" | "stop" | "restart" | "remove"): Promise<void> {
     const word = { start: "Starting", stop: "Stopping", restart: "Restarting", remove: "Removing" }[action];
-    return this.change(`${word} ${name}…`, "/node", { name, action });
+    await this.change(`${word} ${name}…`, "/node", { name, action });
+    if (useCluster.getState().selectedNode === name) {
+      if (action === "remove") {
+        const next = useCluster.getState().status?.nodes[0]?.name ?? null;
+        useCluster.getState().set({ selectedNode: next, inspect: null, inspectLogs: "" });
+        if (next) await this.refreshInspect(next);
+      } else {
+        await this.refreshInspect(name);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------ node inspector (OpenShift pod details view)
+
+  openNode(name: string): void {
+    const prev = useCluster.getState().selectedNode;
+    useCluster.getState().set({
+      selectedNode: name,
+      inspectError: null,
+      ...(prev !== name ? { inspect: null, inspectLogs: "" } : {})
+    });
+    useIde.getState().openView(this.profile.name, "Cluster pods");
+    void this.refreshInspect(name);
+  }
+
+  async refreshInspect(name?: string): Promise<void> {
+    const nodeName = name ?? useCluster.getState().selectedNode;
+    if (!nodeName || useCluster.getState().selectedNode !== nodeName) return;
+    useCluster.getState().set({ inspectLoading: true, inspectError: null });
+    try {
+      const r = await this.request<{ node: NodeInspectDetail }>(`/inspect?name=${encodeURIComponent(nodeName)}`);
+      if (useCluster.getState().selectedNode !== nodeName) return;
+      useCluster.getState().set({ inspect: r.node, inspectLoading: false, inspectError: null });
+      if (useCluster.getState().inspectTab === "logs") {
+        const lr = await this.request<{ text: string }>(`/logs?name=${encodeURIComponent(nodeName)}&tail=300`).catch(() => null);
+        if (lr && useCluster.getState().selectedNode === nodeName) {
+          useCluster.getState().set({ inspectLogs: lr.text || "(no output yet)" });
+        }
+      }
+    } catch (e) {
+      if (useCluster.getState().selectedNode === nodeName) {
+        useCluster.getState().set({ inspectLoading: false, inspectError: e instanceof Error ? e.message : String(e) });
+      }
+    }
+  }
+
+  startInspectPoll(): void {
+    this.inspectViewers++;
+    void this.refresh();
+    void this.refreshInspect();
+    if (this.inspectTimer) return;
+    this.inspectTimer = setInterval(() => {
+      void this.refresh();
+      void this.refreshInspect();
+    }, 3000);
+  }
+
+  stopInspectPoll(): void {
+    this.inspectViewers = Math.max(0, this.inspectViewers - 1);
+    if (this.inspectViewers === 0) this.haltInspect();
+  }
+
+  private haltInspect(): void {
+    if (this.inspectTimer) {
+      clearInterval(this.inspectTimer);
+      this.inspectTimer = null;
+    }
   }
 
   // ------------------------------------------------------------------ logs

@@ -1,10 +1,11 @@
 import clsx from "clsx";
-import { Check, Copy, Minus, Play, Plus, RefreshCw, RotateCw, ScrollText, Square, Trash2, X } from "lucide-react";
+import { ArrowUpRight, Check, Copy, Minus, Play, Plus, RefreshCw, RotateCw, ScrollText, Square, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { ClusterPlugin } from "@/plugins/cluster";
 import { progressOf, useCluster, type ClusterNode } from "@/store/cluster";
 import { copyText } from "@/utils/clipboard";
+import { confirmDialog } from "@/utils/dialog";
 
 /** Local cluster: the HardKAS node and the extra nodes started next to it. Scale up and down, and see each node's chain. */
 export function ClusterCard() {
@@ -86,7 +87,11 @@ export function ClusterCard() {
                   type="button"
                   className="ml-auto text-[11px] text-fg-muted hover:text-error cursor-pointer disabled:opacity-40"
                   disabled={!!busy}
-                  onClick={() => window.confirm(`Remove all ${extras.length} extra node${extras.length === 1 ? "" : "s"}?\n\nThey hold no data of their own (they copy the chain from the HardKAS node), so nothing is lost.`) && void cluster.scale(0)}
+                  onClick={async () => {
+                    if (await confirmDialog(`Remove all ${extras.length} extra node${extras.length === 1 ? "" : "s"}?\n\nThey hold no data of their own (they copy the chain from the HardKAS node), so nothing is lost.`, { title: "Remove extra nodes", confirmLabel: "Remove all", danger: true })) {
+                      void cluster.scale(0);
+                    }
+                  }}
                 >
                   remove all
                 </button>
@@ -163,7 +168,15 @@ function NodeRow({ node: n, reference, samples, busy, cluster, logOpen, logText 
     <li className="rounded border border-border bg-bg-elev p-2 space-y-1.5">
       <div className="flex items-center gap-2 min-w-0">
         <span className={clsx("w-2 h-2 rounded-full shrink-0", dot)} />
-        <span className="font-semibold text-fg truncate" title={n.name}>{n.role === "hardkas" ? "HardKAS node" : `Node ${n.index}`}</span>
+        <button
+          type="button"
+          onClick={() => cluster.openNode(n.name)}
+          className="group inline-flex items-center gap-1 min-w-0 font-semibold text-fg hover:text-accent transition-colors text-left cursor-pointer"
+          title="Open pod properties & telemetry in center editor"
+        >
+          <span className="truncate">{n.role === "hardkas" ? "HardKAS node" : `Node ${n.index}`}</span>
+          <ArrowUpRight className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-100 text-accent transition-opacity" />
+        </button>
         <span className="ml-auto flex items-center gap-0.5 shrink-0">
           <Act label={logOpen ? `Hide log of ${n.name}` : `Show log of ${n.name}`} onClick={() => (logOpen ? cluster.closeLog() : cluster.openLog(n.name))} active={logOpen}>
             <ScrollText size={12} />

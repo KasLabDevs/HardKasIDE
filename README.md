@@ -43,7 +43,7 @@ To start with a workspace already open:
 pnpm dev:server -- --workspace C:/path/to/my-hardkas-project
 ```
 
-Requirements: Node >= 22.5, pnpm, and `@hardkas/cli` (the server uses the project's own `node_modules/.bin/hardkas` when present, then `HARDKAS_BIN`, otherwise `npx @hardkas/cli@<pinned>`). The IDE is tested against one CLI version (`HARDKAS_CLI_VERSION` in `packages/ide-server/src/runner.ts`); the status bar shows the version actually running and warns when it differs.
+Requirements: Node **24.22.1** exactly (the IDE server runs the HardKas CLI with the same Node, and the CLI requires that release: `hardkas doctor` warns on another 24.x and fails on other major lines), pnpm, and `@hardkas/cli` (the server uses the project's own `node_modules/.bin/hardkas` when present, then `HARDKAS_BIN`, otherwise `npx @hardkas/cli@<pinned>`). The IDE is tested against one CLI version (`HARDKAS_CLI_VERSION` in `packages/ide-server/src/runner.ts`); the status bar shows the version actually running and warns when it differs.
 
 ## Check
 

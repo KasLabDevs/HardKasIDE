@@ -74,7 +74,7 @@ interface AssistantState {
   busy: boolean;
   agentRun: AgentRun | null;
   config: AssistantConfigView | null;
-  defaults: Record<"anthropic" | "openai", { baseUrl: string; model: string }> | null;
+  defaults: Record<"opencode" | "anthropic" | "openai", { baseUrl: string; model: string }> | null;
   meta: AnswerMeta | null;
   includeFile: boolean;
   settingsOpen: boolean;

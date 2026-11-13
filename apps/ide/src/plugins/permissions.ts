@@ -4,6 +4,8 @@
  * or the user granted it once. Grants are remembered per plugin in localStorage.
  */
 
+import { confirmDialog } from "@/utils/dialog";
+
 const KEY = "hardkas-ide.permissions";
 
 type Grants = Record<string, Record<string, boolean>>; // from → "plugin.method" → allowed
@@ -57,9 +59,9 @@ export function clearGrants(from: string): void {
   save(g);
 }
 
-/** Asks the user (blocking confirm) and remembers the answer. */
-export function askPermission(from: string, displayName: string, target: string, method: string): boolean {
-  const ok = window.confirm(`Plugin "${displayName}" wants to call ${target}.${method}.\n\nAllow? Your answer is remembered for this plugin.`);
+/** Asks the user via in-app dialog and remembers the answer. */
+export async function askPermission(from: string, displayName: string, target: string, method: string): Promise<boolean> {
+  const ok = await confirmDialog(`Plugin "${displayName}" wants to call ${target}.${method}.\n\nAllow? Your answer is remembered for this plugin.`, { title: "Plugin permission", confirmLabel: "Allow" });
   grant(from, target, method, ok);
   return ok;
 }

@@ -8,9 +8,9 @@ import { WindowControls, isDesktopApp } from "./WindowControls";
 export function DesktopBar() {
   if (!isDesktopApp()) return null;
   return (
-    <header data-tauri-drag-region className="titlebar h-9 shrink-0 flex items-center gap-2 pl-3 pr-2 border-b border-border bg-bg-panel select-none">
+    <header data-tauri-drag-region className="titlebar h-8 shrink-0 flex items-center gap-2 pl-2.5 pr-2 border-b border-border bg-bg-panel select-none">
       <span data-tauri-drag-region className="flex items-center gap-2 text-xs text-fg-muted">
-        <HardKasMark size={18} /> HardKas IDE
+        <HardKasMark size={22} /> HardKas IDE
       </span>
       <span data-tauri-drag-region className="flex-1 h-full" />
       <WindowControls />

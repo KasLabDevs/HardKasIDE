@@ -30,6 +30,7 @@ import type { EditorPlugin } from "@/plugins/editor";
 import { useAssistant, type ChatTurn, type AgentRun } from "@/store/assistant";
 import { envOf, useIde } from "@/store/ide";
 import { copyText } from "@/utils/clipboard";
+import { promptDialog } from "@/utils/dialog";
 
 const RESEARCH_GPT = "https://chatgpt.com/g/g-6887632bd778819191d51022323293ea-kaspa-research-gpt-for-kaspa-coin-v6";
 const DOCS_FOR_AI = "https://docs.kaspa.org/llms.txt";
@@ -331,11 +332,12 @@ function AgentView({
         </div>
       </div>
 
-      {/* A terminal command waiting for approval: the run is paused until one of these buttons is pressed. */}
+      {/* An action waiting for approval (a terminal command, a file change or a HardKas tool call): the run is paused
+          until one of these buttons is pressed. */}
       {agentRun.pendingConfirm && (
-        <div role="alertdialog" aria-label="The agent wants to run a terminal command" className="rounded-lg border border-warn/50 bg-warn/5 p-3 space-y-2">
+        <div role="alertdialog" aria-label="The agent asks for permission" className="rounded-lg border border-warn/50 bg-warn/5 p-3 space-y-2">
           <div className="flex items-center gap-2 text-warn font-semibold text-xs">
-            <TerminalSquare size={14} /> Run this command in the workspace?
+            <TerminalSquare size={14} /> Allow this action in the workspace?
           </div>
           <pre className="font-mono text-[11px] text-fg bg-bg border border-border rounded p-2 whitespace-pre-wrap break-all max-h-32 overflow-auto">{agentRun.pendingConfirm.command}</pre>
           <p className="text-[10px] text-fg-muted leading-relaxed">
@@ -572,7 +574,7 @@ function CodeBlock({ lang, code, complete }: { lang: string; code: string; compl
   };
   const save = async () => {
     const suggested = isSil ? "contracts/assistant.sil" : /^(bash|sh|shell|powershell|ps1)/i.test(lang) ? "scripts/assistant.sh" : "assistant-snippet.txt";
-    const path = window.prompt("Save this code as (path inside the project):", suggested);
+    const path = await promptDialog("Save this code as (path inside the project):", suggested, { title: "Save code snippet", confirmLabel: "Save" });
     if (!path) return;
     try {
       await engine.call("fileManager", "createFile", path, code + "\n");
@@ -613,7 +615,7 @@ function Settings({ onClose }: { onClose: () => void }) {
   const assistant = engine.get<AssistantPlugin>("assistant");
   const config = useAssistant((s) => s.config);
   const defaults = useAssistant((s) => s.defaults);
-  const [provider, setProvider] = useState<"anthropic" | "openai">(config?.provider ?? "anthropic");
+  const [provider, setProvider] = useState<"opencode" | "anthropic" | "openai">(config?.provider ?? "opencode");
   const [baseUrl, setBaseUrl] = useState(config?.baseUrl ?? "");
   const [model, setModel] = useState(config?.model ?? "");
   const [docs, setDocs] = useState<"off" | "core" | "full">(config?.docs ?? "core");
@@ -637,7 +639,7 @@ function Settings({ onClose }: { onClose: () => void }) {
     };
   }, [docs]);
 
-  const pickProvider = (p: "anthropic" | "openai") => {
+  const pickProvider = (p: "opencode" | "anthropic" | "openai") => {
     setProvider(p);
     if (defaults) {
       setBaseUrl(defaults[p].baseUrl);
@@ -657,24 +659,36 @@ function Settings({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const suggestions = provider === "anthropic" ? ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"] : ["llama3.2", "qwen2.5-coder", "gpt-4.1"];
+  // OpenCode's free models need no account; `opencode models` lists them all.
+  const suggestions =
+    provider === "opencode"
+      ? ["opencode/big-pickle", "opencode/deepseek-v4.1-flash-free", "opencode/glm-5.3-flash-free", "opencode/minimax-m3.1-flash-free", "opencode/nemotron-3.5-super-vl-free"]
+      : provider === "anthropic"
+        ? ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"]
+        : ["llama3.2", "qwen2.5-coder", "gpt-4.1"];
 
   return (
     <div className="shrink-0 border-b border-border bg-bg-elev p-3 space-y-2.5">
-      <div className="grid grid-cols-2 gap-1">
-        {(["anthropic", "openai"] as const).map((p) => (
+      <div className="grid grid-cols-3 gap-1">
+        {(["opencode", "anthropic", "openai"] as const).map((p) => (
           <button key={p} type="button" onClick={() => pickProvider(p)} className={clsx("rounded border px-2 py-1 cursor-pointer", provider === p ? "border-accent text-accent" : "border-border text-fg-muted hover:text-fg")}>
-            {p === "anthropic" ? "Anthropic (Claude)" : "OpenAI-compatible"}
+            {p === "opencode" ? "OpenCode (free)" : p === "anthropic" ? "Anthropic (Claude)" : "OpenAI-compatible"}
           </button>
         ))}
       </div>
       <div className="text-[10px] text-fg-muted">
-        {provider === "anthropic" ? "Claude through the Anthropic API." : "OpenAI, OpenRouter, LM Studio, or a local Ollama at http://localhost:11434/v1 (no key needed)."}
+        {provider === "opencode"
+          ? "The OpenCode agent, hosted by the IDE over ACP with the HardKas tools. Free models, no key: prompts go to OpenCode's hosted models. Every action asks for your approval."
+          : provider === "anthropic"
+            ? "Claude through the Anthropic API."
+            : "OpenAI, OpenRouter, LM Studio, or a local Ollama at http://localhost:11434/v1 (no key needed)."}
       </div>
-      <div>
-        <div className="label">Base URL</div>
-        <input className="input font-mono" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} spellCheck={false} />
-      </div>
+      {provider !== "opencode" && (
+        <div>
+          <div className="label">Base URL</div>
+          <input className="input font-mono" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} spellCheck={false} />
+        </div>
+      )}
       <div>
         <div className="label">Model</div>
         <input className="input font-mono" value={model} onChange={(e) => setModel(e.target.value)} list="assistant-models" spellCheck={false} placeholder="model id" />
@@ -684,6 +698,7 @@ function Settings({ onClose }: { onClose: () => void }) {
           ))}
         </datalist>
       </div>
+      {provider !== "opencode" && (
       <div>
         <div className="label flex items-center justify-between">
           <span>API key</span>
@@ -692,6 +707,8 @@ function Settings({ onClose }: { onClose: () => void }) {
         <input className="input font-mono" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={config?.hasKey ? "leave empty to keep the saved key" : "paste your key"} />
         <div className="text-[10px] text-fg-muted mt-1">Stored in ~/.hardkas-ide/assistant.json on this machine and used only by ide-server. It is never sent back to the browser.</div>
       </div>
+      )}
+      {provider !== "opencode" && (
       <div>
         <div className="label flex items-center gap-1">
           <BookOpen size={11} /> Kaspa docs as context
@@ -703,6 +720,7 @@ function Settings({ onClose }: { onClose: () => void }) {
         </select>
         <div className="text-[10px] text-fg-muted mt-1">{docsInfo}</div>
       </div>
+      )}
       <div className="flex gap-1">
         <button type="button" className="btn-primary flex-1 justify-center" onClick={() => void save()}>
           Save

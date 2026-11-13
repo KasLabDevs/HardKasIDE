@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useEngine, useEngineVersion } from "@/engine/context";
 import { useIde } from "@/store/ide";
@@ -14,22 +15,16 @@ export function SidePanel() {
   useEngineVersion();
   const active = useIde((s) => s.activeSidePlugin);
   const docks = useIde((s) => s.docks);
-  const workspace = useIde((s) => s.workspace);
+  const hiddenPanels = useIde((s) => s.hiddenPanels);
+  const setPanelHidden = useIde((s) => s.setPanelHidden);
   const all = engine.listByLocation("sidePanel");
   const left = all.filter((p) => (docks[p.profile.name] ?? "left") === "left");
-  const below = all.filter((p) => docks[p.profile.name] === "leftBottom" && p.view);
+  const below = all.filter((p) => docks[p.profile.name] === "leftBottom" && p.view && !hiddenPanels[p.profile.name]);
   // If the selected view lives elsewhere (docked right, as a tab…), show the first left view instead of an empty column.
   const shown = left.some((p) => p.profile.name === active) ? active : (left.find((p) => p.profile.name === "files") ?? left[0])?.profile.name;
 
   return (
     <aside className="h-full bg-bg-panel border-r border-border flex flex-col min-w-0">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border select-none" title={workspace?.root ?? ""}>
-        <span className="text-xs font-semibold tracking-tight">
-          <span className="text-fg">Hard</span>
-          <span className="text-accent">Kas</span> <span className="text-fg-muted font-normal">IDE</span>
-        </span>
-        {workspace?.name && <span className="ml-auto text-[10px] text-fg-muted truncate">{workspace.name}</span>}
-      </div>
       <div className="flex-1 min-h-0">
         <PanelGroup direction="vertical">
           <Panel id="side-main" order={0} minSize={15} defaultSize={below.length ? 55 : 100}>
@@ -42,7 +37,7 @@ export function SidePanel() {
                   <section key={p.profile.name} className="flex-1 min-h-0 flex-col" style={{ display: isActive ? "flex" : "none" }}>
                     <header className="panel-title flex items-center justify-between">
                       <span>{p.profile.displayName}</span>
-                      <DockControls pluginName={p.profile.name} displayName={p.profile.displayName} />
+                      {p.profile.name !== "files" && <DockControls pluginName={p.profile.name} displayName={p.profile.displayName} />}
                     </header>
                     <div className="flex-1 min-h-0 overflow-auto">
                       <ErrorBoundary name={p.profile.displayName}>
@@ -60,9 +55,20 @@ export function SidePanel() {
             return (
               <StackedPanel key={p.profile.name} id={`side-${p.profile.name}`}>
                 <section className="h-full flex flex-col min-h-0 border-t border-border">
-                  <header className="panel-title flex items-center justify-between">
-                    <span>{p.profile.displayName}</span>
-                    <DockControls pluginName={p.profile.name} displayName={p.profile.displayName} />
+                  <header className="panel-title flex items-center justify-between gap-2">
+                    <span className="truncate">{p.profile.displayName}</span>
+                    <span className="flex items-center gap-0.5 shrink-0">
+                      <DockControls pluginName={p.profile.name} displayName={p.profile.displayName} />
+                      <button
+                        type="button"
+                        onClick={() => setPanelHidden(p.profile.name, true)}
+                        className="p-0.5 rounded text-fg-muted hover:text-fg hover:bg-bg-hover normal-case cursor-pointer"
+                        title={`Hide ${p.profile.displayName}`}
+                        aria-label={`Hide ${p.profile.displayName}`}
+                      >
+                        <X size={13} />
+                      </button>
+                    </span>
                   </header>
                   <div className="flex-1 min-h-0 overflow-auto">
                     <ErrorBoundary name={p.profile.displayName}>

@@ -36,10 +36,12 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Setup Node.js 22
+      # stage.mjs copies this Node into the installer, and the IDE server runs the HardKas CLI with it:
+      # it must be the release the CLI requires.
+      - name: Setup Node.js 24.22.1
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.22.1
           cache: 'pnpm'
 
       - name: Setup Rust stable

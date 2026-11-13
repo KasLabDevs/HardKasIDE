@@ -16,11 +16,16 @@ import * as cluster from "./cluster.js";
 import { ClusterError } from "./cluster.js";
 import * as store from "./store.js";
 import { StoreError } from "./store.js";
-import { cliInfo, createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe } from "./runner.js";
+import { getCliCatalog } from "./cliCatalog.js";
+import { ensureHardkasConfig, FRONTEND_STACKS, type FrontendStackId, type StarterContractSpec } from "./frontendScaffold.js";
+import { checkSilverSource, cliInfo, createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe, waitForJob } from "./runner.js";
+import { checkUpdates } from "./updates.js";
 import { closeTerminal, defaultShell, listTerminals, openTerminal } from "./terminal.js";
 import { examplesDir, fetchText, installNpmPlugin, listExamples, loadRegistry, pluginsRoot, readStatic, searchNpmPlugins } from "./plugins.js";
 import { installVsx, readIndex, readVsxFile, searchVsx, setVsxEnabled, uninstallVsx } from "./vsx.js";
 import { closeWorkspace, describeWorkspace, getRoot, listRecents, openWorkspace, readDevServerToken } from "./workspace.js";
+import { allowedHostnames, isAllowedHost } from "./guard.js";
+import { isHardkasMiner, LocalNodeError, resetWorkspaceChainState } from "./localNode.js";
 
 /**
  * HardKas IDE server.
@@ -72,6 +77,16 @@ function localOnly(c: { req: { header(name: string): string | undefined } }): bo
   // No Origin, Referer or Host at all: not a browser. Nothing local needs this, so refuse.
   return false;
 }
+
+// Every /api request (GET and WebSocket upgrades included) must name a loopback Host: this is what stops a web page
+// that rebinds its own domain to 127.0.0.1 from reading project files through same-origin GETs. See guard.ts.
+const ALLOWED_HOSTS = allowedHostnames();
+app.use("/api/*", async (c, next) => {
+  if (!isAllowedHost(c.req.header("host"), ALLOWED_HOSTS)) {
+    return c.json({ ok: false, code: "FORBIDDEN_HOST", message: "the IDE server only answers on localhost, 127.0.0.1 or [::1]" }, 403);
+  }
+  await next();
+});
 
 app.use(
   "/api/*",
@@ -174,6 +189,24 @@ app.delete("/api/fs", async (c) => {
   return c.json({ ok: true });
 });
 
+app.post("/api/fs/search", async (c) => {
+  const body = (await c.req.json()) as wsfs.WorkspaceSearchOptions;
+  if (typeof body.query !== "string") {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: "query is required" }, 400);
+  }
+  const res = await wsfs.searchWorkspace(body);
+  return c.json({ ok: true, ...res });
+});
+
+app.post("/api/fs/replace", async (c) => {
+  const body = (await c.req.json()) as wsfs.WorkspaceSearchOptions & { replacement?: string; targetFiles?: string[] };
+  if (typeof body.query !== "string" || typeof body.replacement !== "string") {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: "query and replacement are required" }, 400);
+  }
+  const res = await wsfs.replaceInWorkspace({ ...body, replacement: body.replacement });
+  return c.json({ ok: true, ...res });
+});
+
 // ---------------------------------------------------------------- jobs
 
 function resolveSafeCwd(cwd: string | undefined): string | undefined {
@@ -189,10 +222,25 @@ function resolveSafeCwd(cwd: string | undefined): string | undefined {
 }
 
 app.post("/api/run", async (c) => {
-  const body = (await c.req.json()) as { args?: string[]; cwd?: string; command?: string };
+  const body = (await c.req.json()) as { args?: string[]; cwd?: string; command?: string; wait?: boolean };
   if (!Array.isArray(body.args)) return c.json({ ok: false, code: "BAD_REQUEST", message: "args[] is required" }, 400);
   const job = await startJob({ args: body.args, cwd: resolveSafeCwd(body.cwd), command: body.command });
-  return c.json({ ok: true, job: summarize(job) });
+  const finalJob = body.wait ? await waitForJob(job) : job;
+  return c.json({ ok: true, job: summarize(finalJob) });
+});
+
+app.post("/api/silver/check", async (c) => {
+  const body = (await c.req.json()) as { filePath?: string; content?: string; constructorArgs?: string; cwd?: string };
+  if (!body.filePath || typeof body.filePath !== "string") {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: "filePath is required" }, 400);
+  }
+  const result = await checkSilverSource({
+    cwd: resolveSafeCwd(body.cwd),
+    filePath: body.filePath,
+    content: typeof body.content === "string" ? body.content : undefined,
+    constructorArgs: typeof body.constructorArgs === "string" ? body.constructorArgs : undefined
+  });
+  return c.json({ ok: true, check: result });
 });
 
 app.get("/api/jobs", (c) => c.json({ ok: true, jobs: listJobs().map(summarize) }));
@@ -245,14 +293,30 @@ function summarize(job: ReturnType<typeof listJobs>[number]) {
 
 // ---------------------------------------------------------------- projects
 
-app.get("/api/project/templates", (c) => c.json({ ok: true, templates: PROJECT_TEMPLATES, defaultParent: path.join(os.homedir(), "hardkas-projects") }));
+app.get("/api/project/templates", (c) =>
+  c.json({ ok: true, templates: PROJECT_TEMPLATES, frontends: FRONTEND_STACKS, defaultParent: path.join(os.homedir(), "hardkas-projects") })
+);
 
 app.post("/api/project/create", async (c) => {
-  const body = (await c.req.json()) as { template?: string; name?: string; parentDir?: string; install?: boolean };
-  if (!body.template || !body.name || !body.parentDir) {
-    return c.json({ ok: false, code: "BAD_REQUEST", message: "template, name and parentDir are required" }, 400);
+  const body = (await c.req.json()) as {
+    template?: string;
+    name?: string;
+    parentDir?: string;
+    install?: boolean;
+    frontend?: FrontendStackId;
+    starterContract?: StarterContractSpec;
+  };
+  if (!body.name || !body.parentDir) {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: "name and parentDir are required" }, 400);
   }
-  const { job, dest } = await createProject({ template: body.template, name: body.name, parentDir: body.parentDir, install: body.install });
+  const { job, dest } = await createProject({
+    template: body.template ?? "init",
+    name: body.name,
+    parentDir: body.parentDir,
+    install: body.install,
+    frontend: body.frontend,
+    starterContract: body.starterContract
+  });
   return c.json({ ok: true, job: summarize(job), dest });
 });
 
@@ -322,6 +386,8 @@ app.get(
 // ---------------------------------------------------------------- external plugins
 
 app.get("/api/plugins/fetch", async (c) => {
+  // The server fetches the URL it is given: only the IDE page may ask, never a cross-site request (blind SSRF).
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
   const url = c.req.query("url");
   if (!url) return c.json({ ok: false, code: "BAD_REQUEST", message: "url is required" }, 400);
   return c.json({ ok: true, text: await fetchText(url) });
@@ -395,6 +461,23 @@ app.get("/api/vsx/file/:id/*", async (c) => {
 });
 
 // ---------------------------------------------------------------- dev-server proxy
+
+app.get("/api/dev/status", async (c) => {
+  try {
+    const token = await readDevServerToken();
+    const headers: Record<string, string> = token ? { authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${DEV_SERVER}/api/artifacts`, {
+      headers,
+      signal: AbortSignal.timeout(1200)
+    }).catch(() => null);
+    if (res && res.status < 500) {
+      return c.json({ ok: true, available: true, url: DEV_SERVER });
+    }
+  } catch {
+    // Dev-server is not running on DEV_SERVER.
+  }
+  return c.json({ ok: true, available: false, url: DEV_SERVER });
+});
 
 app.all("/api/dev/*", async (c) => {
   const suffix = c.req.path.replace(/^\/api\/dev/, "");
@@ -597,6 +680,8 @@ app.post("/api/debug/command", async (c) => {
 
 app.get("/api/cluster", async (c) => c.json({ ok: true, ...(await cluster.status()) }));
 
+app.get("/api/cluster/inspect", async (c) => c.json({ ok: true, node: await cluster.inspectNode(String(c.req.query("name") ?? "")) }));
+
 app.get("/api/cluster/logs", async (c) => c.json({ ok: true, text: await cluster.logs(String(c.req.query("name") ?? ""), Number(c.req.query("tail")) || 200) }));
 
 app.post("/api/cluster/add", async (c) => {
@@ -674,6 +759,18 @@ app.get("/api/system", async (c) => {
 // ---------------------------------------------------------------- the HardKas CLI the server runs
 
 app.get("/api/cli", async (c) => c.json({ ok: true, cli: await cliInfo(getRoot() ?? process.cwd(), c.req.query("refresh") === "1") }));
+app.get("/api/cli/catalog", async (c) => {
+  const catalog = await getCliCatalog(getRoot() ?? process.cwd());
+  return c.json(catalog);
+});
+app.get("/api/updates", async (c) => {
+  const updates = await checkUpdates({
+    cwd: getRoot() ?? process.cwd(),
+    currentIdeVersion: c.req.query("appVersion") || undefined,
+    force: c.req.query("refresh") === "1"
+  });
+  return c.json({ ok: true, updates });
+});
 
 // ---------------------------------------------------------------- the local CPU miner (Explorer blocks, start/stop)
 
@@ -713,8 +810,16 @@ app.post("/api/node/miner", async (c) => {
   if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
   const body = (await c.req.json().catch(() => ({}))) as { action?: string };
   if (body.action !== "start" && body.action !== "stop") return c.json({ ok: false, code: "BAD_REQUEST", message: "action must be start or stop" }, 400);
-  const exists = await docker(["inspect", "-f", "{{.State.Running}}", MINER_CONTAINER]);
+  const exists = await docker(["inspect", "-f", "{{.Config.Image}}|{{.HostConfig.NetworkMode}}", MINER_CONTAINER]);
   if (!exists.ok) return c.json({ ok: false, code: "NO_MINER", message: `No miner container (${MINER_CONTAINER}) yet: fund an account once and HardKas creates it.` }, 404);
+  // The miner is shared with every HardKas project on this machine: touch it only when it is HardKas' own
+  // (kaspanet/cpuminer inside the node's network namespace), never another container that happens to have the name.
+  const [image = "", networkMode = ""] = exists.out.trim().split("|");
+  if (!isHardkasMiner({ image, networkMode })) {
+    return c.json({ ok: false, code: "NOT_HARDKAS_MINER", message: `${MINER_CONTAINER} is not HardKas' CPU miner (image ${image || "unknown"}); nothing was changed.` }, 409);
+  }
+  // cpuminer does not exit on SIGTERM, so `docker stop` ends it with SIGKILL after the timeout: an exit code 137
+  // on this container after a stop (here, or HardKas stopping it when `localnet fund` ends) is that, not a crash.
   const res = body.action === "start" ? await docker(["start", MINER_CONTAINER], 30000) : await docker(["stop", "-t", "2", MINER_CONTAINER], 30000);
   if (!res.ok) {
     const message = res.err.trim().split("\n")[0] || `docker ${body.action} failed`;
@@ -729,6 +834,24 @@ app.post("/api/node/miner", async (c) => {
   }
   const after = await docker(["inspect", "-f", "{{.State.Running}}", MINER_CONTAINER]);
   return c.json({ ok: true, running: after.out.trim() === "true" });
+});
+
+// Prepares the open workspace for a fresh local chain. The node and miner containers are NOT touched here: the IDE's
+// reset flow stops them with `hardkas localnet stop` and wipes the node with `hardkas node reset --yes`, so HardKas
+// itself decides what belongs to its localnet (the containers are shared by every HardKas project on this machine).
+// Account keys are moved to .hardkas/backups/reset-<time>/, never deleted: accounts.real.json can hold testnet keys.
+app.post("/api/node/reset", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const root = getRoot();
+  if (!root) return c.json({ ok: true, wiped: [], backedUp: [], backupDir: null, containersRemoved: false });
+  await ensureHardkasConfig(root).catch(() => {});
+  try {
+    const result = await resetWorkspaceChainState(root);
+    return c.json({ ok: true, ...result, containersRemoved: false });
+  } catch (error) {
+    if (error instanceof LocalNodeError) return c.json({ ok: false, code: error.code, message: error.message }, error.status as 409);
+    throw error;
+  }
 });
 
 const serverInfo = () => ({ name: "hardkas-ide-server", port: PORT, devServer: DEV_SERVER, workspace: getRoot(), ui: UI_READY ? "served from this server" : "not built: run pnpm build, or use the Vite dev server at http://localhost:5173" });

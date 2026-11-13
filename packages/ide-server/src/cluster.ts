@@ -52,6 +52,16 @@ function exclusive<T>(fn: () => Promise<T>): Promise<T> {
 
 // ------------------------------------------------------------------ JSON RPC (wRPC over WebSocket)
 
+export interface PeerDetail {
+  id: string;
+  address: string;
+  outbound: boolean;
+  userAgent: string;
+  synced: boolean;
+  lastPingMs: number | null;
+  timeOffsetMs: number | null;
+}
+
 export interface NodeChain {
   daa: number;
   sink: string;
@@ -65,10 +75,15 @@ export interface NodeChain {
   version: string;
   mempool: number;
   difficulty: number;
+  pruningPoint?: string;
+  pastMedianTime?: number;
+  p2pId?: string;
+  utxoIndexed?: boolean;
+  peerDetails?: PeerDetail[];
 }
 
 /** Asks one node for its chain over the JSON wRPC it publishes. Resolves null when it does not answer in time. */
-function rpcStatus(port: number, timeoutMs = 1800): Promise<NodeChain | null> {
+function rpcStatus(port: number, timeoutMs = 1800, includeDetails = false): Promise<NodeChain | null> {
   return new Promise((resolve) => {
     let done = false;
     let ws: WebSocket;
@@ -102,6 +117,8 @@ function rpcStatus(port: number, timeoutMs = 1800): Promise<NodeChain | null> {
       }
       if (got[1] && got[2] && got[3]) {
         const dag = got[1];
+        const rawPeers: any[] = Array.isArray(got[2].peerInfo) ? got[2].peerInfo : [];
+        const info = got[3];
         finish({
           daa: Number(dag.virtualDaaScore ?? 0),
           sink: String(dag.sink ?? ""),
@@ -110,10 +127,27 @@ function rpcStatus(port: number, timeoutMs = 1800): Promise<NodeChain | null> {
           headers: Number(dag.headerCount ?? 0),
           network: String(dag.network ?? ""),
           difficulty: Number(dag.difficulty ?? 0),
-          peers: (got[2].peerInfo ?? []).map((p: any) => ({ address: String(p.address ?? p.netAddress?.ip ?? "?"), outbound: Boolean(p.isOutbound) })),
-          synced: Boolean(got[3].isSynced),
-          version: String(got[3].serverVersion ?? ""),
-          mempool: Number(got[3].mempoolSize ?? 0)
+          peers: rawPeers.map((p: any) => ({ address: String(p.address ?? p.netAddress?.ip ?? "?"), outbound: Boolean(p.isOutbound) })),
+          synced: Boolean(info.isSynced),
+          version: String(info.serverVersion ?? ""),
+          mempool: Number(info.mempoolSize ?? 0),
+          ...(includeDetails
+            ? {
+                pruningPoint: dag.pruningPointHash ? String(dag.pruningPointHash) : undefined,
+                pastMedianTime: dag.pastMedianTime !== undefined ? Number(dag.pastMedianTime) : undefined,
+                p2pId: info.p2pId ? String(info.p2pId) : undefined,
+                utxoIndexed: typeof info.isUtxoIndexed === "boolean" ? info.isUtxoIndexed : undefined,
+                peerDetails: rawPeers.map((p: any) => ({
+                  id: String(p.id ?? ""),
+                  address: String(p.address ?? p.netAddress?.ip ?? "?"),
+                  outbound: Boolean(p.isOutbound),
+                  userAgent: String(p.userAgent ?? ""),
+                  synced: Boolean(p.isSynced),
+                  lastPingMs: p.lastPingDuration !== undefined ? Number(p.lastPingDuration) : null,
+                  timeOffsetMs: p.timeOffset !== undefined ? Number(p.timeOffset) : null
+                }))
+              }
+            : {})
         });
       }
     };
@@ -123,15 +157,34 @@ function rpcStatus(port: number, timeoutMs = 1800): Promise<NodeChain | null> {
 // ------------------------------------------------------------------ Docker
 
 interface Inspected {
+  id: string;
   name: string;
   state: string;
   status: string;
+  running: boolean;
+  restarts: number;
+  exitCode: number;
+  oomKilled: boolean;
+  pid: number;
   image: string;
+  imageId: string;
+  platform: string;
+  createdAt: string | null;
+  startedAt: string | null;
   ip: string | null;
   hostPort: number | null;
-  startedAt: string | null;
+  networks: Array<{ name: string; ip: string; gateway: string }>;
+  ports: Array<{ containerPort: string; hostIp: string; hostPort: string }>;
+  cmd: string[];
+  env: Array<{ key: string; value: string }>;
   labels: Record<string, string>;
+  mounts: Array<{ type: string; source: string; destination: string; rw: boolean }>;
+  restartPolicy: string;
+  memoryLimitBytes: number;
+  nanoCpus: number;
 }
+
+const SECRET_ENV_RE = /(secret|token|pass|password|private|key)/i;
 
 async function inspect(name: string): Promise<Inspected | null> {
   const r = await docker(["inspect", name]);
@@ -139,17 +192,64 @@ async function inspect(name: string): Promise<Inspected | null> {
   try {
     const c = (JSON.parse(r.out) as any[])[0];
     const nets = c.NetworkSettings?.Networks ?? {};
-    const ip: string | null = nets.bridge?.IPAddress || c.NetworkSettings?.IPAddress || (Object.values(nets) as any[]).find((n) => n.IPAddress)?.IPAddress || null;
-    const bind = c.NetworkSettings?.Ports?.["18210/tcp"]?.[0]?.HostPort;
+    const networks = Object.entries(nets).map(([netName, v]: [string, any]) => ({
+      name: netName,
+      ip: String(v?.IPAddress ?? ""),
+      gateway: String(v?.Gateway ?? "")
+    }));
+    const ip: string | null = nets.bridge?.IPAddress || c.NetworkSettings?.IPAddress || networks.find((n) => n.ip)?.ip || null;
+    const rawPorts = c.NetworkSettings?.Ports ?? {};
+    const ports: Inspected["ports"] = [];
+    for (const [containerPort, bindings] of Object.entries(rawPorts)) {
+      if (Array.isArray(bindings) && bindings.length > 0) {
+        for (const b of bindings as any[]) {
+          ports.push({ containerPort, hostIp: String(b?.HostIp ?? "0.0.0.0"), hostPort: String(b?.HostPort ?? "") });
+        }
+      } else {
+        ports.push({ containerPort, hostIp: "", hostPort: "" });
+      }
+    }
+    const bind = rawPorts["18210/tcp"]?.[0]?.HostPort;
+    const rawEnv: string[] = Array.isArray(c.Config?.Env) ? c.Config.Env : [];
+    const env = rawEnv.map((line) => {
+      const idx = line.indexOf("=");
+      const key = idx >= 0 ? line.slice(0, idx) : line;
+      const val = idx >= 0 ? line.slice(idx + 1) : "";
+      return { key, value: SECRET_ENV_RE.test(key) && val ? "••••••••" : val };
+    });
+    const entrypoint: string[] = Array.isArray(c.Config?.Entrypoint) ? c.Config.Entrypoint : [];
+    const cmdArgs: string[] = Array.isArray(c.Config?.Cmd) ? c.Config.Cmd : [];
     return {
+      id: String(c.Id ?? "").slice(0, 12),
       name: String(c.Name).replace(/^\//, ""),
       state: String(c.State?.Status ?? "unknown"),
       status: c.State?.Running ? "running" : String(c.State?.Status ?? "stopped"),
+      running: Boolean(c.State?.Running),
+      restarts: Number(c.RestartCount ?? 0),
+      exitCode: Number(c.State?.ExitCode ?? 0),
+      oomKilled: Boolean(c.State?.OOMKilled),
+      pid: Number(c.State?.Pid ?? 0),
       image: String(c.Config?.Image ?? ""),
+      imageId: String(c.Image ?? "").replace(/^sha256:/, "").slice(0, 12),
+      platform: String(c.Platform ?? "linux"),
+      createdAt: c.Created ? String(c.Created) : null,
+      startedAt: c.State?.Running ? String(c.State?.StartedAt ?? "") : null,
       ip,
       hostPort: bind ? Number(bind) : null,
-      startedAt: c.State?.Running ? String(c.State?.StartedAt ?? "") : null,
-      labels: c.Config?.Labels ?? {}
+      networks,
+      ports,
+      cmd: [...entrypoint, ...cmdArgs].map(String),
+      env,
+      labels: c.Config?.Labels ?? {},
+      mounts: (Array.isArray(c.Mounts) ? c.Mounts : []).map((m: any) => ({
+        type: String(m.Type ?? "bind"),
+        source: String(m.Source || m.Name || ""),
+        destination: String(m.Destination ?? ""),
+        rw: Boolean(m.RW)
+      })),
+      restartPolicy: String(c.HostConfig?.RestartPolicy?.Name ?? "no"),
+      memoryLimitBytes: Number(c.HostConfig?.Memory ?? 0),
+      nanoCpus: Number(c.HostConfig?.NanoCpus ?? 0)
     };
   } catch {
     return null;
@@ -160,20 +260,35 @@ export async function dockerAvailable(): Promise<boolean> {
   return (await docker(["version", "--format", "{{.Server.Version}}"], 8000)).ok;
 }
 
-let statsCache: { at: number; data: Record<string, { mem: string; cpu: string }> } = { at: 0, data: {} };
+interface ContainerStat {
+  mem: string;
+  memLimit: string;
+  memPercent: string;
+  cpu: string;
+  pids: string;
+  netIo: string;
+}
+
+let statsCache: { at: number; data: Record<string, ContainerStat> } = { at: 0, data: {} };
 let statsRunning = false;
+async function fetchStatsNow(): Promise<void> {
+  const r = await docker(["stats", "--no-stream", "--format", "{{.Name}}|{{.MemUsage}}|{{.CPUPerc}}|{{.MemPerc}}|{{.PIDs}}|{{.NetIO}}"], 15_000);
+  if (!r.ok) return;
+  const data: Record<string, ContainerStat> = {};
+  for (const line of r.out.split("\n")) {
+    const [name, memUsage, cpu, memPercent, pids, netIo] = line.trim().split("|");
+    if (!name) continue;
+    const [mem = "", memLimit = ""] = (memUsage ?? "").split(" / ").map((s) => s.trim());
+    data[name] = { mem, memLimit, memPercent: memPercent ?? "", cpu: cpu ?? "", pids: pids ?? "", netIo: netIo ?? "" };
+  }
+  statsCache = { at: Date.now(), data };
+}
+
 function refreshStats() {
   if (statsRunning || Date.now() - statsCache.at < 8000) return;
   statsRunning = true;
-  void docker(["stats", "--no-stream", "--format", "{{.Name}}|{{.MemUsage}}|{{.CPUPerc}}"], 15_000).then((r) => {
+  void fetchStatsNow().finally(() => {
     statsRunning = false;
-    if (!r.ok) return;
-    const data: Record<string, { mem: string; cpu: string }> = {};
-    for (const line of r.out.split("\n")) {
-      const [name, mem, cpu] = line.trim().split("|");
-      if (name) data[name] = { mem: (mem ?? "").split(" / ")[0], cpu: cpu ?? "" };
-    }
-    statsCache = { at: Date.now(), data };
   });
 }
 
@@ -301,6 +416,104 @@ export function scale(replicas: number): Promise<{ added: string[]; removed: str
     }
     return { added, removed };
   });
+}
+
+export interface NodeInspectDetail {
+  id: string;
+  name: string;
+  index: number;
+  role: "hardkas" | "extra";
+  state: string;
+  status: string;
+  running: boolean;
+  restarts: number;
+  exitCode: number;
+  oomKilled: boolean;
+  pid: number;
+  image: string;
+  imageId: string;
+  platform: string;
+  createdAt: string | null;
+  startedAt: string | null;
+  rpcPort: number | null;
+  ip: string | null;
+  networks: Array<{ name: string; ip: string; gateway: string }>;
+  ports: Array<{ containerPort: string; hostIp: string; hostPort: string }>;
+  cmd: string[];
+  env: Array<{ key: string; value: string }>;
+  labels: Record<string, string>;
+  mounts: Array<{ type: string; source: string; destination: string; rw: boolean }>;
+  restartPolicy: string;
+  memoryLimitBytes: number;
+  nanoCpus: number;
+  mem?: string;
+  memLimit?: string;
+  memPercent?: string;
+  cpu?: string;
+  pids?: string;
+  netIo?: string;
+  chain: NodeChain | null;
+  reference: { name: string; daa: number; blocks: number; headers: number; sink: string } | null;
+  inSync: boolean | null;
+  behind: number | null;
+}
+
+export async function inspectNode(name: string): Promise<NodeInspectDetail> {
+  if (name !== NODE0 && !NAME_RE.test(name)) throw new ClusterError(400, "BAD_NAME", "Unknown node.");
+  const [c, refRaw] = await Promise.all([inspect(name), name === NODE0 ? Promise.resolve(null) : inspect(NODE0)]);
+  if (!c) throw new ClusterError(404, "NOT_FOUND", `No container ${name}.`);
+  if (!statsCache.data[c.name] || Date.now() - statsCache.at > 5000) {
+    await fetchStatsNow().catch(() => {});
+  }
+  const role: "hardkas" | "extra" = c.name === NODE0 ? "hardkas" : "extra";
+  const index = role === "hardkas" ? 0 : Number(NAME_RE.exec(c.name)?.[1] ?? 0);
+  const rpcPort = c.hostPort ?? (role === "hardkas" ? 18210 : null);
+  const refRpcPort = refRaw ? (refRaw.hostPort ?? 18210) : rpcPort;
+  const [chain, refChain] = await Promise.all([
+    c.running && rpcPort ? rpcStatus(rpcPort, 2500, true) : Promise.resolve(null),
+    role === "hardkas" ? Promise.resolve(null) : refRaw?.running && refRpcPort ? rpcStatus(refRpcPort, 1800, false) : Promise.resolve(null)
+  ]);
+  const effectiveRef = role === "hardkas" ? chain : refChain;
+  const stats = statsCache.data[c.name];
+  return {
+    id: c.id,
+    name: c.name,
+    index,
+    role,
+    state: c.state,
+    status: c.status,
+    running: c.running,
+    restarts: c.restarts,
+    exitCode: c.exitCode,
+    oomKilled: c.oomKilled,
+    pid: c.pid,
+    image: c.image,
+    imageId: c.imageId,
+    platform: c.platform,
+    createdAt: c.createdAt,
+    startedAt: c.startedAt,
+    rpcPort,
+    ip: c.ip,
+    networks: c.networks,
+    ports: c.ports,
+    cmd: c.cmd,
+    env: c.env,
+    labels: c.labels,
+    mounts: c.mounts,
+    restartPolicy: c.restartPolicy,
+    memoryLimitBytes: c.memoryLimitBytes,
+    nanoCpus: c.nanoCpus,
+    mem: stats?.mem,
+    memLimit: stats?.memLimit,
+    memPercent: stats?.memPercent,
+    cpu: stats?.cpu,
+    pids: stats?.pids,
+    netIo: stats?.netIo,
+    chain,
+    reference: effectiveRef ? { name: NODE0, daa: effectiveRef.daa, blocks: effectiveRef.blocks, headers: effectiveRef.headers, sink: effectiveRef.sink } : null,
+    inSync: chain && effectiveRef ? chain.sink === effectiveRef.sink : null,
+    behind: chain && effectiveRef ? Math.max(0, effectiveRef.daa - chain.daa) : null
+  };
 }
 
 export async function logs(name: string, tail = 200): Promise<string> {

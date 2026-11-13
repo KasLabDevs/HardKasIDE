@@ -30,9 +30,34 @@ export class LineagePlugin extends Plugin {
     });
   }
 
+  private probeTimer: ReturnType<typeof setInterval> | null = null;
+
   onActivation(): void {
-    this.connect();
+    void this.ensureConnected();
+    this.probeTimer = setInterval(() => {
+      if (!this.source) void this.ensureConnected();
+    }, 15_000);
+    this.offs.push(() => {
+      if (this.probeTimer) {
+        clearInterval(this.probeTimer);
+        this.probeTimer = null;
+      }
+    });
     this.offs.push(this.on("deployRun", "transactionExecuted", () => this.scheduleRefresh(800)));
+  }
+
+  private async ensureConnected(): Promise<void> {
+    if (this.source) return;
+    try {
+      const status = await api.devStatus();
+      if (!status.available) {
+        useLineage.getState().setLive(false);
+        return;
+      }
+      this.connect();
+    } catch {
+      useLineage.getState().setLive(false);
+    }
   }
 
   onDeactivation(): void {
@@ -67,8 +92,10 @@ export class LineagePlugin extends Plugin {
         this.scheduleRefresh(400);
       });
       es.onerror = () => {
+        // Close immediately instead of letting EventSource spin on 502s when dev-server is down.
+        es.close();
+        if (this.source === es) this.source = null;
         useLineage.getState().setLive(false);
-        // EventSource retries on its own; if the dev-server is down, refresh() reports it.
       };
       this.source = es;
     } catch {
