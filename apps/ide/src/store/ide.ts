@@ -74,7 +74,7 @@ export const ENVIRONMENTS: EnvironmentDef[] = [
     label: "Local node (Docker, simnet)",
     short: "Local node",
     networkId: "simnet",
-    description: "A real rusty-kaspad running in Docker on the private simnet network, with a CPU miner to fund accounts. Needs Docker Desktop installed and running.",
+    description: "A real rusty-kaspad running in Docker on the private simnet network, seeding dev accounts with 100 KAS each from a localnet Treasury. Needs Docker Desktop installed and running.",
     needsDocker: true,
     needsNode: true
   },
@@ -108,6 +108,7 @@ export const VIEW_PREFIX = "view:";
 /** Where a side-panel plugin is docked (Eclipse-style movable views). */
 export type Dock = "left" | "leftBottom" | "right" | "main";
 const DOCKS_KEY = "hardkas-ide.docks";
+const HIDDEN_PANELS_KEY = "hardkas-ide.hidden-panels";
 /** Out-of-the-box placement: the Assistant chat lives on the right, like an editor's side panels. */
 const DEFAULT_DOCKS: Record<string, Dock> = { assistant: "right" };
 
@@ -116,6 +117,23 @@ function loadDocks(): Record<string, Dock> {
     return { ...DEFAULT_DOCKS, ...(JSON.parse(localStorage.getItem(DOCKS_KEY) ?? "{}") as Record<string, Dock>) };
   } catch {
     return { ...DEFAULT_DOCKS };
+  }
+}
+
+function loadHiddenPanels(): Record<string, boolean> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HIDDEN_PANELS_KEY) ?? "{}") as Record<string, boolean>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveHiddenPanels(hidden: Record<string, boolean>): void {
+  try {
+    localStorage.setItem(HIDDEN_PANELS_KEY, JSON.stringify(hidden));
+  } catch {
+    // ignore
   }
 }
 
@@ -135,6 +153,7 @@ interface IdeState {
   tree: TreeNode[];
   openFiles: OpenFile[];
   activeFile: string | null;
+  recentFiles: string[];
   activeSidePlugin: string;
   target: ExecutionTarget;
   journal: JournalBlock[];
@@ -153,6 +172,10 @@ interface IdeState {
   statusMessage: string;
   docks: Record<string, Dock>;
   setDock(pluginName: string, dock: Dock): void;
+  /** Panels docked in secondary slots (right / leftBottom) that the user explicitly hid. */
+  hiddenPanels: Record<string, boolean>;
+  setPanelHidden(pluginName: string, hidden: boolean): void;
+  togglePanelHidden(pluginName: string): void;
 
   setWorkspace(ws: WorkspaceInfo | null): void;
   setTree(tree: TreeNode[]): void;
@@ -160,6 +183,7 @@ interface IdeState {
   updateContent(path: string, content: string): void;
   markSaved(path: string): void;
   closeFile(path: string): void;
+  closeFiles(paths: string[], preferredActive?: string): void;
   setActiveFile(path: string | null): void;
   /** Opens (or focuses) a main-panel plugin view as a tab. */
   openView(pluginName: string, title: string): void;
@@ -205,6 +229,12 @@ function applyZoom(percent: number): void {
 const initialZoom = loadZoom();
 applyZoom(initialZoom);
 
+function pushRecent(list: string[], path: string | null): string[] {
+  if (!path || path.startsWith(VIEW_PREFIX)) return list;
+  if (list[0] === path) return list;
+  return [path, ...list.filter((p) => p !== path)].slice(0, 15);
+}
+
 export const useIde = create<IdeState>((set, get) => ({
   sidebarOpen: true,
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
@@ -226,6 +256,7 @@ export const useIde = create<IdeState>((set, get) => ({
   tree: [],
   openFiles: [],
   activeFile: null,
+  recentFiles: [],
   activeSidePlugin: "files",
   target: loadTarget(),
   journal: [],
@@ -233,9 +264,25 @@ export const useIde = create<IdeState>((set, get) => ({
   outlineOpen: true,
   statusMessage: "",
   docks: loadDocks(),
+  hiddenPanels: loadHiddenPanels(),
+  setPanelHidden: (pluginName, hidden) =>
+    set((s) => {
+      const hiddenPanels = { ...s.hiddenPanels };
+      if (hidden) hiddenPanels[pluginName] = true;
+      else delete hiddenPanels[pluginName];
+      saveHiddenPanels(hiddenPanels);
+      return { hiddenPanels };
+    }),
+  togglePanelHidden: (pluginName) => {
+    const currentlyHidden = Boolean(get().hiddenPanels[pluginName]);
+    get().setPanelHidden(pluginName, !currentlyHidden);
+  },
   setDock: (pluginName, dock) =>
     set((s) => {
       const docks = { ...s.docks, [pluginName]: dock };
+      const hiddenPanels = { ...s.hiddenPanels };
+      delete hiddenPanels[pluginName];
+      saveHiddenPanels(hiddenPanels);
       try {
         localStorage.setItem(DOCKS_KEY, JSON.stringify(docks));
       } catch {
@@ -249,22 +296,24 @@ export const useIde = create<IdeState>((set, get) => ({
       if (dock === "leftBottom" && pluginName === "files") return s; // the Explorer anchors the left column
       return {
         docks,
+        hiddenPanels,
         openFiles,
         activeFile,
         activeSidePlugin,
-        sidebarOpen: dock === "left" || dock === "leftBottom" ? true : s.sidebarOpen,
-        outlineOpen: dock === "right" ? true : s.outlineOpen
+        sidebarOpen: dock === "left" || dock === "leftBottom" ? true : s.sidebarOpen
       };
     }),
 
   resetLayout: () => {
     try {
       localStorage.removeItem(DOCKS_KEY);
+      localStorage.removeItem(HIDDEN_PANELS_KEY);
     } catch {
       // ignore
     }
     set((s) => ({
       docks: { ...DEFAULT_DOCKS },
+      hiddenPanels: {},
       openFiles: s.openFiles.filter((f) => f.kind !== "view"),
       activeFile: s.activeFile?.startsWith(VIEW_PREFIX) ? (s.openFiles.find((f) => f.kind !== "view")?.path ?? null) : s.activeFile,
       activeSidePlugin: "files",
@@ -274,27 +323,46 @@ export const useIde = create<IdeState>((set, get) => ({
     }));
   },
 
-  setWorkspace: (workspace) => set({ workspace }),
+  setWorkspace: (workspace) =>
+    set((s) => ({
+      workspace,
+      recentFiles: s.workspace?.root && workspace?.root && s.workspace.root === workspace.root ? s.recentFiles : []
+    })),
   setTree: (tree) => set({ tree }),
   upsertOpenFile: (file) =>
     set((s) => {
       const exists = s.openFiles.some((f) => f.path === file.path);
       return {
         openFiles: exists ? s.openFiles.map((f) => (f.path === file.path ? file : f)) : [...s.openFiles, file],
-        activeFile: file.path
+        activeFile: file.path,
+        recentFiles: pushRecent(s.recentFiles, file.path)
       };
     }),
   updateContent: (path, content) =>
     set((s) => ({ openFiles: s.openFiles.map((f) => (f.path === path ? { ...f, content } : f)) })),
   markSaved: (path) =>
     set((s) => ({ openFiles: s.openFiles.map((f) => (f.path === path ? { ...f, savedContent: f.content } : f)) })),
-  closeFile: (path) =>
+  closeFile: (path) => get().closeFiles([path]),
+  closeFiles: (paths, preferredActive) =>
     set((s) => {
-      const remaining = s.openFiles.filter((f) => f.path !== path);
-      const activeFile = s.activeFile === path ? (remaining.at(-1)?.path ?? null) : s.activeFile;
+      if (paths.length === 0) return s;
+      const toClose = new Set(paths);
+      const remaining = s.openFiles.filter((f) => !toClose.has(f.path));
+      let activeFile = s.activeFile;
+      if (!activeFile || toClose.has(activeFile)) {
+        if (preferredActive && !toClose.has(preferredActive) && remaining.some((f) => f.path === preferredActive)) {
+          activeFile = preferredActive;
+        } else {
+          const oldIdx = s.activeFile ? s.openFiles.findIndex((f) => f.path === s.activeFile) : -1;
+          const after = oldIdx >= 0 ? s.openFiles.slice(oldIdx + 1).find((f) => !toClose.has(f.path)) : undefined;
+          const before = oldIdx > 0 ? [...s.openFiles.slice(0, oldIdx)].reverse().find((f) => !toClose.has(f.path)) : undefined;
+          activeFile = after?.path ?? before?.path ?? remaining.at(-1)?.path ?? null;
+        }
+      }
       return { openFiles: remaining, activeFile };
     }),
-  setActiveFile: (activeFile) => set({ activeFile }),
+  setActiveFile: (activeFile) =>
+    set((s) => ({ activeFile, recentFiles: pushRecent(s.recentFiles, activeFile) })),
   openView: (pluginName, title) =>
     set((s) => {
       const path = VIEW_PREFIX + pluginName;
@@ -306,10 +374,11 @@ export const useIde = create<IdeState>((set, get) => ({
     }),
   setActiveSidePlugin: (activeSidePlugin) => set({ activeSidePlugin, sidebarOpen: true }),
   revealPlugin: (name, title) => {
+    if (get().hiddenPanels[name]) get().setPanelHidden(name, false);
     const dock = get().docks[name] ?? "left";
     if (dock === "left") set({ activeSidePlugin: name, sidebarOpen: true });
     else if (dock === "main") get().openView(name, title ?? name);
-    // "leftBottom" and "right" panels are already visible in their column; flag it so the UI can focus them.
+    // "leftBottom" and "right" panels live in secondary docks; unhiding + flagging reveals them cleanly.
     else set({ revealed: name, sidebarOpen: dock === "leftBottom" ? true : get().sidebarOpen });
   },
   revealed: null,

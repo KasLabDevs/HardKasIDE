@@ -126,6 +126,232 @@ export async function rename(from: string, to: string): Promise<void> {
   await fs.rename(source, target);
 }
 
+export interface SearchMatchLine {
+  line: number;
+  column: number;
+  matchLength: number;
+  lineText: string;
+  matchText: string;
+}
+
+export interface SearchFileResult {
+  path: string;
+  matches: SearchMatchLine[];
+}
+
+export interface WorkspaceSearchOptions {
+  query: string;
+  caseSensitive?: boolean;
+  regex?: boolean;
+  wholeWord?: boolean;
+  filePatterns?: string;
+  scopeDir?: string;
+  includeFiles?: string[];
+  maxResults?: number;
+}
+
+export interface WorkspaceSearchResponse {
+  query: string;
+  files: SearchFileResult[];
+  totalMatches: number;
+  totalFiles: number;
+  truncated: boolean;
+}
+
+function compileFilePatternMatcher(patternsRaw?: string): (relPath: string, fileName: string) => boolean {
+  const raw = (patternsRaw ?? "").trim();
+  if (!raw || raw === "*" || raw === "*.*") return () => true;
+  const parts = raw
+    .split(/[,;]+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return () => true;
+
+  const regexes = parts.map((p) => {
+    const escaped = p
+      .replace(/\\/g, "/")
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*/g, ".*")
+      .replace(/\?/g, ".");
+    return { hasSlash: p.includes("/") || p.includes("\\"), re: new RegExp(`^${escaped}$`, "i") };
+  });
+
+  return (relPath: string, fileName: string) =>
+    regexes.some((r) => (r.hasSlash ? r.re.test(relPath) : r.re.test(fileName)));
+}
+
+function buildSearchRegExp(opts: WorkspaceSearchOptions): RegExp {
+  const flags = opts.caseSensitive ? "g" : "gi";
+  let source = opts.query;
+  if (!opts.regex) {
+    // Support Eclipse wildcard style (* and ?) when not in regex mode if present, otherwise literal escape
+    source = source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  if (opts.wholeWord) {
+    source = `\\b(?:${source})\\b`;
+  }
+  return new RegExp(source, flags);
+}
+
+const BINARY_EXTS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".ico",
+  ".pdf",
+  ".zip",
+  ".gz",
+  ".tar",
+  ".wasm",
+  ".exe",
+  ".dll",
+  ".so",
+  ".dylib",
+  ".db",
+  ".sqlite"
+]);
+
+export async function searchWorkspace(opts: WorkspaceSearchOptions): Promise<WorkspaceSearchResponse> {
+  const q = (opts.query ?? "").trim();
+  if (!q) {
+    return { query: "", files: [], totalMatches: 0, totalFiles: 0, truncated: false };
+  }
+
+  const maxResults = opts.maxResults ?? 1500;
+  const matchFile = compileFilePatternMatcher(opts.filePatterns);
+  const re = buildSearchRegExp({ ...opts, query: q });
+
+  const candidateFiles: string[] = [];
+  if (opts.includeFiles && opts.includeFiles.length > 0) {
+    for (const rel of opts.includeFiles) {
+      const norm = rel.replace(/\\/g, "/").replace(/^\/+/, "");
+      const name = path.posix.basename(norm);
+      if (matchFile(norm, name)) candidateFiles.push(norm);
+    }
+  } else {
+    const startDir = resolveInRoot(opts.scopeDir ?? "");
+    async function collect(current: string, depth: number): Promise<void> {
+      if (depth > 8 || candidateFiles.length > 2000) return;
+      let entries;
+      try {
+        entries = await fs.readdir(current, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const abs = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          if (!IGNORED_DIRS.has(entry.name)) await collect(abs, depth + 1);
+        } else {
+          const ext = path.extname(entry.name).toLowerCase();
+          if (BINARY_EXTS.has(ext)) continue;
+          const rel = toRelative(abs);
+          if (matchFile(rel, entry.name)) {
+            candidateFiles.push(rel);
+          }
+        }
+      }
+    }
+    await collect(startDir, 0);
+  }
+
+  const files: SearchFileResult[] = [];
+  let totalMatches = 0;
+  let truncated = false;
+
+  for (const rel of candidateFiles) {
+    if (totalMatches >= maxResults) {
+      truncated = true;
+      break;
+    }
+    let content: string;
+    try {
+      const stat = await fs.stat(resolveInRoot(rel));
+      if (stat.size > 1_000_000) continue; // skip >1MB files
+      content = await fs.readFile(resolveInRoot(rel), "utf8");
+    } catch {
+      continue;
+    }
+
+    const lines = content.split(/\r?\n/);
+    const fileMatches: SearchMatchLine[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const lineText = lines[i];
+      re.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(lineText)) !== null) {
+        const matchText = m[0];
+        if (matchText.length === 0) {
+          re.lastIndex++;
+          continue;
+        }
+        fileMatches.push({
+          line: i + 1,
+          column: m.index + 1,
+          matchLength: matchText.length,
+          lineText: lineText.slice(0, 300),
+          matchText
+        });
+        totalMatches++;
+        if (totalMatches >= maxResults) {
+          truncated = true;
+          break;
+        }
+      }
+      if (truncated) break;
+    }
+
+    if (fileMatches.length > 0) {
+      files.push({ path: rel, matches: fileMatches });
+    }
+  }
+
+  return {
+    query: q,
+    files,
+    totalMatches,
+    totalFiles: files.length,
+    truncated
+  };
+}
+
+export async function replaceInWorkspace(
+  opts: WorkspaceSearchOptions & { replacement: string; targetFiles?: string[] }
+): Promise<{ replacedFiles: number; replacedMatches: number }> {
+  const searchRes = await searchWorkspace({
+    ...opts,
+    includeFiles: opts.targetFiles && opts.targetFiles.length > 0 ? opts.targetFiles : opts.includeFiles,
+    maxResults: 5000
+  });
+  const re = buildSearchRegExp(opts);
+  let replacedFiles = 0;
+  let replacedMatches = 0;
+
+  for (const fileResult of searchRes.files) {
+    try {
+      const abs = resolveInRoot(fileResult.path);
+      const original = await fs.readFile(abs, "utf8");
+      let count = 0;
+      const updated = original.replace(re, () => {
+        count++;
+        return opts.replacement;
+      });
+      if (count > 0 && updated !== original) {
+        await fs.writeFile(abs, updated, "utf8");
+        replacedFiles++;
+        replacedMatches += count;
+      }
+    } catch {
+      // ignore individual file errors
+    }
+  }
+
+  return { replacedFiles, replacedMatches };
+}
+
 export class FsError extends Error {
   constructor(
     public status: number,

@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { ensureHardkasConfig } from "./frontendScaffold.js";
 
 /**
  * Workspace state for the IDE server: which HardKas project folder is open,
@@ -60,6 +61,14 @@ export async function openWorkspace(dir: string): Promise<WorkspaceInfo> {
   const stat = await fs.stat(resolved).catch(() => null);
   if (!stat || !stat.isDirectory()) {
     throw new Error(`Not a directory: ${resolved}`);
+  }
+  try {
+    const pkgRaw = await fs.readFile(path.join(resolved, "package.json"), "utf8");
+    if (pkgRaw.includes("@hardkas/")) {
+      await ensureHardkasConfig(resolved);
+    }
+  } catch {
+    // no package.json or unreadable
   }
   currentRoot = resolved;
   await addRecent(resolved);

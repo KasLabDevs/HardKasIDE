@@ -1,13 +1,15 @@
+import { useRef } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useIde } from "@/store/ide";
 import { BottomPanel } from "./BottomPanel";
 import { CommandPalette } from "./CommandPalette";
 import { EnvBar } from "./EnvBar";
-import { EnvNotice } from "./EnvNotice";
+import { NewArtifactDialog } from "./NewArtifactDialog";
 import { NodeOpBanner } from "./NodeOpProgress";
 import { IconRail } from "./IconRail";
 import { MainArea } from "./MainArea";
 import { RightDock } from "./RightDock";
+import { SearchDialog } from "./SearchDialog";
 import { SidePanel } from "./SidePanel";
 import { TitleBar } from "./TitleBar";
 import { useEngine, useEngineVersion } from "@/engine/context";
@@ -23,16 +25,18 @@ export function Workbench({ onHome }: Props) {
   const outlineOpen = useIde((s) => s.outlineOpen);
   const sidebarOpen = useIde((s) => s.sidebarOpen);
   const docks = useIde((s) => s.docks);
+  const hiddenPanels = useIde((s) => s.hiddenPanels);
   const engine = useEngine();
   useEngineVersion();
-  const rightDocked = engine.listByLocation("sidePanel").some((p) => docks[p.profile.name] === "right");
+  const mainRef = useRef<HTMLDivElement>(null);
+  const rightDocked = engine.listByLocation("sidePanel").some((p) => docks[p.profile.name] === "right" && !hiddenPanels[p.profile.name]);
   const showRight = outlineOpen || rightDocked;
 
   return (
     <div className="h-full flex flex-col">
-      <TitleBar onHome={onHome} />
+      <TitleBar onHome={onHome} mainRef={mainRef} />
       <div className="flex-1 min-h-0 flex">
-        <IconRail onHome={onHome} />
+        <IconRail />
         <PanelGroup direction="horizontal" className="flex-1 min-w-0">
           {sidebarOpen && (
             <>
@@ -43,9 +47,8 @@ export function Workbench({ onHome }: Props) {
             </>
           )}
           <Panel id="main" order={2} minSize={30}>
-            <div className="h-full flex flex-col min-w-0">
+            <div ref={mainRef} className="h-full flex flex-col min-w-0">
               <EnvBar />
-              <EnvNotice />
               <NodeOpBanner />
               <div className="flex-1 min-h-0">
                 <PanelGroup direction="vertical">
@@ -76,6 +79,8 @@ export function Workbench({ onHome }: Props) {
       </div>
       <StatusBar />
       <CommandPalette />
+      <NewArtifactDialog />
+      <SearchDialog />
     </div>
   );
 }

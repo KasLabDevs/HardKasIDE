@@ -1,0 +1,70 @@
+{
+  "schema": "hardkas.silverCompile.v1",
+  "hardkasVersion": "0.12.0-rc.29",
+  "createdAt": "2026-10-27T01:26:34.645Z",
+  "networkId": "simnet",
+  "capability": "silver.compile.v1",
+  "source": {
+    "path": "contracts/auction.sil",
+    "sha256": "94418f25b8654047e1a09ebfc3688a32b8c6a087484ade8e31bec573cac2077d",
+    "text": "pragma silverscript ^0.1.0;\n\n// Decentralized P2P Auction governed by Kaspa Covenants:\n// - The seller initiates the auction with an initial reserve price.\n// - The winning bidder can claim and settle the lot.\n// - The seller collects the highest bid funds upon closure.\n// - If reserve is not met, the seller can cancel and reclaim the deposit.\ncontract KaspaAuction(pubkey seller, pubkey highestBidder, int minBidSompi) {\n  // Seller finalizes auction and claims the winning bid\n  entry close(sig sellerSig) {\n    require(checkSig(sellerSig, seller));\n  }\n\n  // Highest bidder settles and receives the auctioned covenant asset\n  entry claim(sig winnerSig) {\n    require(checkSig(winnerSig, highestBidder));\n  }\n\n  // Seller cancels auction and reclaims deposit\n  entry cancel(sig sellerSig) {\n    require(checkSig(sellerSig, seller));\n  }\n}\n"
+  },
+  "provenance": {
+    "schema": "hardkas.silver.compileProvenance.v1",
+    "compiler": {
+      "id": "silverc",
+      "repository": "kaspanet/silverscript",
+      "releaseTag": "v1.0.0",
+      "commit": "3ed973335b59269293564805cc2c58a14595ec03",
+      "assetName": "silverc-windows-x86_64.zip",
+      "assetSha256": "3e0d660c15a9e7ac90f3960da24d348b076b1891481bfe758db18accc8a102e1",
+      "binarySha256": "ce1e0ef5f1f415f371d3d2426e788597a388635da8cbe93e72e95a4f754b29af",
+      "languageVersion": "0.1.0"
+    },
+    "sourceSha256": "94418f25b8654047e1a09ebfc3688a32b8c6a087484ade8e31bec573cac2077d",
+    "constructorArgsSha256": "dc06a977a29cf06b51b18bfd29a9b1dca1314228642cdcc30d9a283f5141e617",
+    "artifactSha256": "475b86301feba1f575e3b2822c40b254a4d1e2c08b3dfeb2cc92470b42580cce",
+    "abiSchemaVersion": 1,
+    "contracts": [
+      {
+        "name": "KaspaAuction",
+        "bytecodeSha256": "8530d00ef4b643f191bfdfcfe77c2f8afb773d53f8cee287115a01437ee188e2",
+        "templateHash": "df3a4e65a457b621f430bbeeb5a45dcbcd1240a80d52ffc3780b6e1e1e16b949",
+        "entries": [
+          {
+            "name": "cancel",
+            "dispatchTag": "a0893109"
+          },
+          {
+            "name": "claim",
+            "dispatchTag": "dd9ab092"
+          },
+          {
+            "name": "close",
+            "dispatchTag": "53422444"
+          }
+        ]
+      }
+    ]
+  },
+  "artifactJson": "{\n  \"schema_version\": 1,\n  \"compiler_version\": \"0.1.0\",\n  \"structs\": {},\n  \"contracts\": {\n    \"KaspaAuction\": {\n      \"source_path\": \"sil/KaspaAuction.sil\",\n      \"runtime_state\": {\n        \"source\": \"State\",\n        \"fields\": []\n      },\n      \"entries\": {\n        \"cancel\": {\n          \"dispatch_tag\": \"a0893109\",\n          \"params\": [\n            {\n              \"name\": \"sellerSig\",\n              \"type\": {\n                \"kind\": \"sig\"\n              }\n            }\n          ]\n        },\n        \"claim\": {\n          \"dispatch_tag\": \"dd9ab092\",\n          \"params\": [\n            {\n              \"name\": \"winnerSig\",\n              \"type\": {\n                \"kind\": \"sig\"\n              }\n            }\n          ]\n        },\n        \"close\": {\n          \"dispatch_tag\": \"53422444\",\n          \"params\": [\n            {\n              \"name\": \"sellerSig\",\n              \"type\": {\n                \"kind\": \"sig\"\n              }\n            }\n          ]\n        }\n      },\n      \"compiled\": {\n        \"bytecode\": [\n          118, 4, 83, 66, 36, 68, 135, 99, 117, 118, 130, 1, 65, 157, 117, 118, 32, 62, 27, 20, 112, 241, 58, 141, 100, 18, 143, 214, 177, 1, 167, 98, 25, 8, 8, 255, 58, 77, 240, 183, 168, 173, 252, 35, 40, 114, 144, 207, 251, 172, 105, 117, 81, 103, 118, 4, 221, 154, 176, 146, 135, 99, 117, 118,\n          130, 1, 65, 157, 117, 118, 32, 201, 37, 68, 120, 187, 231, 65, 227, 214, 250, 120, 138, 28, 88, 28, 249, 130, 235, 64, 252, 156, 129, 7, 145, 218, 126, 4, 27, 154, 114, 131, 36, 172, 105, 117, 81, 103, 118, 4, 160, 137, 49, 9, 135, 99, 117, 118, 130, 1, 65, 157, 117, 118, 32, 62, 27, 20,\n          112, 241, 58, 141, 100, 18, 143, 214, 177, 1, 167, 98, 25, 8, 8, 255, 58, 77, 240, 183, 168, 173, 252, 35, 40, 114, 144, 207, 251, 172, 105, 117, 81, 103, 106, 104, 104, 104\n        ],\n        \"template_hash\": [223, 58, 78, 101, 164, 87, 182, 33, 244, 48, 187, 238, 181, 164, 93, 203, 205, 18, 64, 168, 13, 82, 255, 195, 120, 11, 110, 30, 30, 22, 185, 73],\n        \"state_span\": {\n          \"offset\": 0,\n          \"len\": 0\n        }\n      }\n    }\n  }\n}",
+  "contracts": [
+    {
+      "name": "KaspaAuction",
+      "entries": {
+        "cancel": "a0893109",
+        "claim": "dd9ab092",
+        "close": "53422444"
+      },
+      "lockingScript": {
+        "version": 0,
+        "script": "aa200351045459acfd9854f9a031add730d102da22982e4782ed8fbfd52b95ffb20087"
+      },
+      "address": "kaspasim:pqp4zpz5txk0mxz5lxsrrtwhxrgs9k3znqhy0qhd37la22u4l7eqqhyrunejw"
+    }
+  ],
+  "version": "1.0.0-alpha",
+  "mode": "localnet",
+  "hashVersion": 5,
+  "contentHash": "17057d802ec0ee755e25a0536aed7317bff95e49866fb08b96e7a048a9199831"
+}

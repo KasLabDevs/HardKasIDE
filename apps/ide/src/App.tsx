@@ -22,8 +22,12 @@ import { AccountsPlugin, ArtifactsPlugin, FilesPlugin, RunPlugin, SettingsPlugin
 import { AssistantPlugin } from "@/plugins/assistant";
 import { ConsolePlugin } from "@/plugins/console";
 import { WithDesktopBar } from "@/shell/DesktopBar";
+import { DialogHost } from "@/shell/DialogHost";
+import { confirmDialog } from "@/utils/dialog";
 import { Workbench } from "@/shell/Workbench";
+import { DetachedWorkbench } from "@/shell/DetachedWorkbench";
 import { useIde } from "@/store/ide";
+import { consumeDetachedFile, parseDetachQuery, subscribeDetachMessages } from "@/utils/detach";
 
 /**
  * Boot: build the engine, register every plugin, then
@@ -65,6 +69,7 @@ const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCo
 
 export default function App() {
   const engine = useMemo(createEngine, []);
+  const detachTarget = useMemo(() => parseDetachQuery(), []);
   const workspace = useIde((s) => s.workspace);
   const setWorkspace = useIde((s) => s.setWorkspace);
   const hasDirtyFiles = useIde((s) => s.openFiles.some((f) => f.kind !== "view" && f.content !== f.savedContent));
@@ -101,6 +106,21 @@ export default function App() {
     (async () => {
       await engine.activate(ACTIVATION_ORDER);
       if (cancelled) return;
+      if (detachTarget) {
+        if (detachTarget.kind === "file") {
+          const snapshot = consumeDetachedFile(detachTarget.path);
+          if (snapshot && snapshot.content !== snapshot.savedContent) {
+            useIde.getState().upsertOpenFile({ path: detachTarget.path, ...snapshot });
+          } else {
+            await engine.call("fileManager", "open", detachTarget.path).catch((err) => {
+              engine.get<ConsolePlugin>("console").error(`Could not open ${detachTarget.path}: ${String(err)}`);
+            });
+          }
+        } else {
+          useIde.getState().openView(detachTarget.pluginName, detachTarget.title);
+        }
+        return;
+      }
       const console_ = engine.get<ConsolePlugin>("console");
       console_.info(`Workspace: ${workspace.root}`);
       if (!workspace.hasConfig) console_.warn("No hardkas.config.ts found. Run `init --json` in this console to scaffold one.");
@@ -109,11 +129,42 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [engine, workspace]);
+  }, [detachTarget, engine, workspace]);
+
+  // Listen for re-attached tabs and external saves from detached editor windows.
+  useEffect(() => {
+    if (detachTarget || !workspace?.root) return;
+    return subscribeDetachMessages((msg) => {
+      const store = useIde.getState();
+      if (msg.type === "reattach-file") {
+        if (msg.content !== msg.savedContent) {
+          store.upsertOpenFile({
+            path: msg.path,
+            content: msg.content,
+            savedContent: msg.savedContent,
+            language: msg.language
+          });
+        } else {
+          void engine.call("fileManager", "open", msg.path);
+        }
+        window.focus();
+      } else if (msg.type === "reattach-view") {
+        store.openView(msg.pluginName, msg.title);
+        window.focus();
+      } else if (msg.type === "file-saved") {
+        const existing = store.openFiles.find((f) => f.path === msg.path);
+        if (existing && existing.content === existing.savedContent) {
+          useIde.setState((s) => ({
+            openFiles: s.openFiles.map((f) => (f.path === msg.path ? { ...f, content: msg.content, savedContent: msg.content } : f))
+          }));
+        }
+      }
+    });
+  }, [detachTarget, engine, workspace]);
 
   const goHome = async () => {
     const dirty = useIde.getState().openFiles.filter((f) => f.kind !== "view" && f.content !== f.savedContent);
-    if (dirty.length > 0 && !window.confirm(`You have ${dirty.length} unsaved file(s). Close workspace and discard changes?`)) {
+    if (dirty.length > 0 && !(await confirmDialog(`You have ${dirty.length} unsaved file(s). Close workspace and discard changes?`, { title: "Unsaved changes", confirmLabel: "Discard and close", danger: true }))) {
       return;
     }
     await api.workspace.close().catch(() => undefined);
@@ -167,12 +218,17 @@ export default function App() {
   return (
     <EngineContext.Provider value={engine}>
       {workspace?.root ? (
-        <Workbench onHome={() => void goHome()} />
+        detachTarget ? (
+          <DetachedWorkbench target={detachTarget} />
+        ) : (
+          <Workbench onHome={() => void goHome()} />
+        )
       ) : (
         <WithDesktopBar>
           <HomeScreen onOpened={onOpened} />
         </WithDesktopBar>
       )}
+      <DialogHost />
     </EngineContext.Provider>
   );
 }

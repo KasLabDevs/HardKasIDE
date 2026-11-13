@@ -30,8 +30,9 @@ if (fs.existsSync(splashSrc)) {
   fs.copyFileSync(splashSrc, path.join(distDir, "index.html"));
 }
 
-step("Build the IDE server and the UI");
+step("Build the IDE server, the MCP server and the UI");
 run("pnpm --filter @hardkas-ide/server build");
+run("pnpm --filter @hardkas-ide/mcp build");
 run("pnpm --filter @hardkas-ide/ide build");
 
 step(`Reset ${path.relative(root, stage)}`);
@@ -53,6 +54,41 @@ fs.writeFileSync(
 );
 // npm lays out real folders (pnpm uses junctions, which installers do not carry over reliably).
 run("npm install --omit=dev --no-audit --no-fund --loglevel=error", serverOut);
+
+// The MCP server the hosted agent (OpenCode, over ACP) uses to reach the IDE: stage/mcp/dist/index.js,
+// started by the agent with the bundled Node. See packages/ide-server/src/acpAgent.ts.
+step("Copy the MCP server and install its production dependencies");
+const mcpSrc = path.join(root, "packages", "mcp-server");
+const mcpOut = path.join(stage, "mcp");
+fs.mkdirSync(mcpOut, { recursive: true });
+fs.cpSync(path.join(mcpSrc, "dist"), path.join(mcpOut, "dist"), { recursive: true });
+const mcpPkg = JSON.parse(fs.readFileSync(path.join(mcpSrc, "package.json"), "utf8"));
+fs.writeFileSync(
+  path.join(mcpOut, "package.json"),
+  JSON.stringify({ name: mcpPkg.name, version: mcpPkg.version, private: true, type: mcpPkg.type, dependencies: mcpPkg.dependencies }, null, 2)
+);
+run("npm install --omit=dev --no-audit --no-fund --loglevel=error", mcpOut);
+
+// The OpenCode agent binary (MIT): from HARDKAS_IDE_OPENCODE_EXE when set, otherwise the pinned npm release.
+const OPENCODE_VERSION = "2.3.0";
+step(`Copy the OpenCode agent ${OPENCODE_VERSION}`);
+const agentOut = path.join(stage, "agents", "opencode");
+fs.mkdirSync(agentOut, { recursive: true });
+let opencodeExe = process.env.HARDKAS_IDE_OPENCODE_EXE ?? "";
+if (!opencodeExe || !fs.existsSync(opencodeExe)) {
+  const cache = path.join(desktop, ".opencode-cache");
+  fs.mkdirSync(cache, { recursive: true });
+  if (!fs.existsSync(path.join(cache, "package.json"))) fs.writeFileSync(path.join(cache, "package.json"), "{\"private\":true}\n");
+  run(`npm install --no-save --no-audit --no-fund --loglevel=error @opencode/cli@${OPENCODE_VERSION}`, cache);
+  opencodeExe = path.join(cache, "node_modules", "@opencode", "cli", "bin", process.platform === "win32" ? "opencode.exe" : "opencode");
+}
+fs.copyFileSync(opencodeExe, path.join(agentOut, path.basename(opencodeExe)));
+fs.writeFileSync(
+  path.join(agentOut, "NOTICE.txt"),
+  `OpenCode ${OPENCODE_VERSION} (npm package @opencode/cli), an open-source AI coding agent.\n` +
+    `License: MIT, as declared by the package. Source and full license text: https://github.com/anomalyco/opencode\n` +
+    `HardKas IDE starts it as an Agent Client Protocol agent (opencode acp) with its own config home under ~/.hardkas-ide/opencode.\n`
+);
 
 step("Copy the Node runtime");
 fs.mkdirSync(path.join(stage, "node"), { recursive: true });

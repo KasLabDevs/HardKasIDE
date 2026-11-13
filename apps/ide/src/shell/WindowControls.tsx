@@ -36,7 +36,7 @@ export function WindowControls() {
   }, []);
 
   const act = (fn: (w: AppWindow) => Promise<void>) => () => void appWindow().then(fn);
-  const base = "w-11 h-9 grid place-items-center text-fg-muted hover:text-fg cursor-pointer transition-colors";
+  const base = "w-10 h-8 grid place-items-center text-fg-muted hover:text-fg cursor-pointer transition-colors";
 
   return (
     <div className="flex items-stretch -mr-2 ml-1" role="group" aria-label="Window controls">

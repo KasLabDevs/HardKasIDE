@@ -1,11 +1,13 @@
 import clsx from "clsx";
-import { Pencil, Plus, ScrollText, TerminalSquare, Trash2, X } from "lucide-react";
+import { Pencil, Plus, ScrollText, Search, TerminalSquare, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useIde } from "@/store/ide";
+import { useSearch } from "@/store/search";
 import { Console } from "./Console";
+import { SearchResultsView } from "./SearchResultsView";
 import { XTerminal } from "./XTerminal";
 
-type Tab = { kind: "console" } | { kind: "terminal"; id: string };
+type Tab = { kind: "console" } | { kind: "search" } | { kind: "terminal"; id: string };
 
 interface TerminalEntry {
   id: string;
@@ -36,12 +38,30 @@ export function BottomPanel() {
   };
   // "Terminal → New terminal" in the title bar: open one as soon as this panel is on screen.
   const pendingTerminal = useIde((s) => s.pendingTerminal);
+  const bottomSearchOpen = useSearch((s) => s.bottomSearchOpen);
+  const revealBottomSeq = useSearch((s) => s.revealBottomSeq);
+  const closeBottomSearch = useSearch((s) => s.closeBottomSearch);
+  const totalSearchMatches = useSearch((s) => s.totalMatches);
+
   useEffect(() => {
     if (!useIde.getState().pendingTerminal) return;
     useIde.getState().clearTerminalRequest();
     addTerminal();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingTerminal]);
+
+  useEffect(() => {
+    if (revealBottomSeq > 0 && useSearch.getState().bottomSearchOpen) {
+      setActive({ kind: "search" });
+    }
+  }, [revealBottomSeq]);
+
+  useEffect(() => {
+    if (!bottomSearchOpen && active.kind === "search") {
+      const last = terminals.at(-1);
+      setActive(last ? { kind: "terminal", id: last.id } : { kind: "console" });
+    }
+  }, [bottomSearchOpen, active.kind, terminals]);
 
   const killTerminal = (id: string) => {
     setTerminals((list) => {
@@ -66,8 +86,18 @@ export function BottomPanel() {
 
   return (
     <div className="h-full flex flex-col bg-bg border-t border-border">
-      <div role="tablist" aria-label="Bottom panel tabs" className="h-8 shrink-0 flex items-stretch border-b border-border bg-bg-panel text-[11px] select-none">
+      <div role="tablist" aria-label="Bottom panel tabs" className="h-7 shrink-0 flex items-stretch border-b border-border bg-bg-panel text-[11px] select-none">
         <TabButton active={active.kind === "console"} onClick={() => setActive({ kind: "console" })} icon={<ScrollText size={13} />} label="Console" />
+        {bottomSearchOpen && (
+          <TabButton
+            active={active.kind === "search"}
+            onClick={() => setActive({ kind: "search" })}
+            onClose={closeBottomSearch}
+            closeTitle="Close Search tab"
+            icon={<Search size={13} />}
+            label={totalSearchMatches > 0 ? `Search (${totalSearchMatches})` : "Search"}
+          />
+        )}
         <TabButton
           active={active.kind === "terminal"}
           onClick={() => (terminals.length ? setActive({ kind: "terminal", id: activeTerminal?.id ?? terminals[0].id }) : addTerminal())}
@@ -95,6 +125,11 @@ export function BottomPanel() {
           <div className="absolute inset-0" style={{ display: active.kind === "console" ? "block" : "none" }}>
             <Console />
           </div>
+          {bottomSearchOpen && (
+            <div className="absolute inset-0" style={{ display: active.kind === "search" ? "block" : "none" }}>
+              <SearchResultsView />
+            </div>
+          )}
           {terminals.map((t) => (
             <div key={t.id} className="absolute inset-0" style={{ display: active.kind === "terminal" && active.id === t.id ? "block" : "none" }}>
               <XTerminal id={t.id} visible={active.kind === "terminal" && active.id === t.id} onExit={killTerminal} />
@@ -190,19 +225,66 @@ export function BottomPanel() {
   );
 }
 
-function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+function TabButton({
+  active,
+  onClick,
+  onClose,
+  closeTitle,
+  icon,
+  label
+}: {
+  active: boolean;
+  onClick: () => void;
+  onClose?: () => void;
+  closeTitle?: string;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  const baseClass = clsx(
+    "flex items-center gap-1.5 px-2.5 cursor-pointer border-r border-border uppercase tracking-wider font-semibold whitespace-nowrap outline-none focus-visible:ring-1 focus-visible:ring-accent",
+    active ? "text-fg bg-bg border-b-2 border-b-accent" : "text-fg-muted hover:text-fg hover:bg-bg-hover"
+  );
+  if (!onClose) {
+    return (
+      <button type="button" role="tab" aria-selected={active} onClick={onClick} className={baseClass}>
+        {icon} {label}
+      </button>
+    );
+  }
   return (
-    <button
-      type="button"
+    <div
       role="tab"
+      tabIndex={0}
       aria-selected={active}
       onClick={onClick}
-      className={clsx(
-        "flex items-center gap-1.5 px-3 cursor-pointer border-r border-border uppercase tracking-wider font-semibold whitespace-nowrap outline-none focus-visible:ring-1 focus-visible:ring-accent",
-        active ? "text-fg bg-bg border-b-2 border-b-accent" : "text-fg-muted hover:text-fg hover:bg-bg-hover"
-      )}
+      onMouseDown={(e) => {
+        if (e.button === 1) {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className={clsx(baseClass, "pr-1.5")}
     >
-      {icon} {label}
-    </button>
+      {icon}
+      <span>{label}</span>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        title={closeTitle ?? `Close ${label}`}
+        aria-label={closeTitle ?? `Close ${label}`}
+        className="ml-0.5 p-0.5 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer"
+      >
+        <X size={11} />
+      </button>
+    </div>
   );
 }

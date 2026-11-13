@@ -27,8 +27,17 @@ export function EnvNotice() {
   const dockerMissing = docker !== null && !docker.installed;
   const dockerStopped = docker !== null && docker.installed && !docker.running;
   const nodeStopped = target === "localnet" && docker?.running === true && node !== null && !node.running;
+  const simulatorActive = target === "simulator";
 
-  const kind = dockerMissing ? "docker-missing" : dockerStopped ? "docker-stopped" : nodeStopped ? "node-stopped" : null;
+  const kind = dockerMissing
+    ? "docker-missing"
+    : dockerStopped
+      ? "docker-stopped"
+      : nodeStopped
+        ? "node-stopped"
+        : simulatorActive
+          ? "simulator-diff"
+          : null;
   if (!kind || dismissed === kind) return null;
 
   const check = async () => {
@@ -66,7 +75,20 @@ export function EnvNotice() {
             <div className="text-fg-muted">Transactions on the Local node need rusty-kaspad running. Start it (it also creates the dev accounts alice…erin and a miner).</div>
           </>
         )}
+        {kind === "simulator-diff" && (
+          <>
+            <div className="font-semibold text-warn">Simulator Mode vs. Real Node (rusty-kaspad) — Key Differences</div>
+            <div className="text-fg-muted">
+              The <b>Simulator</b> uses an in-memory UTXO ledger (instant 0-DAA maturity, allows <code>kaspa:sim_*</code> addresses, and <b>skips real VM opcode / Covenant v1 script verification</b>). Before deploying to production, switch to <b>Local node (simnet)</b> to verify real <code>compute_budget</code>, 100-DAA coinbase maturity, and TX v1 covenant output bindings on <code>rusty-kaspad</code>.
+            </div>
+          </>
+        )}
         <div className="flex flex-wrap items-center gap-2 pt-0.5">
+          {kind === "simulator-diff" && (
+            <button type="button" className="btn-primary" onClick={() => setTarget("localnet")}>
+              Switch to Local node (rusty-kaspad)
+            </button>
+          )}
           {kind === "docker-missing" && (
             <a className="btn-primary" href={GET_DOCKER} target="_blank" rel="noreferrer">
               <ExternalLink size={12} /> Install Docker
@@ -77,7 +99,7 @@ export function EnvNotice() {
               <Play size={12} /> {nodeBusy === "start" ? "Starting…" : "Start local node"}
             </button>
           )}
-          {kind !== "node-stopped" && (
+          {kind !== "node-stopped" && kind !== "simulator-diff" && (
             <button type="button" className="btn-ghost" disabled={checking} onClick={() => void check()}>
               <RefreshCw size={12} className={checking ? "animate-spin" : ""} /> Check again
             </button>

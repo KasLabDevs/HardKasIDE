@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { VsxPlugin } from "@/plugins/vsx";
 import { themeId, useVsx, type VsxSearchHit } from "@/store/vsx";
+import { confirmDialog } from "@/utils/dialog";
 
 /**
  * "VS Code" tab of the Plugins view: search Open VSX, install, pick a theme,
@@ -101,7 +102,7 @@ export function VsxTab() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => confirm(`Uninstall ${e.displayName}?`) && void vsx.uninstall(e.id)}
+                    onClick={async () => (await confirmDialog(`Uninstall ${e.displayName}?`, { title: "Uninstall extension", confirmLabel: "Uninstall", danger: true })) && void vsx.uninstall(e.id)}
                     aria-label={`Uninstall ${e.displayName}`}
                     className="p-0.5 rounded text-fg-muted hover:text-error cursor-pointer"
                     title="Uninstall"

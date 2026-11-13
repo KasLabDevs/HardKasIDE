@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import * as wsfs from "./fs.js";
 import { startJob, waitForJob } from "./runner.js";
+import { runAcpTurn } from "./acpAgent.js";
+import { getRoot } from "./workspace.js";
 
 /**
  * Assistant backend: provider-agnostic chat, grounded in the official Kaspa docs.
@@ -13,7 +15,8 @@ import { startJob, waitForJob } from "./runner.js";
  * AIs is docs.kaspa.org/llms.txt and /llms-full.txt, plus an "Agent Brief" for Toccata/Silverscript.
  * Feeding those to any model gives the same grounding without depending on one vendor.
  *
- * Providers: "anthropic" (Messages API) and "openai" (any OpenAI-compatible Chat Completions
+ * Providers: "opencode" (the default: the IDE hosts the OpenCode agent over ACP, see acpAgent.ts; free models,
+ * no key), "anthropic" (Messages API) and "openai" (any OpenAI-compatible Chat Completions
  * endpoint: OpenAI, OpenRouter, LM Studio, Ollama at http://localhost:11434/v1, …).
  * The API key is stored in ~/.hardkas-ide/assistant.json on this machine and never sent to the browser.
  */
@@ -24,7 +27,7 @@ const CACHE_DIR = path.join(HOME, "cache");
 const DOCS_BASE = "https://docs.kaspa.org";
 const DOCS_TTL_MS = 24 * 60 * 60 * 1000;
 
-export type Provider = "anthropic" | "openai";
+export type Provider = "opencode" | "anthropic" | "openai";
 export type DocsMode = "off" | "core" | "full";
 
 export interface AssistantConfig {
@@ -37,11 +40,12 @@ export interface AssistantConfig {
 }
 
 const DEFAULTS: Record<Provider, { baseUrl: string; model: string }> = {
+  opencode: { baseUrl: "", model: "opencode/big-pickle" },
   anthropic: { baseUrl: "https://api.anthropic.com", model: "claude-sonnet-5-5" },
   openai: { baseUrl: "https://api.openai.com/v1", model: "" }
 };
 
-export const defaultConfig: AssistantConfig = { provider: "anthropic", baseUrl: DEFAULTS.anthropic.baseUrl, model: DEFAULTS.anthropic.model, apiKey: "", docs: "core", maxTokens: 4096 };
+export const defaultConfig: AssistantConfig = { provider: "opencode", baseUrl: DEFAULTS.opencode.baseUrl, model: DEFAULTS.opencode.model, apiKey: "", docs: "core", maxTokens: 4096 };
 
 export function providerDefaults(): typeof DEFAULTS {
   return DEFAULTS;
@@ -65,7 +69,7 @@ export function publicConfig(c: AssistantConfig) {
 export async function saveConfig(patch: Partial<AssistantConfig> & { clearKey?: boolean }): Promise<AssistantConfig> {
   const current = await loadConfig();
   const next: AssistantConfig = { ...current };
-  if (patch.provider && (patch.provider === "anthropic" || patch.provider === "openai")) {
+  if (patch.provider && (patch.provider === "opencode" || patch.provider === "anthropic" || patch.provider === "openai")) {
     next.provider = patch.provider;
     // Switching provider without touching URL/model resets them to that provider's defaults.
     if (patch.baseUrl === undefined) next.baseUrl = DEFAULTS[patch.provider].baseUrl;
@@ -158,6 +162,45 @@ function systemPrompt(req: ChatRequest, docs: { text: string; mode: DocsMode } |
   return lines.join("\n");
 }
 
+// ---------------------------------------------------------------- prompts for a hosted ACP agent (OpenCode)
+
+const HARDKAS_BRIEF = [
+  "You are working inside HardKas IDE on a HardKas project (Kaspa L1). HardKas plans, signs, simulates and replays Kaspa transactions and compiles SilverScript (.sil) covenant contracts with silverc.",
+  "Use the hardkas-ide MCP tools for HardKas work: compile_silverscript, deploy_contract, spend_contract, send_payment, account_balance, accounts_list, fund_account, tx_status, run_tests, list_artifacts, query_index, environment_status, hardkas_help, and kaspa_docs for the official Kaspa documentation (prefer it over memory: Toccata is UTXO-native, not an Ethereum contract model).",
+  "Targets: simulator (in-memory, the default), localnet (Docker rusty-kaspad, simnet), testnet (testnet-10). Use the simulator unless the user asks for a real node. Mainnet is not supported.",
+  "The user approves every action in the IDE. Never read or print private keys, .env files, accounts.real.json or dev-account keystores."
+];
+
+function contextLines(ctx: ChatRequest["context"]): string[] {
+  const lines: string[] = [];
+  if (!ctx) return lines;
+  if (ctx.workspace) lines.push(`Open project: ${ctx.workspace}`);
+  if (ctx.environment) lines.push(`Selected environment: ${ctx.environment}`);
+  if (ctx.file && !isSensitivePath(ctx.file.path)) {
+    const body = ctx.file.content.length > 24000 ? ctx.file.content.slice(0, 24000) + "\n…(truncated)" : ctx.file.content;
+    lines.push(`The user has this file open (${ctx.file.path}):\n\`\`\`\n${body}\n\`\`\``);
+  }
+  return lines;
+}
+
+function chatPromptForAgent(req: ChatRequest): string {
+  const history = req.messages.slice(-12, -1).map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`);
+  const lastUser = req.messages[req.messages.length - 1]?.content ?? "";
+  return [
+    ...HARDKAS_BRIEF,
+    "This is the IDE's chat: answer, explain and suggest. Do not run commands or edit files; read-only tools only.",
+    ...contextLines(req.context),
+    history.length ? `\nConversation so far:\n${history.join("\n\n")}` : "",
+    `\nUser: ${lastUser}`
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function agentPromptForAgent(req: AgentRequest): string {
+  return [...HARDKAS_BRIEF, ...contextLines(req.context), `\nGoal: ${req.goal.trim()}`].join("\n");
+}
+
 export class AssistantError extends Error {
   constructor(
     public status: number,
@@ -171,6 +214,21 @@ export class AssistantError extends Error {
 /** Streams the model's answer as text deltas. Throws AssistantError before the first byte for config problems. */
 export async function* streamChat(req: ChatRequest, signal: AbortSignal): AsyncGenerator<{ type: "delta"; text: string } | { type: "meta"; docs: { mode: DocsMode; chars: number; stale: boolean } | null; model: string }> {
   const cfg = await loadConfig();
+  if (cfg.provider === "opencode") {
+    if (!req.messages?.length) throw new AssistantError(400, "BAD_REQUEST", "messages is required");
+    yield { type: "meta", docs: null, model: cfg.model || "opencode default" };
+    let produced = false;
+    // Chat is read-only ("plan" mode): any permission request is declined without asking.
+    for await (const ev of runAcpTurn({ cwd: getRoot() ?? os.homedir(), prompt: chatPromptForAgent(req), model: cfg.model, mode: "plan", streamText: true, decide: async () => false, signal })) {
+      if (ev.type === "delta") {
+        produced = true;
+        yield ev;
+      } else if (ev.type === "done" && !ev.ok && !produced) {
+        throw new AssistantError(502, "AGENT_FAILED", ev.summary);
+      }
+    }
+    return;
+  }
   if (!cfg.model) throw new AssistantError(400, "NO_MODEL", "Pick a model in the assistant settings first.");
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(cfg.baseUrl);
   if (!cfg.apiKey && !(cfg.provider === "openai" && isLocal)) {
@@ -288,12 +346,79 @@ export interface AgentRequest {
 export type AgentEvent =
   | { type: "step"; id: string; title: string; tool: string; status: "running" | "succeeded" | "failed"; input?: Record<string, unknown>; output?: string; error?: string }
   | { type: "thought"; text: string }
+  /** A terminal command the model wants to run; nothing runs until the IDE answers through answerConfirm. */
+  | { type: "confirm"; id: string; command: string }
   | { type: "done"; summary: string; ok: boolean };
+
+// ---------------------------------------------------------------- terminal command approval
+//
+// The model can propose any shell line, and what it proposes may come from a file or a web page it read.
+// So a command never runs on the model's say-so: the run pauses, the IDE shows the command, and the user
+// approves it (once, or for the rest of the run) or declines it. Stop in the IDE aborts the wait.
+
+export interface ConfirmAnswer {
+  approved: boolean;
+  /** Approve this and every later command of the same run without asking again. */
+  allForRun?: boolean;
+}
+
+const CONFIRM_TIMEOUT_MS = 10 * 60 * 1000;
+const pendingConfirms = new Map<string, (answer: ConfirmAnswer) => void>();
+
+/** Answers a pending confirmation; false when no run is waiting on that id (already answered, or timed out). */
+export function answerConfirm(id: string, answer: ConfirmAnswer): boolean {
+  const resolve = pendingConfirms.get(id);
+  if (!resolve) return false;
+  resolve(answer);
+  return true;
+}
+
+export function waitForConfirm(id: string, signal: AbortSignal): Promise<ConfirmAnswer> {
+  return new Promise((resolve) => {
+    const finish = (answer: ConfirmAnswer) => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      pendingConfirms.delete(id);
+      resolve(answer);
+    };
+    const onAbort = () => finish({ approved: false });
+    const timer = setTimeout(() => finish({ approved: false }), CONFIRM_TIMEOUT_MS);
+    pendingConfirms.set(id, finish);
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+type ToolResult = { ok: boolean; title: string; output: string; error?: string };
+
+/** One tool call as the UI sees it: the approval pause for terminal commands, then the running/finished step. */
+async function* runToolStep(name: string, input: Record<string, unknown>, stepId: string, signal: AbortSignal, run: { autoApprove: boolean }): AsyncGenerator<AgentEvent, ToolResult> {
+  if (name === "execute_terminal_command" && !run.autoApprove) {
+    const command = String(input.command ?? "").trim();
+    yield { type: "confirm", id: `confirm_${stepId}`, command };
+    const answer = await waitForConfirm(`confirm_${stepId}`, signal);
+    if (answer.approved && answer.allForRun) run.autoApprove = true;
+    if (!answer.approved) {
+      const result: ToolResult = {
+        ok: false,
+        title: `Skipped: ${command.length > 45 ? command.slice(0, 45) + "…" : command}`,
+        output: "The user declined to run this command. Do not retry it; continue without it, or finish and tell the user what you needed it for.",
+        error: "declined by the user"
+      };
+      yield { type: "step", id: stepId, title: result.title, tool: name, status: "failed", input, output: result.output, error: result.error };
+      return result;
+    }
+  }
+  yield { type: "step", id: stepId, title: `Running ${name}...`, tool: name, status: "running", input };
+  const result = await executeAgentTool(name, input, signal);
+  yield { type: "step", id: stepId, title: result.title, tool: name, status: result.ok ? "succeeded" : "failed", output: result.output, error: result.error };
+  return result;
+}
 
 const AGENT_TOOLS_ANTHROPIC = [
   {
     name: "execute_terminal_command",
-    description: "Run any shell or CLI command directly in the integrated terminal / workspace root (e.g. 'hardkas ...', 'npm install ...', 'npx vitest ...', 'node scripts/...', 'git ...'). Returns stdout, stderr and exit status.",
+    description: "Run a shell or CLI command in the workspace root (e.g. 'hardkas ...', 'npm install ...', 'node scripts/...', 'git ...'). The user must approve each command in the IDE before it runs; a declined command returns an error. Returns stdout, stderr and exit status.",
     input_schema: {
       type: "object",
       properties: {
@@ -379,7 +504,7 @@ const AGENT_TOOLS_OPENAI = AGENT_TOOLS_ANTHROPIC.map((t) => ({
   }
 }));
 
-async function executeAgentTool(name: string, args: Record<string, unknown>): Promise<{ ok: boolean; title: string; output: string; error?: string }> {
+async function executeAgentTool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<{ ok: boolean; title: string; output: string; error?: string }> {
   try {
     switch (name) {
       case "execute_terminal_command": {
@@ -397,7 +522,8 @@ async function executeAgentTool(name: string, args: Record<string, unknown>): Pr
         };
 
         return await new Promise<{ ok: boolean; title: string; output: string; error?: string }>((resolve) => {
-          exec(cmd, { cwd: root, env, maxBuffer: 10 * 1024 * 1024, timeout: 180_000 }, (error, stdout, stderr) => {
+          // Stop in the UI aborts the signal, which kills the command instead of letting it run to its timeout.
+          exec(cmd, { cwd: root, env, maxBuffer: 10 * 1024 * 1024, timeout: 180_000, signal }, (error, stdout, stderr) => {
             const combined = ((stdout || "") + "\n" + (stderr || "")).trim();
             const output = combined.length > 8000 ? combined.slice(0, 8000) + "\n...(truncated)" : combined;
             const ok = !error;
@@ -421,6 +547,8 @@ async function executeAgentTool(name: string, args: Record<string, unknown>): Pr
       }
       case "read_file": {
         const p = String(args.path ?? "").replace(/^[/\\]+/, "");
+        // Same rule as the chat context: keys, keystores and .env never go to the model provider.
+        if (isSensitivePath(p)) return { ok: false, title: `Refused to read ${p}`, output: "This file holds secrets (keys, keystores or environment) and is not readable by the agent.", error: "sensitive path" };
         const content = await wsfs.readFile(p);
         return { ok: true, title: `Read ${p}`, output: content.length > 8000 ? content.slice(0, 8000) + "\n...(truncated)" : content };
       }
@@ -429,8 +557,9 @@ async function executeAgentTool(name: string, args: Record<string, unknown>): Pr
         const files: string[] = [];
         const walk = (nodes: any[]) => {
           for (const n of nodes) {
-            if (n.type === "file") files.push(n.path);
-            else if (n.children) walk(n.children);
+            if (n.type === "file") {
+              if (!isSensitivePath(n.path)) files.push(n.path);
+            } else if (n.children) walk(n.children);
           }
         };
         walk(tree);
@@ -463,7 +592,7 @@ async function executeAgentTool(name: string, args: Record<string, unknown>): Pr
       case "fund_account": {
         const acc = String(args.name ?? "alice");
         const amount = String(args.amountKas ?? "100");
-        const job = await startJob({ args: ["localnet", "fund", acc, "--amount", amount, "--profile", "toccata-v2", "--json"] });
+        const job = await startJob({ args: ["localnet", "fund", acc, "--treasury", "--amount", amount, "--profile", "toccata-v2", "--json"] });
         await waitForJob(job, 180_000);
         const ok = job.status === "succeeded";
         return {
@@ -484,6 +613,28 @@ async function executeAgentTool(name: string, args: Record<string, unknown>): Pr
 
 export async function* streamAgent(req: AgentRequest, signal: AbortSignal): AsyncGenerator<AgentEvent> {
   const cfg = await loadConfig();
+  if (cfg.provider === "opencode") {
+    if (!req.goal?.trim()) throw new AssistantError(400, "BAD_REQUEST", "goal is required");
+    const root = getRoot();
+    if (!root) throw new AssistantError(409, "NO_WORKSPACE", "Open a project first: the agent works inside the open project.");
+    const run = { autoApprove: false };
+    for await (const ev of runAcpTurn({
+      cwd: root,
+      prompt: agentPromptForAgent(req),
+      model: cfg.model,
+      mode: "build",
+      shouldAsk: () => !run.autoApprove,
+      decide: async (r) => {
+        const answer = await waitForConfirm(r.id, signal);
+        if (answer.approved && answer.allForRun) run.autoApprove = true;
+        return answer.approved;
+      },
+      signal
+    })) {
+      if (ev.type !== "delta") yield ev;
+    }
+    return;
+  }
   if (!cfg.model) throw new AssistantError(400, "NO_MODEL", "Pick a model in the assistant settings first.");
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(cfg.baseUrl);
   if (!cfg.apiKey && !(cfg.provider === "openai" && isLocal)) {
@@ -505,7 +656,7 @@ export async function* streamAgent(req: AgentRequest, signal: AbortSignal): Asyn
     "Instructions:",
     "1. When tasked to create or modify contracts, scripts or tests, write complete code using write_file.",
     "2. ALWAYS call compile_silverscript immediately after writing or editing a .sil contract.",
-    "3. You have full terminal access: use execute_terminal_command to run CLI commands, install packages, execute scripts, and inspect node/contract state.",
+    "3. execute_terminal_command runs a shell line in the workspace, but only after the user approves it in the IDE; a declined command comes back as an error, and you must not retry it. Prefer compile_silverscript, run_tests and fund_account, which need no approval.",
     "4. If compilation or commands fail, inspect the error output, fix the code with write_file, and re-run until it succeeds.",
     "5. When writing tests, write clean Vitest/HardKas tests in the test/ directory and run them with run_tests or execute_terminal_command.",
     "6. Be direct, efficient and autonomous. Take initiative to fix errors. When done, output a concise final summary of what was built and verified.",
@@ -514,6 +665,7 @@ export async function* streamAgent(req: AgentRequest, signal: AbortSignal): Asyn
 
   const MAX_STEPS = 16;
   let stepCount = 0;
+  const run = { autoApprove: false };
 
   if (cfg.provider === "anthropic") {
     const messages: Array<any> = [{ role: "user", content: req.goal }];
@@ -544,15 +696,13 @@ export async function* streamAgent(req: AgentRequest, signal: AbortSignal): Asyn
       for (const tu of toolUses) {
         if (signal.aborted) return;
         const stepId = `step_${Date.now()}_${tu.id}`;
-        yield { type: "step", id: stepId, title: `Running ${tu.name}...`, tool: tu.name, status: "running", input: tu.input };
-        const result = await executeAgentTool(tu.name, tu.input);
-        yield { type: "step", id: stepId, title: result.title, tool: tu.name, status: result.ok ? "succeeded" : "failed", output: result.output, error: result.error };
+        const result = yield* runToolStep(tu.name, tu.input, stepId, signal, run);
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result.output });
       }
 
       messages.push({ role: "user", content: toolResults });
     }
-    yield { type: "done", summary: "Reached maximum agent step limit (8 steps).", ok: false };
+    yield { type: "done", summary: `Reached the agent step limit (${MAX_STEPS} steps).`, ok: false };
     return;
   }
 
@@ -597,12 +747,10 @@ export async function* streamAgent(req: AgentRequest, signal: AbortSignal): Asyn
         args = {};
       }
       const stepId = `step_${Date.now()}_${tc.id}`;
-      yield { type: "step", id: stepId, title: `Running ${tc.function.name}...`, tool: tc.function.name, status: "running", input: args };
-      const result = await executeAgentTool(tc.function.name, args);
-      yield { type: "step", id: stepId, title: result.title, tool: tc.function.name, status: result.ok ? "succeeded" : "failed", output: result.output, error: result.error };
+      const result = yield* runToolStep(tc.function.name, args, stepId, signal, run);
       messages.push({ role: "tool", tool_call_id: tc.id, content: result.output });
     }
   }
 
-  yield { type: "done", summary: "Reached maximum agent step limit (8 steps).", ok: false };
+  yield { type: "done", summary: `Reached the agent step limit (${MAX_STEPS} steps).`, ok: false };
 }

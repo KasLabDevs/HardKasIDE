@@ -1,59 +1,25 @@
-import { Cpu, Droplets, FolderOpen, ListTree, TerminalSquare } from "lucide-react";
-import { useState } from "react";
-import { useEngine } from "@/engine/context";
-import type { EnvironmentPlugin } from "@/plugins/environment";
-import { useEnv } from "@/store/env";
-import { envOf, useIde } from "@/store/ide";
+import clsx from "clsx";
+import { FolderOpen } from "lucide-react";
+import { cliMismatch, useEnv } from "@/store/env";
+import { useEditorCursor } from "@/store/editorCursor";
+import { useIde } from "@/store/ide";
+import { isTextFile, openPalette } from "./actions";
 
 export function StatusBar() {
-  const engine = useEngine();
   const workspace = useIde((s) => s.workspace);
-  const target = useIde((s) => s.target);
   const activeFile = useIde((s) => s.activeFile);
   const status = useIde((s) => s.statusMessage);
-  const terminalOpen = useIde((s) => s.terminalOpen);
-  const setTerminalOpen = useIde((s) => s.setTerminalOpen);
-  const outlineOpen = useIde((s) => s.outlineOpen);
-  const setOutlineOpen = useIde((s) => s.setOutlineOpen);
-  const accounts = useEnv((s) => s.accounts);
-  const node = useEnv((s) => s.node);
-  const [funding, setFunding] = useState(false);
-
-  const quickFund = async () => {
-    if (funding) return;
-    const acct = accounts[0]?.name ?? "alice";
-    setFunding(true);
-    useIde.getState().setStatus(`Funding ${acct} with 100 KAS...`);
-    try {
-      await engine.get<EnvironmentPlugin>("environment").fund(acct, "100");
-      useIde.getState().setStatus(`Funded ${acct} with 100 KAS!`);
-    } catch (e) {
-      useIde.getState().setStatus(`Funding failed: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setFunding(false);
-    }
-  };
+  const cli = useEnv((s) => s.cli);
+  const cursorFile = useEditorCursor((s) => s.file);
+  const line = useEditorCursor((s) => s.line);
+  const column = useEditorCursor((s) => s.column);
+  const showCursor = isTextFile(activeFile) && cursorFile === activeFile;
 
   return (
-    <footer className="h-6 shrink-0 bg-bg-panel border-t border-border flex items-center gap-3 px-3 text-[11px] text-fg-muted select-none overflow-hidden">
+    <footer className="h-[1.45rem] shrink-0 bg-bg-panel border-t border-border flex items-center gap-2.5 px-2.5 text-[11px] text-fg-muted select-none overflow-hidden">
       <span className="flex items-center gap-1.5 text-fg shrink-0 max-w-[180px] truncate" title={workspace?.root ?? ""}>
         <FolderOpen size={12} className="shrink-0" /> <span className="truncate">{workspace?.name ?? "no workspace"}</span>
       </span>
-      <span className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
-        <Cpu size={12} /> env: <span className="text-accent font-medium">{envOf(target).short}</span> <span className="text-fg-muted">({envOf(target).networkId})</span>
-      </span>
-      {target === "localnet" && (
-        <button
-          type="button"
-          onClick={() => void quickFund()}
-          disabled={funding || !node?.rpcReady}
-          className="flex items-center gap-1 text-accent hover:text-fg shrink-0 cursor-pointer rounded px-1.5 py-0.5 hover:bg-bg-hover transition-colors border border-accent/20 bg-accent/5 disabled:opacity-50 disabled:cursor-not-allowed"
-          title={node?.rpcReady ? "Fondeo rápido de 100 KAS en simnet" : "Inicia el nodo local para fondear"}
-        >
-          <Droplets size={11} className={funding ? "animate-bounce text-accent" : ""} />
-          <span>{funding ? "Funding…" : "Airdrop +100 KAS"}</span>
-        </button>
-      )}
       {activeFile && (
         <span className="truncate min-w-0 max-w-[260px] font-mono text-[10px]" title={activeFile}>
           {activeFile}
@@ -62,13 +28,29 @@ export function StatusBar() {
       <span role="status" aria-live="polite" className="ml-auto truncate min-w-0 max-w-[360px]" title={status}>
         {status}
       </span>
-      <button type="button" onClick={() => setTerminalOpen(!terminalOpen)} className="flex items-center gap-1 hover:text-fg shrink-0 cursor-pointer rounded px-1 hover:bg-bg-hover transition-colors" title="Toggle console / terminal">
-        <TerminalSquare size={12} /> {terminalOpen ? "hide" : "show"} console
-      </button>
-      <button type="button" onClick={() => setOutlineOpen(!outlineOpen)} className="flex items-center gap-1 hover:text-fg shrink-0 cursor-pointer rounded px-1 hover:bg-bg-hover transition-colors" title="Toggle outline">
-        <ListTree size={12} /> {outlineOpen ? "hide" : "show"} outline
-      </button>
-      <span className="shrink-0 hidden sm:inline tabular-nums">HardKas IDE 0.1 · CLI 0.12.0-rc.29</span>
+      {showCursor && (
+        <button
+          type="button"
+          onClick={() => openPalette(":")}
+          className="shrink-0 px-1.5 py-0.5 rounded hover:bg-bg-hover hover:text-fg cursor-pointer tabular-nums transition-colors"
+          title="Go to Line/Column (Ctrl+G)"
+        >
+          Ln {line}, Col {column}
+        </button>
+      )}
+      <span
+        className="shrink-0 hidden md:inline font-mono text-[10px] px-1.5 py-0.5 rounded bg-bg border border-border text-accent"
+        title="Active SilverScript compiler & language spec version. Pin 'pragma silverscript ^0.1.0;' in your .sil contracts because the SilverScript API evolves rapidly."
+      >
+        silverc v1.0.0 · SilverScript ^0.1.0
+      </span>
+      <span
+        className={clsx("shrink-0 hidden sm:inline tabular-nums", cliMismatch(cli) && "text-warn")}
+        title={cli ? (cliMismatch(cli) ? `hardkas ${cli.version} from ${cli.source}; this IDE was tested with ${cli.pinned}` : `hardkas ${cli.version ?? "?"} from ${cli.source} (${cli.command})`) : "Asking the server which hardkas it runs…"}
+      >
+        HardKas IDE {__APP_VERSION__} · CLI {cli ? (cli.version ?? "not found") : "…"}
+        {cliMismatch(cli) ? ` (tested with ${cli!.pinned})` : ""}
+      </span>
     </footer>
   );
 }

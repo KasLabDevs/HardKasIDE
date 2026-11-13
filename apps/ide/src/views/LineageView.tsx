@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { FileJson, RefreshCw, ShieldCheck, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useEngine } from "@/engine/context";
+import type { ConsolePlugin } from "@/plugins/console";
 import type { LineagePlugin } from "@/plugins/lineage";
 import { shortSchema, useLineage, type ArtifactRow } from "@/store/lineage";
 import { Timeline } from "./Timeline";
@@ -61,18 +62,35 @@ export function LineageView() {
 
   const { nodes, flowEdges } = useMemo(() => (mode === "flow" ? layout(artifacts, edges, fresh, replays, selected) : { nodes: [], flowEdges: [] }), [mode, artifacts, edges, fresh, replays, selected]);
   const selectedRow = artifacts.find((a) => a.artifactId === selected) ?? null;
+  const startDevServer = () => {
+    void engine.get<ConsolePlugin>("console").runHardkas(["dev", "--headless"]);
+    setTimeout(() => void plugin.refresh(), 2500);
+  };
 
   return (
     <div className="h-full flex min-w-0">
       <div className="flex-1 min-w-0 flex flex-col">
         <div className="shrink-0 flex items-center gap-2 px-3 h-9 border-b border-border bg-bg-panel text-[11px] tabular-nums">
-          <span className={clsx("flex items-center gap-1", live ? "text-ok" : "text-warn")}>
-            {live ? <Wifi size={12} /> : <WifiOff size={12} />} {live ? "live" : "not streaming"}
+          <span
+            className={clsx("flex items-center gap-1", live ? "text-ok" : artifacts.length > 0 ? "text-fg-muted" : "text-warn")}
+            title={live ? "Live dev-server stream connected" : "Showing workspace snapshot from .hardkas/store.db and artifacts (dev-server :7420 is offline)"}
+          >
+            {live ? <Wifi size={12} /> : <WifiOff size={12} />} {live ? "live" : artifacts.length > 0 ? "snapshot" : "not streaming"}
           </span>
           <span className="text-fg-muted">{artifacts.length} artifacts · {edges.length} links</span>
           <button type="button" onClick={() => void plugin.refresh()} className="p-0.5 rounded text-fg-muted hover:text-fg cursor-pointer" title="Refresh" aria-label="Refresh lineage graph">
             <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
           </button>
+          {!live && (
+            <button
+              type="button"
+              onClick={startDevServer}
+              className="px-2 py-0.5 rounded border border-border text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer"
+              title="Start hardkas dev --headless in Console to enable live streaming and replay verification"
+            >
+              Start dev-server
+            </button>
+          )}
           {mode === "timeline" && (
             <input aria-label="Filter artifacts" className="input !py-0.5 !w-44 ml-2" placeholder="filter by id, tx, kind…" value={filter} onChange={(e) => setFilter(e.target.value)} />
           )}
@@ -86,8 +104,13 @@ export function LineageView() {
         </div>
         <div className="flex-1 min-h-0 relative">
           {error && (
-            <div role="alert" className="absolute z-10 top-2 left-2 right-2 text-[11px] text-warn bg-bg-elev/90 border border-border rounded px-2 py-1">
-              {error} — start the dev-server with <code>hardkas dev --headless</code> (Console) to feed this graph.
+            <div role="alert" className="absolute z-10 top-2 left-2 right-2 flex items-center justify-between gap-2 text-[11px] text-warn bg-bg-elev/90 border border-border rounded px-2 py-1">
+              <span>
+                {error} — start the dev-server with <code>hardkas dev --headless</code> (Console) to feed this graph.
+              </span>
+              <button type="button" onClick={startDevServer} className="btn-ghost shrink-0 !py-0.5 !px-2 text-fg">
+                Start dev-server
+              </button>
             </div>
           )}
           {!loading && !error && artifacts.length === 0 && (
@@ -126,7 +149,7 @@ export function LineageView() {
           )}
         </div>
       </div>
-      {selectedRow && <Details row={selectedRow} plugin={plugin} replay={replays[selectedRow.artifactId]?.status} />}
+      {selectedRow && <Details row={selectedRow} plugin={plugin} replay={replays[selectedRow.artifactId]?.status} live={live} />}
     </div>
   );
 }
@@ -164,7 +187,7 @@ function ArtifactNodeView({ data }: NodeProps<ArtifactNode>) {
   );
 }
 
-function Details({ row, plugin, replay }: { row: ArtifactRow; plugin: LineagePlugin; replay?: string }) {
+function Details({ row, plugin, replay, live }: { row: ArtifactRow; plugin: LineagePlugin; replay?: string; live: boolean }) {
   const s = shortSchema(row.schema);
   const canReplay = s === "txReceipt" || s === "txSubmission" || s === "txPlan" || s === "signedTx";
   return (
@@ -189,7 +212,13 @@ function Details({ row, plugin, replay }: { row: ArtifactRow; plugin: LineagePlu
         <button type="button" className="btn-ghost flex-1 justify-center" onClick={() => void plugin.openArtifact(row)} disabled={!row.path}>
           <FileJson size={13} /> Open JSON
         </button>
-        <button type="button" className="btn-primary flex-1 justify-center" onClick={() => void plugin.replay(row.artifactId)} disabled={!canReplay || replay === "running"}>
+        <button
+          type="button"
+          className="btn-primary flex-1 justify-center"
+          onClick={() => void plugin.replay(row.artifactId)}
+          disabled={!canReplay || replay === "running"}
+          title={!live ? "Requires hardkas dev-server (:7420)" : undefined}
+        >
           <ShieldCheck size={13} /> {replay === "running" ? "Replaying…" : "Replay verify"}
         </button>
       </div>

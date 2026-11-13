@@ -16,6 +16,9 @@ import { getRoot } from "./workspace.js";
  *
  * Guard rails: only aliases matching a safe name, only files inside the open workspace, only keystores
  * whose metadata and payload say `simnet`, and the decrypted address must match the keystore metadata.
+ * The same network rule holds for plaintext keys in `.hardkas/accounts.real.json`: that store can also hold
+ * real accounts for testnet or mainnet, so an entry is exported only when its `network` (or, on entries written
+ * before HardKas recorded it, its address prefix) says simnet, and the two agree when both are present.
  */
 
 const DEV_ACCOUNTS_PASSWORD = "hardkas-local-dev";
@@ -37,8 +40,39 @@ export interface DevAccountKey {
   privateKey: string;
 }
 
-async function readRealAccounts(root: string): Promise<Map<string, { privateKey: string; address?: string }>> {
-  const map = new Map<string, { privateKey: string; address?: string }>();
+interface RealAccountEntry {
+  privateKey: string;
+  address?: string;
+  /** The entry's own `network` field (HardKas records it since ACCOUNT-STORE-NETWORK-1). */
+  network?: string;
+}
+
+const ADDRESS_PREFIX_NETWORK: Record<string, string> = {
+  kaspasim: "simnet",
+  kaspadev: "devnet",
+  kaspatest: "testnet",
+  kaspa: "mainnet"
+};
+
+/** The network a Kaspa address belongs to, from its prefix; undefined when it has none or an unknown one. */
+export function networkFromAddress(address: string | undefined): string | undefined {
+  if (!address || !address.includes(":")) return undefined;
+  return ADDRESS_PREFIX_NETWORK[address.slice(0, address.indexOf(":")).toLowerCase()];
+}
+
+/** The network of a plaintext real account, and whether its two sources (field, address) disagree. */
+function realAccountNetwork(entry: RealAccountEntry): { network: string | undefined; conflict: boolean } {
+  const fromAddress = networkFromAddress(entry.address);
+  const declared = entry.network?.trim() || undefined;
+  if (declared && fromAddress) {
+    const declaredKind = declared === "simnet" ? "simnet" : declared.startsWith("testnet") ? "testnet" : declared;
+    return { network: declared, conflict: declaredKind !== fromAddress };
+  }
+  return { network: declared ?? fromAddress, conflict: false };
+}
+
+async function readRealAccounts(root: string): Promise<Map<string, RealAccountEntry>> {
+  const map = new Map<string, RealAccountEntry>();
   try {
     const text = await fs.readFile(path.join(root, ".hardkas", "accounts.real.json"), "utf8");
     const parsed = JSON.parse(text.replace(/^\uFEFF/, "")) as unknown;
@@ -53,7 +87,8 @@ async function readRealAccounts(root: string): Promise<Map<string, { privateKey:
       const name = typeof e.name === "string" ? e.name : typeof e.label === "string" ? e.label : null;
       const key = ["privateKey", "privateKeyHex", "secretKey", "secret"].map((k) => e[k]).find((v) => typeof v === "string") as string | undefined;
       const addr = typeof e.address === "string" ? e.address : undefined;
-      if (name && key) map.set(name, { privateKey: key, address: addr });
+      const network = typeof e.network === "string" ? e.network : undefined;
+      if (name && key) map.set(name, { privateKey: key, address: addr, network });
     }
   } catch {
     // accounts.real.json does not exist: ignore safely without error
@@ -61,8 +96,8 @@ async function readRealAccounts(root: string): Promise<Map<string, { privateKey:
   return map;
 }
 
-export async function listDevAccountNames(): Promise<string[]> {
-  const root = getRoot();
+/** Names whose key the IDE can export: simnet dev keystores and simnet plaintext real accounts. */
+export async function listDevAccountNames(root: string | null = getRoot()): Promise<string[]> {
   if (!root) return [];
   const set = new Set<string>();
   try {
@@ -74,19 +109,32 @@ export async function listDevAccountNames(): Promise<string[]> {
     // dev-accounts folder does not exist
   }
   const real = await readRealAccounts(root);
-  for (const name of real.keys()) set.add(name);
+  for (const [name, entry] of real) {
+    const { network, conflict } = realAccountNetwork(entry);
+    if (network === "simnet" && !conflict) set.add(name);
+  }
   return [...set].sort();
 }
 
-export async function revealDevAccountKey(name: string): Promise<DevAccountKey> {
+export async function revealDevAccountKey(name: string, root: string | null = getRoot()): Promise<DevAccountKey> {
   if (!/^[a-z][a-z0-9_-]{0,31}$/i.test(name)) throw new FsError(400, "BAD_REQUEST", "Invalid account name");
-  const root = getRoot();
   if (!root) throw new FsError(409, "NO_WORKSPACE", "No workspace is open");
 
   // Check plaintext store (.hardkas/accounts.real.json) first
   const real = await readRealAccounts(root);
   const fromReal = real.get(name);
   if (fromReal) {
+    const { network, conflict } = realAccountNetwork(fromReal);
+    if (conflict) {
+      throw new FsError(422, "NETWORK_MISMATCH", `Refusing to export '${name}': its network field and its address disagree`);
+    }
+    if (network !== "simnet") {
+      throw new FsError(
+        403,
+        "NOT_SIMNET",
+        `Refusing to export '${name}': it is a ${network ?? "unknown-network"} account; only simnet accounts can be exported`
+      );
+    }
     return { name, address: fromReal.address ?? "", network: "simnet", privateKey: fromReal.privateKey };
   }
 

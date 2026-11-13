@@ -18,7 +18,7 @@ HardKas IDE.exe (Tauri, WebView2)
 
 ## Build the installer
 
-Needs Rust (stable, MSVC toolchain), Node 22+, pnpm and the WebView2 runtime (already present on Windows 10/11).
+Needs Rust (stable, MSVC toolchain), Node 24.22.1 (the staging step copies the Node that runs it into the installer, and the HardKas CLI requires that release), pnpm and the WebView2 runtime (already present on Windows 10/11).
 
 ```bash
 pnpm install

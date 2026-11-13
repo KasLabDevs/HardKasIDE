@@ -98,6 +98,10 @@ export async function wireGrammar(monaco: typeof Monaco, languageId: string, sco
   return true;
 }
 
+export function hasWiredGrammar(languageId: string): boolean {
+  return wired.has(languageId);
+}
+
 export function unwireGrammar(languageId: string): void {
   for (const d of wired.get(languageId) ?? []) d.dispose();
   wired.delete(languageId);

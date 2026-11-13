@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useEngine, useEngineVersion } from "@/engine/context";
 import { useIde } from "@/store/ide";
@@ -10,8 +11,10 @@ export function RightDock() {
   const engine = useEngine();
   useEngineVersion();
   const docks = useIde((s) => s.docks);
+  const hiddenPanels = useIde((s) => s.hiddenPanels);
+  const setPanelHidden = useIde((s) => s.setPanelHidden);
   const outlineOpen = useIde((s) => s.outlineOpen);
-  const plugins = engine.listByLocation("sidePanel").filter((p) => docks[p.profile.name] === "right" && p.view);
+  const plugins = engine.listByLocation("sidePanel").filter((p) => docks[p.profile.name] === "right" && p.view && !hiddenPanels[p.profile.name]);
 
   // Default sizes add up to 100: the Outline takes 26 %, the docked views share the rest.
   const outlineSize = plugins.length ? 26 : 100;
@@ -30,9 +33,20 @@ export function RightDock() {
         return (
           <PanelGroupItem key={p.profile.name} id={`dock-${p.profile.name}`} order={i + 1} size={viewSize} first={i === 0 && !outlineOpen}>
             <section className="h-full bg-bg-panel border-l border-border flex flex-col min-w-0">
-              <header className="panel-title flex items-center justify-between">
-                <span>{p.profile.displayName}</span>
-                <DockControls pluginName={p.profile.name} displayName={p.profile.displayName} />
+              <header className="panel-title flex items-center justify-between gap-2">
+                <span className="truncate">{p.profile.displayName}</span>
+                <span className="flex items-center gap-0.5 shrink-0">
+                  <DockControls pluginName={p.profile.name} displayName={p.profile.displayName} />
+                  <button
+                    type="button"
+                    onClick={() => setPanelHidden(p.profile.name, true)}
+                    className="p-0.5 rounded text-fg-muted hover:text-fg hover:bg-bg-hover normal-case cursor-pointer"
+                    title={`Hide ${p.profile.displayName}`}
+                    aria-label={`Hide ${p.profile.displayName}`}
+                  >
+                    <X size={13} />
+                  </button>
+                </span>
               </header>
               <div className="flex-1 min-h-0 overflow-auto text-xs">
                 <ErrorBoundary name={p.profile.displayName}>

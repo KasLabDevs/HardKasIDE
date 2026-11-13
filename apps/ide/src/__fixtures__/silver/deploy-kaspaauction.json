@@ -1,0 +1,37 @@
+{
+  "schema": "hardkas.silverDeploy.v1",
+  "hardkasVersion": "0.12.0-rc.29",
+  "createdAt": "2026-10-26T19:50:51.098Z",
+  "networkId": "simnet",
+  "capability": "silver.p2sh.deploy-spend.v1",
+  "compileRecord": {
+    "path": ".hardkas/artifacts/silver/silverCompile-17057d802ec0ee75.json",
+    "contentHash": "17057d802ec0ee755e25a0536aed7317bff95e49866fb08b96e7a048a9199831",
+    "artifactSha256": "475b86301feba1f575e3b2822c40b254a4d1e2c08b3dfeb2cc92470b42580cce"
+  },
+  "contract": "KaspaAuction",
+  "lockingScript": {
+    "version": 0,
+    "script": "aa200351045459acfd9854f9a031add730d102da22982e4782ed8fbfd52b95ffb20087"
+  },
+  "address": "kaspasim:pqp4zpz5txk0mxz5lxsrrtwhxrgs9k3znqhy0qhd37la22u4l7eqqhyrunejw",
+  "txId": "d811133a48d3bf67237b78b38631fa8e5d8507caa9110129f88d29d8fd29f283",
+  "outpoint": {
+    "transactionId": "d811133a48d3bf67237b78b38631fa8e5d8507caa9110129f88d29d8fd29f283",
+    "index": 0
+  },
+  "valueSompi": "500000000",
+  "feeSompi": "204700",
+  "status": "confirmed",
+  "confirmedAtBlockDaaScore": "502390",
+  "node": {
+    "verified": true,
+    "container": "hardkas-kaspad-toccata-v2",
+    "imageDigest": "sha256:f85da74b9514584451f83a2cbea3aa93f700248302fe7e3e0ab17288f93c905b",
+    "serverVersion": "2.1.0"
+  },
+  "version": "1.0.0-alpha",
+  "mode": "localnet",
+  "hashVersion": 5,
+  "contentHash": "c8e57a54873928b4fcafb35cedd7ec17eec15cc4d9b664c2cdb843852c2eb131"
+}

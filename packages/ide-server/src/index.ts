@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { AssistantError, kaspaDocs, loadConfig, providerDefaults, publicConfig, saveConfig, streamChat, streamAgent, type ChatRequest, type AgentRequest } from "./assistant.js";
+import { AssistantError, answerConfirm, kaspaDocs, loadConfig, providerDefaults, publicConfig, saveConfig, streamChat, streamAgent, type ChatRequest, type AgentRequest } from "./assistant.js";
 import { debugSession } from "./debug.js";
 import { listDevAccountNames, revealDevAccountKey } from "./devkeys.js";
 import * as wsfs from "./fs.js";
@@ -16,11 +16,16 @@ import * as cluster from "./cluster.js";
 import { ClusterError } from "./cluster.js";
 import * as store from "./store.js";
 import { StoreError } from "./store.js";
-import { createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe } from "./runner.js";
+import { getCliCatalog } from "./cliCatalog.js";
+import { ensureHardkasConfig, FRONTEND_STACKS, type FrontendStackId, type StarterContractSpec } from "./frontendScaffold.js";
+import { checkSilverSource, cliInfo, createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe, waitForJob } from "./runner.js";
+import { checkUpdates } from "./updates.js";
 import { closeTerminal, defaultShell, listTerminals, openTerminal } from "./terminal.js";
 import { examplesDir, fetchText, installNpmPlugin, listExamples, loadRegistry, pluginsRoot, readStatic, searchNpmPlugins } from "./plugins.js";
 import { installVsx, readIndex, readVsxFile, searchVsx, setVsxEnabled, uninstallVsx } from "./vsx.js";
 import { closeWorkspace, describeWorkspace, getRoot, listRecents, openWorkspace, readDevServerToken } from "./workspace.js";
+import { allowedHostnames, isAllowedHost } from "./guard.js";
+import { isHardkasMiner, LocalNodeError, resetWorkspaceChainState } from "./localNode.js";
 
 /**
  * HardKas IDE server.
@@ -69,8 +74,19 @@ function localOnly(c: { req: { header(name: string): string | undefined } }): bo
     }
   }
 
-  return true;
+  // No Origin, Referer or Host at all: not a browser. Nothing local needs this, so refuse.
+  return false;
 }
+
+// Every /api request (GET and WebSocket upgrades included) must name a loopback Host: this is what stops a web page
+// that rebinds its own domain to 127.0.0.1 from reading project files through same-origin GETs. See guard.ts.
+const ALLOWED_HOSTS = allowedHostnames();
+app.use("/api/*", async (c, next) => {
+  if (!isAllowedHost(c.req.header("host"), ALLOWED_HOSTS)) {
+    return c.json({ ok: false, code: "FORBIDDEN_HOST", message: "the IDE server only answers on localhost, 127.0.0.1 or [::1]" }, 403);
+  }
+  await next();
+});
 
 app.use(
   "/api/*",
@@ -173,6 +189,24 @@ app.delete("/api/fs", async (c) => {
   return c.json({ ok: true });
 });
 
+app.post("/api/fs/search", async (c) => {
+  const body = (await c.req.json()) as wsfs.WorkspaceSearchOptions;
+  if (typeof body.query !== "string") {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: "query is required" }, 400);
+  }
+  const res = await wsfs.searchWorkspace(body);
+  return c.json({ ok: true, ...res });
+});
+
+app.post("/api/fs/replace", async (c) => {
+  const body = (await c.req.json()) as wsfs.WorkspaceSearchOptions & { replacement?: string; targetFiles?: string[] };
+  if (typeof body.query !== "string" || typeof body.replacement !== "string") {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: "query and replacement are required" }, 400);
+  }
+  const res = await wsfs.replaceInWorkspace({ ...body, replacement: body.replacement });
+  return c.json({ ok: true, ...res });
+});
+
 // ---------------------------------------------------------------- jobs
 
 function resolveSafeCwd(cwd: string | undefined): string | undefined {
@@ -188,10 +222,25 @@ function resolveSafeCwd(cwd: string | undefined): string | undefined {
 }
 
 app.post("/api/run", async (c) => {
-  const body = (await c.req.json()) as { args?: string[]; cwd?: string; command?: string };
+  const body = (await c.req.json()) as { args?: string[]; cwd?: string; command?: string; wait?: boolean };
   if (!Array.isArray(body.args)) return c.json({ ok: false, code: "BAD_REQUEST", message: "args[] is required" }, 400);
   const job = await startJob({ args: body.args, cwd: resolveSafeCwd(body.cwd), command: body.command });
-  return c.json({ ok: true, job: summarize(job) });
+  const finalJob = body.wait ? await waitForJob(job) : job;
+  return c.json({ ok: true, job: summarize(finalJob) });
+});
+
+app.post("/api/silver/check", async (c) => {
+  const body = (await c.req.json()) as { filePath?: string; content?: string; constructorArgs?: string; cwd?: string };
+  if (!body.filePath || typeof body.filePath !== "string") {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: "filePath is required" }, 400);
+  }
+  const result = await checkSilverSource({
+    cwd: resolveSafeCwd(body.cwd),
+    filePath: body.filePath,
+    content: typeof body.content === "string" ? body.content : undefined,
+    constructorArgs: typeof body.constructorArgs === "string" ? body.constructorArgs : undefined
+  });
+  return c.json({ ok: true, check: result });
 });
 
 app.get("/api/jobs", (c) => c.json({ ok: true, jobs: listJobs().map(summarize) }));
@@ -244,14 +293,30 @@ function summarize(job: ReturnType<typeof listJobs>[number]) {
 
 // ---------------------------------------------------------------- projects
 
-app.get("/api/project/templates", (c) => c.json({ ok: true, templates: PROJECT_TEMPLATES, defaultParent: path.join(os.homedir(), "hardkas-projects") }));
+app.get("/api/project/templates", (c) =>
+  c.json({ ok: true, templates: PROJECT_TEMPLATES, frontends: FRONTEND_STACKS, defaultParent: path.join(os.homedir(), "hardkas-projects") })
+);
 
 app.post("/api/project/create", async (c) => {
-  const body = (await c.req.json()) as { template?: string; name?: string; parentDir?: string; install?: boolean };
-  if (!body.template || !body.name || !body.parentDir) {
-    return c.json({ ok: false, code: "BAD_REQUEST", message: "template, name and parentDir are required" }, 400);
+  const body = (await c.req.json()) as {
+    template?: string;
+    name?: string;
+    parentDir?: string;
+    install?: boolean;
+    frontend?: FrontendStackId;
+    starterContract?: StarterContractSpec;
+  };
+  if (!body.name || !body.parentDir) {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: "name and parentDir are required" }, 400);
   }
-  const { job, dest } = await createProject({ template: body.template, name: body.name, parentDir: body.parentDir, install: body.install });
+  const { job, dest } = await createProject({
+    template: body.template ?? "init",
+    name: body.name,
+    parentDir: body.parentDir,
+    install: body.install,
+    frontend: body.frontend,
+    starterContract: body.starterContract
+  });
   return c.json({ ok: true, job: summarize(job), dest });
 });
 
@@ -321,6 +386,8 @@ app.get(
 // ---------------------------------------------------------------- external plugins
 
 app.get("/api/plugins/fetch", async (c) => {
+  // The server fetches the URL it is given: only the IDE page may ask, never a cross-site request (blind SSRF).
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
   const url = c.req.query("url");
   if (!url) return c.json({ ok: false, code: "BAD_REQUEST", message: "url is required" }, 400);
   return c.json({ ok: true, text: await fetchText(url) });
@@ -394,6 +461,23 @@ app.get("/api/vsx/file/:id/*", async (c) => {
 });
 
 // ---------------------------------------------------------------- dev-server proxy
+
+app.get("/api/dev/status", async (c) => {
+  try {
+    const token = await readDevServerToken();
+    const headers: Record<string, string> = token ? { authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${DEV_SERVER}/api/artifacts`, {
+      headers,
+      signal: AbortSignal.timeout(1200)
+    }).catch(() => null);
+    if (res && res.status < 500) {
+      return c.json({ ok: true, available: true, url: DEV_SERVER });
+    }
+  } catch {
+    // Dev-server is not running on DEV_SERVER.
+  }
+  return c.json({ ok: true, available: false, url: DEV_SERVER });
+});
 
 app.all("/api/dev/*", async (c) => {
   const suffix = c.req.path.replace(/^\/api\/dev/, "");
@@ -496,16 +580,28 @@ app.post("/api/assistant/agent", async (c) => {
     const ac = new AbortController();
     stream.onAbort(() => ac.abort());
     try {
+      // streamAgent ends with its own "done" event (summary + ok); a second, empty one would wipe them in the UI.
       for await (const ev of streamAgent(body, ac.signal)) {
         await stream.writeSSE({ event: ev.type, data: JSON.stringify(ev) });
       }
-      await stream.writeSSE({ event: "done", data: "{}" });
     } catch (error) {
       if (ac.signal.aborted) return;
       const code = error instanceof AssistantError ? error.code : "INTERNAL";
       await stream.writeSSE({ event: "error", data: JSON.stringify({ code, message: error instanceof Error ? error.message : String(error) }) });
     }
   });
+});
+
+// The IDE's answer to a "confirm" event of a running agent: approve (once or for the whole run) or decline.
+app.post("/api/assistant/agent/confirm", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json()) as { id?: string; approved?: boolean; allForRun?: boolean };
+  if (typeof body.id !== "string" || typeof body.approved !== "boolean") {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: "id and approved are required" }, 400);
+  }
+  const found = answerConfirm(body.id, { approved: body.approved, allForRun: body.allForRun === true });
+  if (!found) return c.json({ ok: false, code: "NOT_FOUND", message: "no command is waiting for that confirmation" }, 404);
+  return c.json({ ok: true });
 });
 
 // ---------------------------------------------------------------- test debugger (vitest + Node inspector)
@@ -584,6 +680,8 @@ app.post("/api/debug/command", async (c) => {
 
 app.get("/api/cluster", async (c) => c.json({ ok: true, ...(await cluster.status()) }));
 
+app.get("/api/cluster/inspect", async (c) => c.json({ ok: true, node: await cluster.inspectNode(String(c.req.query("name") ?? "")) }));
+
 app.get("/api/cluster/logs", async (c) => c.json({ ok: true, text: await cluster.logs(String(c.req.query("name") ?? ""), Number(c.req.query("tail")) || 200) }));
 
 app.post("/api/cluster/add", async (c) => {
@@ -608,6 +706,8 @@ app.post("/api/cluster/node", async (c) => {
 // ---------------------------------------------------------------- query store (HardKAS's SQLite index), read-only
 
 app.get("/api/store/health", async (c) => c.json({ ok: true, ...(await store.health()) }));
+
+app.get("/api/store/lineage", async (c) => c.json({ ok: true, ...(await store.lineage()) }));
 
 app.get("/api/store/artifacts", async (c) => {
   const q = c.req.query();
@@ -658,20 +758,38 @@ app.get("/api/system", async (c) => {
   });
 });
 
-// ---------------------------------------------------------------- blocks the local CPU miner found (Explorer)
+// ---------------------------------------------------------------- the HardKas CLI the server runs
+
+app.get("/api/cli", async (c) => c.json({ ok: true, cli: await cliInfo(getRoot() ?? process.cwd(), c.req.query("refresh") === "1") }));
+app.get("/api/cli/catalog", async (c) => {
+  const catalog = await getCliCatalog(getRoot() ?? process.cwd());
+  return c.json(catalog);
+});
+app.get("/api/updates", async (c) => {
+  const updates = await checkUpdates({
+    cwd: getRoot() ?? process.cwd(),
+    currentIdeVersion: c.req.query("appVersion") || undefined,
+    force: c.req.query("refresh") === "1"
+  });
+  return c.json({ ok: true, updates });
+});
+
+// ---------------------------------------------------------------- the local CPU miner (Explorer blocks, start/stop)
 
 const MINER_CONTAINER = process.env.HARDKAS_MINER_CONTAINER ?? "hardkas-toccata-miner";
 
+async function docker(args: string[], timeout = 10000): Promise<{ ok: boolean; out: string; err: string }> {
+  const { execFile } = await import("node:child_process");
+  return new Promise((resolve) => {
+    execFile("docker", args, { timeout, windowsHide: true, maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => resolve({ ok: !error, out: String(stdout), err: String(stderr) }));
+  });
+}
+
 app.get("/api/node/blocks", async (c) => {
   const limit = Math.min(100, Math.max(1, Number(c.req.query("limit") ?? 25) || 25));
-  const { execFile } = await import("node:child_process");
-  const run = (args: string[]) =>
-    new Promise<{ ok: boolean; out: string; err: string }>((resolve) => {
-      execFile("docker", args, { timeout: 10000, windowsHide: true, maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => resolve({ ok: !error, out: String(stdout), err: String(stderr) }));
-    });
-  const state = await run(["inspect", "-f", "{{.State.Running}}", MINER_CONTAINER]);
-  if (!state.ok) return c.json({ ok: true, exists: false, running: false, blocks: [], windowBlocks: 0, perSecond: 0 });
-  const logs = await run(["logs", "--timestamps", "--tail", "800", MINER_CONTAINER]);
+  const state = await docker(["inspect", "-f", "{{.State.Running}}", MINER_CONTAINER]);
+  if (!state.ok) return c.json({ ok: true, exists: false, running: false, blocks: [], windowBlocks: 0, perSecond: 0, routeFull: 0 });
+  const logs = await docker(["logs", "--timestamps", "--tail", "800", MINER_CONTAINER]);
   // docker logs writes the container's stderr to ours; the miner logs there. "Found a block: <hash>" (the hash can wrap to the next line).
   const text = `${logs.out}\n${logs.err}`;
   const found: Array<{ hash: string; at: string }> = [];
@@ -682,7 +800,60 @@ app.get("/api/node/blocks", async (c) => {
     const span = (Date.parse(found[windowBlocks - 1].at) - Date.parse(found[0].at)) / 1000;
     if (span > 0) perSecond = Number(((windowBlocks - 1) / span).toFixed(2));
   }
-  return c.json({ ok: true, exists: true, running: state.out.trim() === "true", blocks: found.slice(-limit).reverse(), windowBlocks, perSecond });
+  // The node rejects blocks it cannot keep up with ("Block was not submitted: route is full"): a flat-out
+  // CPU miner on simnet does this constantly, and transactions then take minutes to confirm.
+  const routeFull = (text.match(/route is full/g) ?? []).length;
+  return c.json({ ok: true, exists: true, running: state.out.trim() === "true", blocks: found.slice(-limit).reverse(), windowBlocks, perSecond, routeFull });
+});
+
+// Start or stop the existing miner container. HardKas creates it on the first `localnet fund` and stops it when
+// funding ends; this just flips that container, so the node gets blocks (or stops being flooded) on demand.
+app.post("/api/node/miner", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { action?: string };
+  if (body.action !== "start" && body.action !== "stop") return c.json({ ok: false, code: "BAD_REQUEST", message: "action must be start or stop" }, 400);
+  const exists = await docker(["inspect", "-f", "{{.Config.Image}}|{{.HostConfig.NetworkMode}}", MINER_CONTAINER]);
+  if (!exists.ok) return c.json({ ok: false, code: "NO_MINER", message: `No miner container (${MINER_CONTAINER}) yet: fund an account once and HardKas creates it.` }, 404);
+  // The miner is shared with every HardKas project on this machine: touch it only when it is HardKas' own
+  // (kaspanet/cpuminer inside the node's network namespace), never another container that happens to have the name.
+  const [image = "", networkMode = ""] = exists.out.trim().split("|");
+  if (!isHardkasMiner({ image, networkMode })) {
+    return c.json({ ok: false, code: "NOT_HARDKAS_MINER", message: `${MINER_CONTAINER} is not HardKas' CPU miner (image ${image || "unknown"}); nothing was changed.` }, 409);
+  }
+  // cpuminer does not exit on SIGTERM, so `docker stop` ends it with SIGKILL after the timeout: an exit code 137
+  // on this container after a stop (here, or HardKas stopping it when `localnet fund` ends) is that, not a crash.
+  const res = body.action === "start" ? await docker(["start", MINER_CONTAINER], 30000) : await docker(["stop", "-t", "2", MINER_CONTAINER], 30000);
+  if (!res.ok) {
+    const message = res.err.trim().split("\n")[0] || `docker ${body.action} failed`;
+    // The miner shares the node container's network namespace. After the node is recreated (stop/start, reset)
+    // the old miner points at a container that no longer exists and can never start again; `localnet fund`
+    // creates a fresh one, so remove the stale container and say so.
+    if (body.action === "start" && /network namespace|No such container/i.test(message)) {
+      await docker(["rm", "-f", MINER_CONTAINER], 30000);
+      return c.json({ ok: false, code: "STALE_MINER", message: "The miner container belonged to a previous node and has been removed. Mine a burst to create a new one." }, 409);
+    }
+    return c.json({ ok: false, code: "DOCKER_ERROR", message }, 500);
+  }
+  const after = await docker(["inspect", "-f", "{{.State.Running}}", MINER_CONTAINER]);
+  return c.json({ ok: true, running: after.out.trim() === "true" });
+});
+
+// Prepares the open workspace for a fresh local chain. The node and miner containers are NOT touched here: the IDE's
+// reset flow stops them with `hardkas localnet stop` and wipes the node with `hardkas node reset --yes`, so HardKas
+// itself decides what belongs to its localnet (the containers are shared by every HardKas project on this machine).
+// Account keys are moved to .hardkas/backups/reset-<time>/, never deleted: accounts.real.json can hold testnet keys.
+app.post("/api/node/reset", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const root = getRoot();
+  if (!root) return c.json({ ok: true, wiped: [], backedUp: [], backupDir: null, containersRemoved: false });
+  await ensureHardkasConfig(root).catch(() => {});
+  try {
+    const result = await resetWorkspaceChainState(root);
+    return c.json({ ok: true, ...result, containersRemoved: false });
+  } catch (error) {
+    if (error instanceof LocalNodeError) return c.json({ ok: false, code: error.code, message: error.message }, error.status as 409);
+    throw error;
+  }
 });
 
 const serverInfo = () => ({ name: "hardkas-ide-server", port: PORT, devServer: DEV_SERVER, workspace: getRoot(), ui: UI_READY ? "served from this server" : "not built: run pnpm build, or use the Vite dev server at http://localhost:5173" });

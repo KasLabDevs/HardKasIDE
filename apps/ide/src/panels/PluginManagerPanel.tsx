@@ -9,6 +9,7 @@ import { grantsOf } from "@/plugins/permissions";
 import type { PluginManagerPlugin } from "@/plugins/pluginManager";
 import { usePlugins } from "@/store/plugins";
 import { VsxTab } from "./VsxTab";
+import { confirmDialog } from "@/utils/dialog";
 
 type Tab = "installed" | "vscode" | "install";
 
@@ -62,7 +63,7 @@ export function PluginManagerPanel() {
             <div className="label tabular-nums">External · {externals.length}</div>
             {externals.length === 0 && <div className="text-fg-muted px-1">None yet. Install one from the Install tab (try the bundled example).</div>}
             {externals.map((p) => (
-              <PluginRow key={p.profile.name} plugin={p} manifest={installed.find((m) => m.name === p.profile.name)} onToggle={() => void run(`${p.profile.displayName} ${engine.isActive(p.profile.name) ? "deactivated" : "activated"}`, () => manager.toggle(p.profile.name))} onUninstall={() => confirm(`Uninstall ${p.profile.displayName}?`) && void run("uninstalled", () => manager.uninstall(p.profile.name))} />
+              <PluginRow key={p.profile.name} plugin={p} manifest={installed.find((m) => m.name === p.profile.name)} onToggle={() => void run(`${p.profile.displayName} ${engine.isActive(p.profile.name) ? "deactivated" : "activated"}`, () => manager.toggle(p.profile.name))} onUninstall={async () => (await confirmDialog(`Uninstall ${p.profile.displayName}?`, { title: "Uninstall plugin", confirmLabel: "Uninstall", danger: true })) && void run("uninstalled", () => manager.uninstall(p.profile.name))} />
             ))}
           </div>
           <div>

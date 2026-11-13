@@ -3,6 +3,7 @@ import { useEngine } from "@/engine/context";
 import type { IndexPlugin } from "@/plugins/indexView";
 import { shortKind, useIndex } from "@/store/indexStore";
 import { Bars, KindChip, Stat, fmtBytes, when } from "./common";
+import { confirmDialog } from "@/utils/dialog";
 
 /** Health of the store, what it holds, and the buttons that keep it current. */
 export function OverviewTab() {
@@ -18,8 +19,8 @@ export function OverviewTab() {
     set({ filters: { ...useIndex.getState().filters, schema: "", mode: "", network: "", q: "", [key]: value }, tab: "artifacts", selectedId: null });
   };
 
-  const rebuild = () => {
-    if (window.confirm("Rebuild the index from the artifacts on disk?\n\nIt only recreates .hardkas/store.db. Your artifacts and files are not touched.")) void plugin.rebuild();
+  const rebuild = async () => {
+    if (await confirmDialog("Rebuild the index from the artifacts on disk?\n\nIt only recreates .hardkas/store.db. Your artifacts and files are not touched.", { title: "Rebuild index", confirmLabel: "Rebuild" })) void plugin.rebuild();
   };
 
   if (error && !health) {
