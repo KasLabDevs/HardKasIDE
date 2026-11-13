@@ -8,6 +8,13 @@ import path from "node:path";
 const home = mkdtempSync(path.join(os.tmpdir(), "hk-consent-"));
 process.env.USERPROFILE = home;
 process.env.HOME = home;
+// API keys would go to the system credential store: keep them in memory here.
+const keys = new Map<string, string>();
+(await import("../src/secrets.ts")).setSecretStore({
+  get: async (k) => keys.get(k) ?? null,
+  set: async (k, v) => void keys.set(k, v),
+  delete: async (k) => void keys.delete(k)
+});
 const a = await import("../src/assistant.ts");
 
 after(() => rmSync(home, { recursive: true, force: true }));

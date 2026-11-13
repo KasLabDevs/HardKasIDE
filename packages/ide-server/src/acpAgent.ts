@@ -46,7 +46,7 @@ export interface AcpTurnOptions {
   signal: AbortSignal;
 }
 
-const SENSITIVE = /(accounts\.real\.json|dev-server-token|\.hardkas[\\/]+dev-accounts|\.env($|\.)|id_rsa|\.pem$|keystore)/i;
+const SENSITIVE = /(accounts\.real\.json|dev-server-token|\.hardkas[\\/]+dev-accounts|\.hardkas-ide([\\/]|$)|\.env($|\.)|id_rsa|\.pem$|keystore)/i;
 
 const POLICY = `{
   "$schema": "https://opencode.ai/config.json",
@@ -75,7 +75,9 @@ const POLICY = `{
     { "action": "*", "resource": "*dev-server-token*", "effect": "deny" },
     { "action": "*", "resource": "*.env", "effect": "deny" },
     { "action": "*", "resource": "*.env.*", "effect": "deny" },
-    { "action": "*", "resource": "*keystore*", "effect": "deny" }
+    { "action": "*", "resource": "*keystore*", "effect": "deny" },
+    // The IDE's own settings folder (assistant settings, the agent's config home): never for the agent.
+    { "action": "*", "resource": "*.hardkas-ide*", "effect": "deny" }
   ]
 }
 `;

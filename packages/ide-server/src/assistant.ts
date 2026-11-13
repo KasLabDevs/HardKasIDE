@@ -6,6 +6,7 @@ import * as wsfs from "./fs.js";
 import { startJob, waitForJob } from "./runner.js";
 import { runAcpTurn } from "./acpAgent.js";
 import { getRoot } from "./workspace.js";
+import { deleteApiKey, isKeyProvider, KEY_ENV, resolveApiKey, saveApiKey, type KeyProvider, type KeySource } from "./secrets.js";
 
 /**
  * Assistant backend: provider-agnostic chat, grounded in the official Kaspa docs.
@@ -18,7 +19,8 @@ import { getRoot } from "./workspace.js";
  * Providers: "opencode" (the default: the IDE hosts the OpenCode agent over ACP, see acpAgent.ts; free models,
  * no key), "anthropic" (Messages API) and "openai" (any OpenAI-compatible Chat Completions
  * endpoint: OpenAI, OpenRouter, LM Studio, Ollama at http://localhost:11434/v1, …).
- * The API key is stored in ~/.hardkas-ide/assistant.json on this machine and never sent to the browser.
+ * API keys live in the system credential store or an environment variable (see secrets.ts), never in
+ * ~/.hardkas-ide/assistant.json, and are never sent to the browser.
  */
 
 const HOME = path.join(os.homedir(), ".hardkas-ide");
@@ -34,7 +36,10 @@ export interface AssistantConfig {
   provider: Provider;
   baseUrl: string;
   model: string;
+  /** The key in use for this provider, resolved on load (environment, then credential store). Never written to the file. */
   apiKey: string;
+  /** Where apiKey came from; null when there is none. Not written to the file either. */
+  keySource: KeySource | null;
   docs: DocsMode;
   maxTokens: number;
   /**
@@ -51,19 +56,49 @@ const DEFAULTS: Record<Provider, { baseUrl: string; model: string }> = {
   openai: { baseUrl: "https://api.openai.com/v1", model: "" }
 };
 
-export const defaultConfig: AssistantConfig = { provider: "opencode", baseUrl: DEFAULTS.opencode.baseUrl, model: DEFAULTS.opencode.model, apiKey: "", docs: "core", maxTokens: 4096, opencodeConsent: false };
+export const defaultConfig: AssistantConfig = { provider: "opencode", baseUrl: DEFAULTS.opencode.baseUrl, model: DEFAULTS.opencode.model, apiKey: "", keySource: null, docs: "core", maxTokens: 4096, opencodeConsent: false };
 
 export function providerDefaults(): typeof DEFAULTS {
   return DEFAULTS;
 }
 
-export async function loadConfig(): Promise<AssistantConfig> {
+async function writeConfigFile(data: object): Promise<void> {
+  await fs.mkdir(HOME, { recursive: true });
+  await fs.writeFile(CONFIG_FILE, JSON.stringify(data, null, 2), { encoding: "utf8", mode: 0o600 });
+}
+
+/**
+ * Earlier versions kept the API key in assistant.json. Move it to the credential store and drop it from the file.
+ * Returns false when no store is available: the file is then left as it is, so the key is not lost.
+ */
+async function moveKeyOutOfFile(raw: Partial<AssistantConfig>): Promise<boolean> {
+  const key = String(raw.apiKey).trim();
+  const provider: KeyProvider = isKeyProvider(raw.provider) ? raw.provider : key.startsWith("sk-ant-") ? "anthropic" : "openai";
   try {
-    const raw = JSON.parse(await fs.readFile(CONFIG_FILE, "utf8")) as Partial<AssistantConfig>;
-    return { ...defaultConfig, ...raw };
+    await saveApiKey(provider, key);
   } catch {
-    return { ...defaultConfig };
+    return false;
   }
+  const { apiKey: _key, ...rest } = raw;
+  await writeConfigFile(rest).catch(() => undefined);
+  return true;
+}
+
+export async function loadConfig(): Promise<AssistantConfig> {
+  let raw: Partial<AssistantConfig> = {};
+  try {
+    raw = JSON.parse(await fs.readFile(CONFIG_FILE, "utf8")) as Partial<AssistantConfig>;
+  } catch {
+    raw = {};
+  }
+  let legacyKey = "";
+  if (typeof raw.apiKey === "string" && raw.apiKey.trim() && !(await moveKeyOutOfFile(raw))) legacyKey = raw.apiKey.trim();
+  const { apiKey: _key, keySource: _source, ...persisted } = raw;
+  const base: AssistantConfig = { ...defaultConfig, ...persisted, apiKey: "", keySource: null };
+  const resolved = await resolveApiKey(base.provider);
+  if (resolved.key) return { ...base, apiKey: resolved.key, keySource: resolved.source };
+  if (legacyKey && isKeyProvider(base.provider)) return { ...base, apiKey: legacyKey, keySource: "file" };
+  return base;
 }
 
 /** What the browser may see: everything except the key. */
@@ -83,15 +118,32 @@ export async function saveConfig(patch: Partial<AssistantConfig> & { clearKey?: 
   }
   if (typeof patch.baseUrl === "string") next.baseUrl = patch.baseUrl.trim().replace(/\/+$/, "");
   if (typeof patch.model === "string") next.model = patch.model.trim();
-  if (typeof patch.apiKey === "string" && patch.apiKey.trim()) next.apiKey = patch.apiKey.trim();
-  if (patch.clearKey) next.apiKey = "";
   if (patch.docs === "off" || patch.docs === "core" || patch.docs === "full") next.docs = patch.docs;
   if (typeof patch.maxTokens === "number" && patch.maxTokens >= 256 && patch.maxTokens <= 32000) next.maxTokens = Math.floor(patch.maxTokens);
   if (typeof patch.opencodeConsent === "boolean") next.opencodeConsent = patch.opencodeConsent;
   if (next.baseUrl && !/^https?:\/\//.test(next.baseUrl)) throw new Error("Base URL must start with http:// or https://");
-  await fs.mkdir(HOME, { recursive: true });
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(next, null, 2), { encoding: "utf8", mode: 0o600 });
-  return next;
+
+  // The key goes to the credential store of the provider being saved, never into the file.
+  if (isKeyProvider(next.provider)) {
+    if (typeof patch.apiKey === "string" && patch.apiKey.trim()) await saveApiKey(next.provider, patch.apiKey.trim());
+    if (patch.clearKey) {
+      try {
+        await deleteApiKey(next.provider);
+      } catch (error) {
+        if (current.keySource === "keychain") throw error;
+      }
+    }
+  }
+  // A key that could only stay in the file (no credential store) is kept there unless it is being removed or replaced.
+  const keepLegacy = current.keySource === "file" && !patch.clearKey && !(typeof patch.apiKey === "string" && patch.apiKey.trim());
+  const { apiKey: _key, keySource: _source, ...persisted } = next;
+  await writeConfigFile(keepLegacy ? { ...persisted, apiKey: current.apiKey } : persisted);
+  return loadConfig();
+}
+
+/** The environment variable that holds a provider's key, for messages and the settings panel. */
+export function keyEnvName(provider: Provider): string | null {
+  return isKeyProvider(provider) ? KEY_ENV[provider] : null;
 }
 
 // ---------------------------------------------------------------- Kaspa docs context
@@ -251,7 +303,7 @@ export async function* streamChat(req: ChatRequest, signal: AbortSignal): AsyncG
   if (!cfg.model) throw new AssistantError(400, "NO_MODEL", "Pick a model in the assistant settings first.");
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(cfg.baseUrl);
   if (!cfg.apiKey && !(cfg.provider === "openai" && isLocal)) {
-    throw new AssistantError(400, "NO_KEY", "Add your API key in the assistant settings (click the model name at the top of the panel). A local Ollama or LM Studio endpoint needs no key.");
+    throw new AssistantError(400, "NO_KEY", `Add your API key in the assistant settings (click the model name at the top of the panel) or set ${keyEnvName(cfg.provider) ?? "the provider's key variable"}. A local Ollama or LM Studio endpoint needs no key.`);
   }
   if (!req.messages?.length) throw new AssistantError(400, "BAD_REQUEST", "messages is required");
 
@@ -662,7 +714,7 @@ export async function* streamAgent(req: AgentRequest, signal: AbortSignal): Asyn
   if (!cfg.model) throw new AssistantError(400, "NO_MODEL", "Pick a model in the assistant settings first.");
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(cfg.baseUrl);
   if (!cfg.apiKey && !(cfg.provider === "openai" && isLocal)) {
-    throw new AssistantError(400, "NO_KEY", "Add your API key in the assistant settings (click the model name at the top of the panel) to run the agent.");
+    throw new AssistantError(400, "NO_KEY", `Add your API key in the assistant settings (click the model name at the top of the panel) or set ${keyEnvName(cfg.provider) ?? "the provider's key variable"} to run the agent.`);
   }
   if (!req.goal?.trim()) throw new AssistantError(400, "BAD_REQUEST", "goal is required");
 

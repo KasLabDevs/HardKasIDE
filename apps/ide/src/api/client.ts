@@ -98,6 +98,8 @@ export interface AssistantConfigView {
   maxTokens: number;
   hasKey: boolean;
   keyHint: string;
+  /** Where the key in use comes from: an environment variable, the system credential store, or (no store available) the settings file. */
+  keySource?: "env" | "keychain" | "file" | null;
   /** The user agreed that prompts and the files the agent reads go to OpenCode's hosted models. */
   opencodeConsent?: boolean;
 }

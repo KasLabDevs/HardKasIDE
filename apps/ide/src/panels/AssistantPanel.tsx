@@ -706,6 +706,19 @@ function Settings({ onClose }: { onClose: () => void }) {
     };
   }, [docs]);
 
+  // The key status describes the saved provider; while another provider is picked but not saved yet there is none.
+  const sameProvider = config?.provider === provider;
+  const envName = provider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY";
+  const keyState = !sameProvider || !config
+    ? null
+    : config.keySource === "env"
+      ? { text: `from ${envName}`, warn: false }
+      : config.keySource === "keychain"
+        ? { text: `saved ${config.keyHint}`, warn: false }
+        : config.keySource === "file"
+          ? { text: "still in a settings file: save it again or set the variable", warn: true }
+          : null;
+
   const pickProvider = (p: "opencode" | "anthropic" | "openai") => {
     setProvider(p);
     if (defaults) {
@@ -770,10 +783,18 @@ function Settings({ onClose }: { onClose: () => void }) {
       <div>
         <div className="label flex items-center justify-between">
           <span>API key</span>
-          {config?.hasKey && <span className="normal-case tracking-normal text-ok">saved {config.keyHint}</span>}
+          {keyState && <span className={clsx("normal-case tracking-normal", keyState.warn ? "text-warn" : "text-ok")}>{keyState.text}</span>}
         </div>
-        <input className="input font-mono" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={config?.hasKey ? "leave empty to keep the saved key" : "paste your key"} />
-        <div className="text-[10px] text-fg-muted mt-1">Stored in ~/.hardkas-ide/assistant.json on this machine and used only by ide-server. It is never sent back to the browser.</div>
+        {sameProvider && config?.keySource === "env" ? (
+          <div className="text-[11px] text-fg-muted">
+            The key comes from <code className="font-mono">{envName}</code>. Remove that variable to manage the key here.
+          </div>
+        ) : (
+          <input className="input font-mono" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={sameProvider && config?.hasKey ? "leave empty to keep the saved key" : "paste your key"} />
+        )}
+        <div className="text-[10px] text-fg-muted mt-1">
+          Saved in your system's credential store (Windows Credential Manager, macOS Keychain or the Linux Secret Service), never in a file, and never sent back to the browser. If <code className="font-mono">{envName}</code> is set, that key is used instead.
+        </div>
       </div>
       )}
       {provider !== "opencode" && (
@@ -793,7 +814,7 @@ function Settings({ onClose }: { onClose: () => void }) {
         <button type="button" className="btn-primary flex-1 justify-center" onClick={() => void save()}>
           Save
         </button>
-        {config?.hasKey && (
+        {sameProvider && (config?.keySource === "keychain" || config?.keySource === "file") && (
           <button type="button" className="btn-ghost" onClick={() => void save({ clearKey: true })} title="Delete the saved key">
             Remove key
           </button>
