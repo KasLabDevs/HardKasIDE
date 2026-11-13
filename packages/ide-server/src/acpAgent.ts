@@ -285,7 +285,7 @@ export async function* runAcpTurn(o: AcpTurnOptions): AsyncGenerator<AcpEvent> {
     const init = await ctx.request("initialize", {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false },
-      clientInfo: { name: "hardkas-ide", version: "0.2.0" }
+      clientInfo: { name: "hardkas-ide", version: "0.3.0" }
     });
     const session = await ctx.buildSession({ cwd: o.cwd, mcpServers: mcp ? [mcp] : [] }).start();
     const options: Array<{ id: string; name?: string }> = session.newSessionResponse.configOptions ?? [];

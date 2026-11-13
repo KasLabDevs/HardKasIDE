@@ -106,7 +106,7 @@ async function readServerPackageVersion(): Promise<string> {
   } catch {
     // ignore
   }
-  return "0.2.0";
+  return "0.3.0";
 }
 
 interface RemoteReleaseCache {
