@@ -37,15 +37,21 @@ export interface AssistantConfig {
   apiKey: string;
   docs: DocsMode;
   maxTokens: number;
+  /**
+   * The user agreed, in the panel, that prompts and the files the agent reads go to OpenCode's hosted models.
+   * Until then the OpenCode provider sends nothing.
+   */
+  opencodeConsent: boolean;
 }
 
+// The default free model is one whose provider keeps nothing and does not train on it (opencode.ai/docs/zen).
 const DEFAULTS: Record<Provider, { baseUrl: string; model: string }> = {
-  opencode: { baseUrl: "", model: "opencode/big-pickle" },
+  opencode: { baseUrl: "", model: "opencode/deepseek-v4.1-flash-free" },
   anthropic: { baseUrl: "https://api.anthropic.com", model: "claude-sonnet-5-5" },
   openai: { baseUrl: "https://api.openai.com/v1", model: "" }
 };
 
-export const defaultConfig: AssistantConfig = { provider: "opencode", baseUrl: DEFAULTS.opencode.baseUrl, model: DEFAULTS.opencode.model, apiKey: "", docs: "core", maxTokens: 4096 };
+export const defaultConfig: AssistantConfig = { provider: "opencode", baseUrl: DEFAULTS.opencode.baseUrl, model: DEFAULTS.opencode.model, apiKey: "", docs: "core", maxTokens: 4096, opencodeConsent: false };
 
 export function providerDefaults(): typeof DEFAULTS {
   return DEFAULTS;
@@ -81,6 +87,7 @@ export async function saveConfig(patch: Partial<AssistantConfig> & { clearKey?: 
   if (patch.clearKey) next.apiKey = "";
   if (patch.docs === "off" || patch.docs === "core" || patch.docs === "full") next.docs = patch.docs;
   if (typeof patch.maxTokens === "number" && patch.maxTokens >= 256 && patch.maxTokens <= 32000) next.maxTokens = Math.floor(patch.maxTokens);
+  if (typeof patch.opencodeConsent === "boolean") next.opencodeConsent = patch.opencodeConsent;
   if (next.baseUrl && !/^https?:\/\//.test(next.baseUrl)) throw new Error("Base URL must start with http:// or https://");
   await fs.mkdir(HOME, { recursive: true });
   await fs.writeFile(CONFIG_FILE, JSON.stringify(next, null, 2), { encoding: "utf8", mode: 0o600 });
@@ -211,10 +218,22 @@ export class AssistantError extends Error {
   }
 }
 
+/** Nothing goes to OpenCode's hosted models until the user has agreed to it in the panel. */
+export function requireOpenCodeConsent(cfg: AssistantConfig): void {
+  if (cfg.provider === "opencode" && !cfg.opencodeConsent) {
+    throw new AssistantError(
+      403,
+      "CONSENT_REQUIRED",
+      "The OpenCode assistant is off: it sends your questions and the files the agent reads to OpenCode's hosted models. Turn it on in the Assistant panel, or pick your own provider in its settings."
+    );
+  }
+}
+
 /** Streams the model's answer as text deltas. Throws AssistantError before the first byte for config problems. */
 export async function* streamChat(req: ChatRequest, signal: AbortSignal): AsyncGenerator<{ type: "delta"; text: string } | { type: "meta"; docs: { mode: DocsMode; chars: number; stale: boolean } | null; model: string }> {
   const cfg = await loadConfig();
   if (cfg.provider === "opencode") {
+    requireOpenCodeConsent(cfg);
     if (!req.messages?.length) throw new AssistantError(400, "BAD_REQUEST", "messages is required");
     yield { type: "meta", docs: null, model: cfg.model || "opencode default" };
     let produced = false;
@@ -614,6 +633,7 @@ async function executeAgentTool(name: string, args: Record<string, unknown>, sig
 export async function* streamAgent(req: AgentRequest, signal: AbortSignal): AsyncGenerator<AgentEvent> {
   const cfg = await loadConfig();
   if (cfg.provider === "opencode") {
+    requireOpenCodeConsent(cfg);
     if (!req.goal?.trim()) throw new AssistantError(400, "BAD_REQUEST", "goal is required");
     const root = getRoot();
     if (!root) throw new AssistantError(409, "NO_WORKSPACE", "Open a project first: the agent works inside the open project.");

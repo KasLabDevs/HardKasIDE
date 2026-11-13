@@ -98,6 +98,8 @@ export interface AssistantConfigView {
   maxTokens: number;
   hasKey: boolean;
   keyHint: string;
+  /** The user agreed that prompts and the files the agent reads go to OpenCode's hosted models. */
+  opencodeConsent?: boolean;
 }
 
 /** Which `hardkas` the server runs and whether it is the version this IDE was tested with. */

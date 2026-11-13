@@ -2,11 +2,21 @@
 
 The **Assistant** side panel talks to a model of your choice about the open project and the Kaspa docs, and can run as an **agent** that edits files and runs HardKas commands in the workspace. Everything goes through the IDE server (`packages/ide-server/src/assistant.ts`); the browser never holds the API key.
 
+## OpenCode (the default provider)
+
+With the **OpenCode** provider the IDE hosts the open-source [OpenCode](https://github.com/anomalyco/opencode) agent (MIT, bundled with the desktop app) over the Agent Client Protocol and gives it the HardKas tools through the IDE's MCP server (`packages/ide-server/src/acpAgent.ts`). It needs no account and no key: it uses OpenCode's free hosted models.
+
+- **Off until you turn it on.** A fresh install sends nothing. The panel explains what leaves the machine and offers **Turn on OpenCode** or **Use my own provider**; until then the chat and agent routes answer `CONSENT_REQUIRED`. **Turn off OpenCode** in the settings withdraws it. The answer is stored as `opencodeConsent` in `~/.hardkas-ide/assistant.json`.
+- **What is sent.** Your questions, the open file when "Share the open file" is ticked, and the workspace files the agent reads go to the selected model on OpenCode's servers. Each free model has its own data terms ([opencode.ai/docs/zen](https://opencode.ai/docs/zen)). The default, `opencode/deepseek-v4.1-flash-free`, and the next two suggestions (`glm-5.3-flash-free`, `minimax-m3.1-flash-free`) are listed there as zero-retention and not used for training; `big-pickle` may use data to improve the model.
+- **What it may do.** The IDE writes OpenCode's policy on every start (`~/.hardkas-ide/opencode`): reads and the read-only HardKas tools run without asking; file edits, shell commands and HardKas tools that change something (payments, deploys, funding, node control) ask in the panel; account keys, `dev-accounts`, keystores, the dev-server token and `.env` files are denied. The bundled binary never updates itself and never shares sessions (`update: disable`, `share: disabled`).
+
+The sections below (tools table, approvals) describe the IDE's own agent, used with the Anthropic and OpenAI-compatible providers.
+
 ## Setup
 
 Settings → Assistant, or the gear in the panel:
 
-- **Provider**: Anthropic (Messages API) or any OpenAI-compatible endpoint (`baseUrl` + model).
+- **Provider**: OpenCode (the default, see above), Anthropic (Messages API) or any OpenAI-compatible endpoint (`baseUrl` + model).
 - **API key**: stored in `~/.hardkas-ide/assistant.json` on this machine, shown back only as a hint (`sk-…abcd`). `PUT /api/assistant/config` accepts it only from the IDE's own origin.
 - **Kaspa docs**: `off`, `core` (the `llms.txt` pack from docs.kaspa.org) or `full` (`llms-full.txt`). Fetched by the server, cached, and prepended to the system prompt; the panel shows the approximate token cost.
 
@@ -38,5 +48,6 @@ The green **Finished** badge and the final summary are the model's own account o
 ## Security notes
 
 - Only local origins may call the assistant routes (`localOnly` in `packages/ide-server/src/index.ts`).
+- With the OpenCode provider nothing leaves the machine before the user turns it on in the panel (`requireOpenCodeConsent` in `assistant.ts`).
 - The agent never reads key material (see the table above) and cannot run anything in the terminal without a click.
 - Commands run with the workspace as `cwd`, through the same job runner as the Console (`/api/run` allows `hardkas`, `npm` and `npx vitest` only; the agent's terminal tool runs a shell and is the reason for the approval step).

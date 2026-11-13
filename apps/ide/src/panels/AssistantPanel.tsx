@@ -34,6 +34,7 @@ import { promptDialog } from "@/utils/dialog";
 
 const RESEARCH_GPT = "https://chatgpt.com/g/g-6887632bd778819191d51022323293ea-kaspa-research-gpt-for-kaspa-coin-v6";
 const DOCS_FOR_AI = "https://docs.kaspa.org/llms.txt";
+const OPENCODE_MODELS_PRIVACY = "https://opencode.ai/docs/zen";
 
 const STARTERS = [
   "Explain what the open contract does and how each entry is spent.",
@@ -74,6 +75,7 @@ export function AssistantPanel() {
   }, [turns, agentRun?.steps, agentRun?.thoughts, agentRun?.summary]);
 
   const notReady = config && !config.model ? "Pick a model in the settings." : config && !config.hasKey && config.provider === "anthropic" ? "Add your API key to start (gear icon)." : null;
+  const needsConsent = config?.provider === "opencode" && !config.opencodeConsent;
 
   const send = (text = input) => {
     if (!text.trim() || busy) return;
@@ -189,6 +191,9 @@ export function AssistantPanel() {
       </div>
 
       <div className="shrink-0 border-t border-border p-2 space-y-1.5">
+        {needsConsent && config && <OpenCodeConsent model={config.model} onOwnProvider={() => setSettingsOpen(true)} />}
+        {!needsConsent && (
+        <>
         <label className="flex items-center gap-1.5 text-[11px] text-fg-muted cursor-pointer select-none">
           <input type="checkbox" checked={includeFile} onChange={(e) => setIncludeFile(e.target.checked)} />
           <span className="truncate">Share the open file{activeFile && !activeFile.startsWith("view:") ? `: ${activeFile.split("/").pop()}` : " (none open)"}</span>
@@ -234,7 +239,56 @@ export function AssistantPanel() {
             <ExternalLink size={11} /> Ask the Kaspa Research GPT instead (copies your question)
           </button>
         )}
+        </>
+        )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * OpenCode's free models run on OpenCode's servers: the panel sends nothing there until the user agrees once.
+ * The agreement is stored with the assistant settings and can be withdrawn there.
+ */
+function OpenCodeConsent({ model, onOwnProvider }: { model: string; onOwnProvider: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const accept = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      useAssistant.getState().setConfig(await api.assistant.saveConfig({ opencodeConsent: true }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div role="region" aria-label="OpenCode data notice" className="rounded border border-warn/50 bg-warn/10 p-2 space-y-1.5">
+      <div className="text-warn font-semibold">The assistant is off until you turn it on</div>
+      <div className="text-fg-muted leading-relaxed">
+        It runs the OpenCode agent with a free model hosted by OpenCode (<code>{model || "default"}</code>). What you type, the open file you share and the
+        workspace files the agent reads are sent to that model to get an answer. Each free model has its own data terms; some keep data or use it to
+        improve the model (
+        <a className="text-accent hover:underline" href={OPENCODE_MODELS_PRIVACY} target="_blank" rel="noreferrer">
+          OpenCode's list
+        </a>
+        ). The agent cannot read account keys, keystores or <code>.env</code> files.
+      </div>
+      <div className="flex gap-1">
+        <button type="button" className="btn-primary flex-1 justify-center" disabled={saving} onClick={() => void accept()}>
+          {saving ? "…" : "Turn on OpenCode"}
+        </button>
+        <button type="button" className="btn-ghost flex-1 justify-center" onClick={onOwnProvider}>
+          Use my own provider
+        </button>
+      </div>
+      {error && (
+        <div role="alert" className="text-error break-words">
+          {error}
+        </div>
+      )}
     </div>
   );
 }
@@ -659,10 +713,11 @@ function Settings({ onClose }: { onClose: () => void }) {
     }
   };
 
-  // OpenCode's free models need no account; `opencode models` lists them all.
+  // OpenCode's free models need no account; `opencode models` lists them all. The first three are the ones whose
+  // provider keeps nothing and does not train on it; big-pickle may use data to improve the model (opencode.ai/docs/zen).
   const suggestions =
     provider === "opencode"
-      ? ["opencode/big-pickle", "opencode/deepseek-v4.1-flash-free", "opencode/glm-5.3-flash-free", "opencode/minimax-m3.1-flash-free", "opencode/nemotron-3.5-super-vl-free"]
+      ? ["opencode/deepseek-v4.1-flash-free", "opencode/glm-5.3-flash-free", "opencode/minimax-m3.1-flash-free", "opencode/big-pickle"]
       : provider === "anthropic"
         ? ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"]
         : ["llama3.2", "qwen2.5-coder", "gpt-4.1"];
@@ -678,7 +733,7 @@ function Settings({ onClose }: { onClose: () => void }) {
       </div>
       <div className="text-[10px] text-fg-muted">
         {provider === "opencode"
-          ? "The OpenCode agent, hosted by the IDE over ACP with the HardKas tools. Free models, no key: prompts go to OpenCode's hosted models. Every action asks for your approval."
+          ? "The OpenCode agent, hosted by the IDE over ACP with the HardKas tools. Free models, no key: your prompts and the files the agent reads go to OpenCode's hosted models. The first three suggested models keep nothing; big-pickle may use data to improve the model. Reads run without asking; edits, commands and HardKas actions that change something ask for your approval."
           : provider === "anthropic"
             ? "Claude through the Anthropic API."
             : "OpenAI, OpenRouter, LM Studio, or a local Ollama at http://localhost:11434/v1 (no key needed)."}
@@ -728,6 +783,16 @@ function Settings({ onClose }: { onClose: () => void }) {
         {config?.hasKey && (
           <button type="button" className="btn-ghost" onClick={() => void save({ clearKey: true })} title="Delete the saved key">
             Remove key
+          </button>
+        )}
+        {config?.opencodeConsent && (
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => void api.assistant.saveConfig({ opencodeConsent: false }).then((c) => useAssistant.getState().setConfig(c))}
+            title="Stop sending anything to OpenCode until you turn it on again"
+          >
+            Turn off OpenCode
           </button>
         )}
         <button type="button" className="btn-ghost" onClick={onClose}>

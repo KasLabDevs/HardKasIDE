@@ -51,6 +51,9 @@ const SENSITIVE = /(accounts\.real\.json|dev-server-token|\.hardkas[\\/]+dev-acc
 const POLICY = `{
   "$schema": "https://opencode.ai/config.json",
   // Written by HardKas IDE on every start: the policy of the agent the IDE hosts. Last matching rule wins.
+  // The bundled binary never updates itself, and sessions are never shared to opencode.ai.
+  "update": "disable",
+  "share": "disabled",
   "permissions": [
     { "action": "*", "resource": "*", "effect": "ask" },
     { "action": "read", "resource": "*", "effect": "allow" },

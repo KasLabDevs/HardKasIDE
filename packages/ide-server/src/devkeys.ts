@@ -187,5 +187,16 @@ export async function revealDevAccountKey(name: string, root: string | null = ge
   if (keystore.metadata?.address && payload.address && keystore.metadata.address !== payload.address) {
     throw new FsError(422, "ADDRESS_MISMATCH", `Keystore for '${name}' is inconsistent (address mismatch)`);
   }
-  return { name, address: payload.address ?? keystore.metadata?.address ?? "", network: "simnet", privateKey: payload.privateKey };
+  // The address must be a simnet one too, as for the plaintext accounts: a keystore can say simnet in its
+  // metadata and still hold a testnet or mainnet key.
+  const address = payload.address ?? keystore.metadata?.address ?? "";
+  const addressNetwork = networkFromAddress(address);
+  if (address && addressNetwork !== "simnet") {
+    throw new FsError(
+      403,
+      "NOT_SIMNET",
+      `Refusing to export '${name}': its address is ${addressNetwork ? `a ${addressNetwork}` : "not a simnet"} address; only simnet accounts can be exported`
+    );
+  }
+  return { name, address, network: "simnet", privateKey: payload.privateKey };
 }
