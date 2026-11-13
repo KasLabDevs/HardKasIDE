@@ -70,19 +70,39 @@ fs.writeFileSync(
 run("npm install --omit=dev --no-audit --no-fund --loglevel=error", mcpOut);
 
 // The OpenCode agent binary (MIT): from HARDKAS_IDE_OPENCODE_EXE when set, otherwise the pinned npm release.
+// The npm package's postinstall copies this platform's binary to the path its "bin" field names, which is
+// bin/opencode.exe on every platform (macOS and Linux included); the per-platform package keeps it as
+// bin/opencode (bin/opencode.exe on Windows). The IDE looks for opencode.exe on Windows and opencode elsewhere.
 const OPENCODE_VERSION = "2.3.0";
 step(`Copy the OpenCode agent ${OPENCODE_VERSION}`);
 const agentOut = path.join(stage, "agents", "opencode");
 fs.mkdirSync(agentOut, { recursive: true });
-let opencodeExe = process.env.HARDKAS_IDE_OPENCODE_EXE ?? "";
-if (!opencodeExe || !fs.existsSync(opencodeExe)) {
+let opencodeBin = process.env.HARDKAS_IDE_OPENCODE_EXE ?? "";
+if (!opencodeBin || !fs.existsSync(opencodeBin)) {
   const cache = path.join(desktop, ".opencode-cache");
   fs.mkdirSync(cache, { recursive: true });
   if (!fs.existsSync(path.join(cache, "package.json"))) fs.writeFileSync(path.join(cache, "package.json"), "{\"private\":true}\n");
   run(`npm install --no-save --no-audit --no-fund --loglevel=error @opencode/cli@${OPENCODE_VERSION}`, cache);
-  opencodeExe = path.join(cache, "node_modules", "@opencode", "cli", "bin", process.platform === "win32" ? "opencode.exe" : "opencode");
+  const scope = path.join(cache, "node_modules", "@opencode");
+  const cliDir = path.join(scope, "cli");
+  const cliPkg = JSON.parse(fs.readFileSync(path.join(cliDir, "package.json"), "utf8"));
+  const declared = typeof cliPkg.bin === "string" ? cliPkg.bin : cliPkg.bin?.opencode;
+  const plat = { win32: "windows", darwin: "darwin", linux: "linux" }[process.platform] ?? process.platform;
+  const native = process.platform === "win32" ? "opencode.exe" : "opencode";
+  const platformPkgs = fs.existsSync(scope)
+    ? fs.readdirSync(scope).filter((d) => d.startsWith(`cli-${plat}-${process.arch}`)).sort((a, b) => a.length - b.length)
+    : [];
+  const candidates = [
+    ...[declared, "bin/opencode.exe", "bin/opencode"].filter(Boolean).map((rel) => path.join(cliDir, rel)),
+    ...platformPkgs.map((d) => path.join(scope, d, "bin", native)),
+  ];
+  opencodeBin = candidates.find((p) => fs.existsSync(p)) ?? "";
+  if (!opencodeBin) throw new Error(`OpenCode binary not found; looked for:\n  ${candidates.join("\n  ")}`);
 }
-fs.copyFileSync(opencodeExe, path.join(agentOut, path.basename(opencodeExe)));
+const stagedAgent = path.join(agentOut, process.platform === "win32" ? "opencode.exe" : "opencode");
+fs.copyFileSync(opencodeBin, stagedAgent);
+if (process.platform !== "win32") fs.chmodSync(stagedAgent, 0o755);
+console.log(`  ${path.relative(root, opencodeBin) || opencodeBin} -> ${path.relative(root, stagedAgent)}`);
 fs.writeFileSync(
   path.join(agentOut, "NOTICE.txt"),
   `OpenCode ${OPENCODE_VERSION} (npm package @opencode/cli), an open-source AI coding agent.\n` +

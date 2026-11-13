@@ -53,7 +53,10 @@ async function exists(p: string): Promise<boolean> {
 export async function resetWorkspaceChainState(root: string, now: Date = new Date()): Promise<ResetResult> {
   const hardkasDir = path.join(root, ".hardkas");
   const stamp = now.toISOString().replace(/[:.]/g, "-");
-  const backupRel = `.hardkas/backups/reset-${stamp}`;
+  // Never reuse a backup folder (or a file in its way): a second reset in the same millisecond gets reset-<time>-2,
+  // so it can never overwrite the keys an earlier reset saved.
+  let backupRel = `.hardkas/backups/reset-${stamp}`;
+  for (let n = 2; await exists(path.join(root, ...backupRel.split("/"))); n++) backupRel = `.hardkas/backups/reset-${stamp}-${n}`;
   const backupAbs = path.join(root, ...backupRel.split("/"));
 
   const backedUp: string[] = [];
@@ -89,10 +92,15 @@ export async function resetWorkspaceChainState(root: string, now: Date = new Dat
 }
 
 /**
+ * The Docker Hub `kaspanet/cpuminer` image HardKas runs, as `docker inspect` names it: with or without the Docker Hub
+ * registry, by tag and/or digest. A copy under another registry or namespace (ghcr.io/x/kaspanet/cpuminer) is not it.
+ */
+const HARDKAS_MINER_IMAGE = /^(?:(?:docker\.io|index\.docker\.io|registry-1\.docker\.io)\/)?kaspanet\/cpuminer(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]+)?$/;
+
+/**
  * True when a container, as `docker inspect` describes it, is the CPU miner HardKas starts for its localnet:
  * the `kaspanet/cpuminer` image, running inside another container's network namespace (the node's).
  */
 export function isHardkasMiner(container: { image: string; networkMode: string }): boolean {
-  const image = container.image.trim();
-  return /(^|\/)kaspanet\/cpuminer([:@]|$)/.test(image) && container.networkMode.trim().startsWith("container:");
+  return HARDKAS_MINER_IMAGE.test(container.image.trim()) && container.networkMode.trim().startsWith("container:");
 }

@@ -14,7 +14,7 @@ A single-purpose IDE for [HardKas](https://github.com/KasLabDevs/HardKas) projec
 - **Desktop app** (`apps/desktop`): a frameless Tauri window around the IDE with a Windows installer; it starts the IDE server itself. See [docs/desktop.md](docs/desktop.md).
 - **MCP server** (`packages/mcp-server`): lets an AI agent compile SilverScript, run the local node, move test coins and deploy contracts through the IDE. See [docs/mcp.md](docs/mcp.md).
 - **Covenant graph**: a compiled contract, its deploys, entries and spends drawn from HardKas records and checked against the local node. See [docs/covenant-graph.md](docs/covenant-graph.md).
-- **Assistant / agent**: chat grounded in the Kaspa docs, and an agent that edits files and runs commands with your approval. See [docs/assistant.md](docs/assistant.md).
+- **Assistant / agent**: chat grounded in the Kaspa docs, and an agent that edits files and runs commands with your approval. By default it runs the open-source OpenCode agent on free hosted models, off until you turn it on (the panel says what is sent); Anthropic or any OpenAI-compatible endpoint also work. See [docs/assistant.md](docs/assistant.md).
 - **Local node, miner and confirmations**: why a deploy can sit unconfirmed, and the miner controls. See [docs/local-node.md](docs/local-node.md).
 
 Design notes: [docs/design-notes.md](docs/design-notes.md).

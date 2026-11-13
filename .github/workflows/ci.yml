@@ -19,3 +19,27 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      - name: Version fields agree
+        run: node scripts/version.mjs check
+
+  # The release ships Windows, macOS and Linux builds, and staging is where they differ (the bundled Node, the
+  # OpenCode binary, npm installs). Staging and starting the app on all three for every pull request catches a
+  # platform-only break before a release tag does. The full installers are built by build-desktop.yml on tags.
+  desktop-stage:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, macos-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.1
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Stage the desktop app
+        run: pnpm --filter @hardkas-ide/desktop stage
+      - name: Start the staged app and check it
+        run: node apps/desktop/scripts/stage-smoke.mjs
