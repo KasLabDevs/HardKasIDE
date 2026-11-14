@@ -12,7 +12,7 @@ HardKas IDE.exe (Tauri, WebView2)
 ```
 
 - The window opens on a small splash page, starts the bundled Node runtime on the bundled IDE server, waits for port 7421 and then loads the IDE from it.
-- If something already answers on 7421 (for example `pnpm dev:server`), the app uses that instead of starting its own.
+- Before loading anything from 7421 the app asks it `GET /api/info`: only a HardKas IDE server whose name and version match the app is loaded. If one is already running (for example `pnpm dev:server` of the same version), the app uses it instead of starting its own; if anything else answers, the splash says that port 7421 is used by another program.
 - Closing the app stops the server and everything it started (terminals and running jobs).
 - The IDE works offline: Monaco and its workers are part of the build, not loaded from a CDN.
 
@@ -33,11 +33,11 @@ That runs `scripts/stage.mjs` (builds the server and the UI, installs the server
 pnpm --filter @hardkas-ide/desktop dev
 ```
 
-`tauri dev` runs `pnpm dev` (Vite and the IDE server) and opens the window on Vite, so edits reload live.
+`tauri dev` runs `pnpm dev` (Vite and the IDE server) and opens the window on Vite, so edits reload live. The capability that lets the Vite page (`localhost:5173`) use the window controls (`src-tauri/capabilities/dev.json`) is added only by `tauri.dev.conf.json`; release builds do not include it.
 
 ## What the installed app still expects from the machine
 
-- **Node and npm on the PATH.** The IDE server runs on the bundled Node, but the `hardkas` CLI is run through the project's own `node_modules/.bin/hardkas` or `npx @hardkas/cli`, and the Terminal opens your shell. Projects created from a template get their own copy after `npm install`.
+- **Node and npm on the PATH.** The IDE server runs on the bundled Node, but the `hardkas` CLI is run through `HARDKAS_BIN` when set, otherwise the project's own `node_modules/.bin/hardkas`, otherwise `npx @hardkas/cli@<pinned>`, and the Terminal opens your shell. Projects created from a template get their own copy after `npm install`.
 - **Docker Desktop** for the Local node (the app tells you when it is missing, as in the browser).
 
 ## Releases
@@ -45,6 +45,7 @@ pnpm --filter @hardkas-ide/desktop dev
 - **Version.** The version is written in twelve places (package.json files, `tauri.conf.json`, `Cargo.toml`/`Cargo.lock`, the agent and MCP client names, the release workflow default). Change it only with `node scripts/version.mjs set 0.3.1`; `node scripts/version.mjs check` says whether they agree, and CI runs it on every push.
 - **Tag.** Merge `develop` into `main` first, then tag `main` (`vX.Y.Z`). The release workflow (`.github/workflows/build-desktop.yml`) first checks that the tag matches the version in the code and stops if it does not, so a tag on the wrong commit fails in seconds instead of publishing mislabelled installers.
 - **Every pull request** stages the app on Windows, macOS and Linux and starts it (`apps/desktop/scripts/stage-smoke.mjs`), so a platform-only break shows up before a tag.
+- **Update check.** The IDE looks only at this repository's GitHub releases, skips drafts and prereleases, and offers the installer that matches the platform and architecture it runs on (`packages/ide-server/src/updates.ts`); with no matching asset it offers no download.
 
 ## Signing
 
@@ -56,5 +57,5 @@ The installers are **not signed** yet: Windows shows a SmartScreen warning, and 
 ## Notes
 
 - Windows may show a SmartScreen warning: the installer is not code-signed yet (see Signing).
-- Plugin pages are served from the server's other loopback name (`localhost` while the IDE is on `127.0.0.1`), so they stay on a different origin from the IDE, as in the browser.
-- The IDE window may only ask the shell for window controls (see `src-tauri/capabilities/default.json`).
+- Plugin pages are served from the server's other loopback name (`localhost` while the IDE is on `127.0.0.1`) and with a sandbox CSP, so they stay on a different origin from the IDE, as in the browser.
+- The IDE window may only ask the shell for window controls (see `src-tauri/capabilities/default.json`). Windows the IDE opens itself (detached views) get no IPC at all, and links to other sites open in the system browser.

@@ -62,7 +62,11 @@ export function networkFromAddress(address: string | undefined): string | undefi
 
 /** The network of a plaintext real account, and whether its two sources (field, address) disagree. */
 function realAccountNetwork(entry: RealAccountEntry): { network: string | undefined; conflict: boolean } {
-  const fromAddress = networkFromAddress(entry.address);
+  const address = typeof entry.address === "string" ? entry.address.trim() : undefined;
+  const fromAddress = networkFromAddress(address);
+  // An address that is present but names no known network is a conflict, not "unknown": failing open here would
+  // let an entry labelled simnet carry a testnet key behind an odd address.
+  if (address && !fromAddress) return { network: entry.network?.trim() || undefined, conflict: true };
   const declared = entry.network?.trim() || undefined;
   if (declared && fromAddress) {
     const declaredKind = declared === "simnet" ? "simnet" : declared.startsWith("testnet") ? "testnet" : declared;

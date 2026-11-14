@@ -19,7 +19,7 @@ const SILVER_QUICK_TOKENS = [
   { label: "contract", query: "contract ", pattern: "*.sil" },
   { label: "entrypoint", query: "entrypoint function", pattern: "*.sil" },
   { label: "tx.outputs[i]", query: "tx.outputs[", pattern: "*.sil" },
-  { label: "lockingBytecode", query: "lockingBytecode", pattern: "*.sil" },
+  { label: "scriptPubKey", query: "scriptPubKey", pattern: "*.sil" },
   { label: "checkSig", query: "checkSig(", pattern: "*.sil" },
   { label: "require(...)", query: "require(", pattern: "*.sil" }
 ];

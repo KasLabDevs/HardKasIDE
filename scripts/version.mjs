@@ -28,8 +28,7 @@ const FIELDS = [
   { file: "apps/desktop/src-tauri/Cargo.lock", re: new RegExp(String.raw`(name = "hardkas-ide"\r?\nversion = ")(${SEMVER})(")`) },
   { file: "packages/ide-server/src/acpAgent.ts", re: new RegExp(String.raw`(clientInfo: \{ name: "hardkas-ide", version: ")(${SEMVER})(")`) },
   { file: "packages/ide-server/src/updates.ts", re: new RegExp(String.raw`(return ")(${SEMVER})(";)`) },
-  { file: "packages/mcp-server/src/index.ts", re: new RegExp(String.raw`(\{ name: "hardkas-ide", version: ")(${SEMVER})(")`) },
-  { file: ".github/workflows/build-desktop.yml", re: new RegExp(String.raw`(default: "v)(${SEMVER})(")`) }
+  { file: "packages/mcp-server/src/index.ts", re: new RegExp(String.raw`(\{ name: "hardkas-ide", version: ")(${SEMVER})(")`) }
 ];
 
 function read() {

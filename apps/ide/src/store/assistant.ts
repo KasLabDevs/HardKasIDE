@@ -43,8 +43,12 @@ const MAX_SAVED = 40;
 
 function load(): ChatTurn[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) ?? "[]") as ChatTurn[];
-    return raw.map((t) => ({ ...t, streaming: false }));
+    const raw: unknown = JSON.parse(localStorage.getItem(KEY) ?? "[]");
+    if (!Array.isArray(raw)) return [];
+    // A hand-edited or old-format history must not break the panel: keep only well-formed turns.
+    return raw
+      .filter((t): t is ChatTurn => !!t && typeof t === "object" && (t.role === "user" || t.role === "assistant") && typeof t.content === "string")
+      .map((t, i) => ({ id: typeof t.id === "number" ? t.id : i, role: t.role, content: t.content, error: typeof t.error === "string" ? t.error : undefined, streaming: false }));
   } catch {
     return [];
   }

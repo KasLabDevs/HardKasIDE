@@ -30,4 +30,31 @@ While a session is open the Tests view shows the controls (continue, step over /
 
 `packages/ide-server/src/debug.ts` starts `vitest run --inspect-brk` (single worker, no file parallelism) and attaches to the worker over the Chrome DevTools Protocol. Vitest runs transformed code, so every script's inline source map is read and breakpoints and stack frames are translated between your original file and the code V8 runs. Breakpoints are placed just before each script runs (instrumentation breakpoint), so even top-level code is stopped on. The IDE talks to it through `/api/debug/events` (server-sent events) and `/api/debug/command`.
 
-Needs vitest installed in the project (the HardKas templates ship it) and the project's own Node dependencies (`npm install`).
+Needs vitest installed in the project (the HardKas templates ship it), the project's own Node dependencies (`npm install`) and a trusted folder: the debugger runs the project's tests, so in restricted mode it does not start (`UNTRUSTED_WORKSPACE`).
+
+This part debugs the project's TypeScript tests. SilverScript contracts have their own debugger, below.
+
+# Debugging SilverScript contracts
+
+Run one entry of a `.sil` contract on the Kaspa script engine, line by line: current line in the editor, constructor arguments, call arguments, locals, the script stack, and expressions you evaluate.
+
+## Use it
+
+1. Open the contract and the **SilverScript compiler** view. Fill the constructor arguments box (`[{"kind":"pubkey","value":"0x…"},{"kind":"int","value":1000}]`). *Show the dev accounts' public keys* lists the simnet dev accounts' keys to paste into `pubkey` arguments.
+2. In **SilverScript debugger**, pick the entry and fill its arguments. A `sig` argument is signed by a simnet dev account you choose.
+3. Click the gutter of the `.sil` file to set breakpoints (the same red dots as for tests), then **Debug**. It stops on the first line.
+4. Use **Continue** (to the next breakpoint), **Over**, **Into**, **Out**, **Opcode** (one script opcode) and **Stop**. *Eval* evaluates an expression with the current values (`currentBalance - withdrawSompi`).
+
+It ends either with *The entry ran to the end: every require passed*, or *Rejected at line N* on the `require` that failed, with the values at that point.
+
+## What it checks, and what it does not
+
+It runs the contract's logic on a test transaction: one input locked to this contract (5000 sompi) and one output back to it, unless the contract says otherwise. That shows whether your `require`s accept these arguments. It does not show that a node would accept a real spend (fees, mass, real UTXOs): for that, deploy and spend on the local node from Deploy & Run.
+
+## The runner
+
+The engine is `cli-debugger` from kaspanet/silverscript v1.0.0. Upstream publishes no binary, so build it yourself (`cargo build --release -p cli-debugger`) and put it at `~/.hardkas/toolchains/cli-debugger/1.0.0/`, or set `HARDKAS_SILVER_RUNNER` to it. HardKas cannot verify a local build, so the IDE runs it only after you approve that exact file (its SHA-256 is kept in `~/.hardkas-ide/settings.json`); a different binary asks again.
+
+Signatures are made by the project's own `@hardkas/core`, as `hardkas silver test` makes them, and only with simnet dev accounts. The project needs its Node dependencies (`npm install`) and a trusted folder.
+
+`packages/ide-server/src/silverDebug.ts` drives the runner's interactive prompt; the IDE talks to it through `/api/silver-debug/*`. Breakpoints added during a session reach the runner; removing one takes effect on the next session (the runner cannot remove breakpoints).

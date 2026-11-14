@@ -1,14 +1,69 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { isAgentForbidden, isKeyStorePath } from "./secretPaths.js";
 import { getRoot } from "./workspace.js";
 
 /**
  * Workspace file system, scoped to the open project root.
- * Every path from the client is relative to the root and is resolved and
- * checked so that nothing outside the root can be read or written.
+ * Every path from the client is relative to the root and is resolved and checked so that nothing outside the root
+ * can be read or written, neither by `..` nor through a link (junction, symlink) inside the project that points
+ * elsewhere. Key stores are never served (see secretPaths.ts); `.env` and SSH/PEM keys are refused to AI agents.
  */
 
 const IGNORED_DIRS = new Set(["node_modules", ".git", ".turbo", "dist", "coverage"]);
+
+/** Who asks: the person in the IDE, or an AI agent (the MCP server marks its requests). */
+export type FsClient = "user" | "agent";
+
+/** The real path of `target`, resolving links in every existing part of it (the missing tail is kept as is). */
+async function realPathOf(target: string): Promise<string> {
+  const tail: string[] = [];
+  let probe = target;
+  for (;;) {
+    try {
+      return path.join(await fs.realpath(probe), ...tail);
+    } catch (error: any) {
+      if (error?.code !== "ENOENT" && error?.code !== "ENOTDIR") throw error;
+      const parent = path.dirname(probe);
+      if (parent === probe) return target;
+      tail.unshift(path.basename(probe));
+      probe = parent;
+    }
+  }
+}
+
+function secretError(rel: string): FsError {
+  return new FsError(
+    403,
+    "SECRET_FILE",
+    `${rel} holds private keys or other secrets, so the IDE does not open, search or change it. Keys are exported only through the Accounts view (simnet only).`
+  );
+}
+
+/**
+ * Resolves a workspace path for an operation and refuses: paths outside the root, paths that leave it through a
+ * link, key stores (for everyone) and private files (for agents). Returns the absolute path to use.
+ */
+export async function safeTarget(relative: string, client: FsClient = "user"): Promise<string> {
+  const target = resolveInRoot(relative);
+  const root = getRoot()!;
+  const rootReal = await fs.realpath(root).catch(() => root);
+  const real = await realPathOf(target);
+  const realRel = path.relative(rootReal, real);
+  if (realRel.startsWith("..") || path.isAbsolute(realRel)) {
+    throw new FsError(400, "OUTSIDE_WORKSPACE", `Path leaves the workspace through a link: ${relative}`);
+  }
+  for (const rel of [path.relative(root, target), realRel]) {
+    const forward = rel.replace(/\\/g, "/");
+    if (isKeyStorePath(forward) || (client === "agent" && isAgentForbidden(forward))) throw secretError(forward);
+  }
+  return target;
+}
+
+/** True when a file found by a walk may be shown to `client` (search and replace skip the others silently). */
+function visible(relPath: string, client: FsClient): boolean {
+  return !(isKeyStorePath(relPath) || (client === "agent" && isAgentForbidden(relPath)));
+}
 
 export interface TreeNode {
   name: string;
@@ -25,6 +80,10 @@ export function resolveInRoot(relative: string): string {
   const rel = path.relative(root, target);
   if (rel.startsWith("..") || path.isAbsolute(rel)) {
     throw new FsError(400, "OUTSIDE_WORKSPACE", `Path escapes the workspace: ${relative}`);
+  }
+  // On Windows a ':' inside a workspace path names an alternate data stream (note.txt:hidden), never a normal file.
+  if (process.platform === "win32" && rel.includes(":")) {
+    throw new FsError(400, "BAD_PATH", `Paths with ':' are not workspace files: ${relative}`);
   }
   return target;
 }
@@ -47,7 +106,8 @@ export async function readTree(relative = ""): Promise<TreeNode[]> {
       path: toRelative(abs),
       type: entry.isDirectory() ? "dir" : "file"
     };
-    if (entry.isDirectory()) {
+    // A link (junction, symlink) is listed but never followed: it may point outside the project.
+    if (entry.isDirectory() && !entry.isSymbolicLink()) {
       node.children = await readTree(node.path);
     }
     nodes.push(node);
@@ -77,6 +137,7 @@ export async function findBySuffix(dir: string, suffix: string, limit = 20): Pro
     }
     for (const entry of entries) {
       const abs = path.join(current, entry.name);
+      if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
         if (!IGNORED_DIRS.has(entry.name)) await walk(abs, depth + 1);
       } else if (entry.name.endsWith(suffix)) {
@@ -92,9 +153,10 @@ export async function findBySuffix(dir: string, suffix: string, limit = 20): Pro
     .map((h) => h.path);
 }
 
-export async function readFile(relative: string): Promise<string> {
+export async function readFile(relative: string, client: FsClient = "user"): Promise<string> {
+  const target = await safeTarget(relative, client);
   try {
-    return await fs.readFile(resolveInRoot(relative), "utf8");
+    return await fs.readFile(target, "utf8");
   } catch (error: any) {
     if (error?.code === "ENOENT") {
       throw new FsError(404, "NOT_FOUND", `File not found: ${relative}`);
@@ -103,25 +165,44 @@ export async function readFile(relative: string): Promise<string> {
   }
 }
 
-export async function writeFile(relative: string, content: string): Promise<void> {
-  const target = resolveInRoot(relative);
+export async function writeFile(relative: string, content: string, client: FsClient = "user"): Promise<void> {
+  const target = await safeTarget(relative, client);
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.writeFile(target, content, "utf8");
 }
 
-export async function mkdir(relative: string): Promise<void> {
-  await fs.mkdir(resolveInRoot(relative), { recursive: true });
+export async function mkdir(relative: string, client: FsClient = "user"): Promise<void> {
+  await fs.mkdir(await safeTarget(relative, client), { recursive: true });
 }
 
-export async function remove(relative: string): Promise<void> {
-  const target = resolveInRoot(relative);
+/** Folders that hold key stores are never deleted or moved from the IDE, even as part of a parent folder. */
+async function containsKeyStore(abs: string): Promise<boolean> {
+  const stat = await fs.lstat(abs).catch(() => null);
+  if (!stat || !stat.isDirectory() || stat.isSymbolicLink()) return false;
+  const stack = [abs];
+  while (stack.length) {
+    const dir = stack.pop()!;
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      const child = path.join(dir, e.name);
+      if (isKeyStorePath(toRelative(child))) return true;
+      if (e.isDirectory() && !e.isSymbolicLink() && e.name !== "node_modules" && e.name !== ".git") stack.push(child);
+    }
+  }
+  return false;
+}
+
+export async function remove(relative: string, client: FsClient = "user"): Promise<void> {
+  const target = await safeTarget(relative, client);
   if (target === getRoot()) throw new FsError(400, "REFUSED", "Refusing to delete the workspace root");
+  if (await containsKeyStore(target)) throw secretError(`${toRelative(target)} (it contains key files)`);
   await fs.rm(target, { recursive: true, force: true });
 }
 
-export async function rename(from: string, to: string): Promise<void> {
-  const source = resolveInRoot(from);
-  const target = resolveInRoot(to);
+export async function rename(from: string, to: string, client: FsClient = "user"): Promise<void> {
+  const source = await safeTarget(from, client);
+  const target = await safeTarget(to, client);
+  if (await containsKeyStore(source)) throw secretError(`${toRelative(source)} (it contains key files)`);
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.rename(source, target);
 }
@@ -213,7 +294,7 @@ const BINARY_EXTS = new Set([
   ".sqlite"
 ]);
 
-export async function searchWorkspace(opts: WorkspaceSearchOptions): Promise<WorkspaceSearchResponse> {
+export async function searchWorkspace(opts: WorkspaceSearchOptions, client: FsClient = "user"): Promise<WorkspaceSearchResponse> {
   const q = (opts.query ?? "").trim();
   if (!q) {
     return { query: "", files: [], totalMatches: 0, totalFiles: 0, truncated: false };
@@ -242,6 +323,7 @@ export async function searchWorkspace(opts: WorkspaceSearchOptions): Promise<Wor
       }
       for (const entry of entries) {
         const abs = path.join(current, entry.name);
+        if (entry.isSymbolicLink()) continue;
         if (entry.isDirectory()) {
           if (!IGNORED_DIRS.has(entry.name)) await collect(abs, depth + 1);
         } else {
@@ -268,9 +350,11 @@ export async function searchWorkspace(opts: WorkspaceSearchOptions): Promise<Wor
     }
     let content: string;
     try {
-      const stat = await fs.stat(resolveInRoot(rel));
+      if (!visible(rel, client)) continue;
+      const abs = await safeTarget(rel, client);
+      const stat = await fs.stat(abs);
       if (stat.size > 1_000_000) continue; // skip >1MB files
-      content = await fs.readFile(resolveInRoot(rel), "utf8");
+      content = await fs.readFile(abs, "utf8");
     } catch {
       continue;
     }
@@ -319,20 +403,24 @@ export async function searchWorkspace(opts: WorkspaceSearchOptions): Promise<Wor
 }
 
 export async function replaceInWorkspace(
-  opts: WorkspaceSearchOptions & { replacement: string; targetFiles?: string[] }
+  opts: WorkspaceSearchOptions & { replacement: string; targetFiles?: string[] },
+  client: FsClient = "user"
 ): Promise<{ replacedFiles: number; replacedMatches: number }> {
-  const searchRes = await searchWorkspace({
-    ...opts,
-    includeFiles: opts.targetFiles && opts.targetFiles.length > 0 ? opts.targetFiles : opts.includeFiles,
-    maxResults: 5000
-  });
+  const searchRes = await searchWorkspace(
+    {
+      ...opts,
+      includeFiles: opts.targetFiles && opts.targetFiles.length > 0 ? opts.targetFiles : opts.includeFiles,
+      maxResults: 5000
+    },
+    client
+  );
   const re = buildSearchRegExp(opts);
   let replacedFiles = 0;
   let replacedMatches = 0;
 
   for (const fileResult of searchRes.files) {
     try {
-      const abs = resolveInRoot(fileResult.path);
+      const abs = await safeTarget(fileResult.path, client);
       const original = await fs.readFile(abs, "utf8");
       let count = 0;
       const updated = original.replace(re, () => {

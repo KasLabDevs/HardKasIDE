@@ -27,28 +27,28 @@ const STARTER_CONTRACTS: readonly StarterContractOption[] = [
     badge: "Covenant 1:N",
     defaultClass: "PaymentSplitter",
     supportsFanout: true,
-    description: "Enforces that 1 input UTXO splits across N recipient outputs (tx.outputs[0..N-1])."
+    description: "The spend must use this UTXO as its only input and pay each of N recipient scriptPubKeys (tx.outputs[0..N-1]) at least a share."
   },
   {
     id: "covenant-1-1",
     label: "Covenant 1:1 (Recursive Stateful Vault)",
     badge: "Covenant 1:1",
     defaultClass: "StatefulVault",
-    description: "Enforces a 1:1 state continuation output keeping the same covenant lockingBytecode."
+    description: "Recursive vault: a partial withdrawal must send output[0] back to this same contract (same scriptPubKey) with the rest of the balance."
   },
   {
     id: "covenant-escrow",
     label: "Covenant Escrow 2-of-3 (Buyer / Seller / Arbiter)",
     badge: "Escrow",
     defaultClass: "OrderEscrow",
-    description: "Multi-party escrow covenant enforcing settlement destination and amount."
+    description: "2-of-3 escrow: every spend path needs two of buyer, seller and arbiter, and output[0] must pay the agreed scriptPubKey."
   },
   {
     id: "covenant-timelock",
     label: "Covenant Timelock / Vesting Vault",
     badge: "Timelock",
     defaultClass: "VestingVault",
-    description: "Time-locked vault requiring tx.time >= unlockTime and beneficiary output guard."
+    description: "Time-locked vault: claim needs the beneficiary's signature, tx.time >= unlockTime and output[0] paying the beneficiary's scriptPubKey."
   },
   {
     id: "silver-basic",
@@ -56,21 +56,6 @@ const STARTER_CONTRACTS: readonly StarterContractOption[] = [
     badge: "SilverScript",
     defaultClass: "VaultGuard",
     description: "Clean signature-guarded SilverScript contract skeleton."
-  }
-];
-
-const COMPILER_ENVS = [
-  {
-    id: "SilverScript-0.1-CovenantV1",
-    label: "SilverScript-0.1 (silverc 1.0.0 · Kaspa Covenant v1 · TX v1)"
-  },
-  {
-    id: "SilverScript-0.1-StrictSimnet",
-    label: "SilverScript-0.1 (rusty-kaspad Toccata v2 · Consensus Strict)"
-  },
-  {
-    id: "SilverScript-0.1-Simulator",
-    label: "SilverScript-0.1 (Local Simulator Fast Mode)"
   }
 ];
 
@@ -96,6 +81,15 @@ const DEFAULT_FRONTENDS: FrontendStackOption[] = [
  * - Classic wizard button bar (< Back, Next >, Finish, Cancel)
  * - Clicking Finish transitions to the live dependency installation & workspace build window.
  */
+/**
+ * Joins a folder the server reported with a child name, in that folder's own style: a Windows path (`C:\…` or one with
+ * backslashes) gets `\`, a macOS / Linux path gets `/`. The server may run on another OS than the one this page assumes.
+ */
+export function joinPath(parent: string, child: string): string {
+  const windows = /^[A-Za-z]:/.test(parent) || (parent.includes("\\") && !parent.startsWith("/"));
+  return `${parent.replace(/[\\/]+$/, "")}${windows ? "\\" : "/"}${child}`;
+}
+
 export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
   const [frontends, setFrontends] = useState<FrontendStackOption[]>(DEFAULT_FRONTENDS);
   const [name, setName] = useState("my-hardkas-app");
@@ -103,8 +97,6 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
   const [parent, setParent] = useState(defaultParent);
 
   // SilverScript & Execution Environment section
-  const [envMode, setEnvMode] = useState<"exec-env" | "project-specific" | "workspace-default">("exec-env");
-  const [compilerEnv, setCompilerEnv] = useState(COMPILER_ENVS[0].id);
 
   // Project layout section
   const [layoutMode, setLayoutMode] = useState<"contracts-only" | "fullstack">("contracts-only");
@@ -159,7 +151,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
   const selectedStarter = STARTER_CONTRACTS.find((c) => c.id === starterKind) ?? STARTER_CONTRACTS[0];
   const selectedFrontend = frontends.find((f) => f.id === effectiveFrontend) ?? frontends[0];
   const effectiveParent = useDefaultLocation ? (defaultParent || parent) : parent;
-  const fullLocation = `${effectiveParent.replace(/[\\/]+$/, "")}${effectiveParent ? "\\" : ""}${name.trim()}`;
+  const fullLocation = effectiveParent ? joinPath(effectiveParent, name.trim()) : name.trim();
 
   const frontendOptions = frontends.filter((f) => f.id !== "none");
 
@@ -205,8 +197,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
       setLog((l) => [
         ...l,
         `$ hardkas ${job.args.join(" ")}`,
-        `→ Target location: ${dest}`,
-        `→ Compiler environment: ${compilerEnv} (silverc v1.0.0 · pragma ^0.1.0)`
+        `→ Target location: ${dest}`
       ]);
       const done = await api.jobs.follow(job.id, (_type, data) => {
         const text = data.trimEnd();
@@ -359,71 +350,16 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
                   </div>
                 </div>
 
-                {/* Fieldset 1: SilverScript & Execution Environment (like Eclipse JRE group) */}
-                <fieldset className="border border-border rounded px-3.5 py-2.5 space-y-2 bg-bg-panel/40">
-                  <legend className="px-1.5 text-[11px] font-semibold text-fg">SilverScript Compiler & Runtime</legend>
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="env-mode-exec"
-                      type="radio"
-                      name="env-mode"
-                      checked={envMode === "exec-env"}
-                      onChange={() => setEnvMode("exec-env")}
-                    />
-                    <label htmlFor="env-mode-exec" className="text-fg shrink-0 cursor-pointer">
-                      Use an execution environment compiler:
-                    </label>
-                    <select
-                      aria-label="Execution environment compiler"
-                      disabled={envMode !== "exec-env"}
-                      value={compilerEnv}
-                      onChange={(e) => setCompilerEnv(e.target.value)}
-                      className="input py-1 text-[11px] font-mono flex-1 disabled:opacity-50"
-                    >
-                      {COMPILER_ENVS.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="env-mode-specific"
-                      type="radio"
-                      name="env-mode"
-                      checked={envMode === "project-specific"}
-                      onChange={() => setEnvMode("project-specific")}
-                    />
-                    <label htmlFor="env-mode-specific" className="text-fg shrink-0 cursor-pointer">
-                      Use a project specific toolchain:
-                    </label>
-                    <select
-                      aria-label="Project specific toolchain"
-                      disabled={envMode !== "project-specific"}
-                      className="input py-1 text-[11px] font-mono flex-1 disabled:opacity-50"
-                      defaultValue="silverc-1.0.0"
-                    >
-                      <option value="silverc-1.0.0">silverc 1.0.0 (pragma silverscript ^0.1.0 · HardKas 0.13.0-rc.1)</option>
-                    </select>
-                  </div>
-
+                {/* Fieldset 1: the compiler. HardKas pins one silverc; there is nothing to choose here. */}
+                <fieldset className="border border-border rounded px-3.5 py-2.5 space-y-1 bg-bg-panel/40">
+                  <legend className="px-1.5 text-[11px] font-semibold text-fg">SilverScript compiler</legend>
                   <div className="flex items-center justify-between gap-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="env-mode"
-                        checked={envMode === "workspace-default"}
-                        onChange={() => setEnvMode("workspace-default")}
-                      />
-                      <span className="text-fg">Use default compiler &apos;silverc&apos; and workspace preferences</span>
-                    </label>
+                    <span className="text-fg">silverc pinned by HardKas</span>
                     <span className="text-[10px] font-mono text-accent bg-accent/10 border border-accent/30 px-1.5 py-0.5 rounded">
-                      silverc v1.0.0 · ^0.1.0
+                      silverc v1.0.0 · pragma ^0.1.0
                     </span>
                   </div>
+                  <div className="text-[10px] text-fg-muted">If it is not installed yet, it is installed (and its digest checked) when the project is created.</div>
                 </fieldset>
 
                 {/* Fieldset 2: Project layout (Standard vs Full-Stack Frontend dApp) */}

@@ -150,11 +150,11 @@ function buildStarterContractCode(spec: StarterContractSpec, projectName: string
 
   if (spec.kind === "covenant-1-n") {
     const count = Math.min(Math.max(spec.fanout ?? 3, 2), 6);
-    const lockParams = Array.from({ length: count }, (_, i) => `  bytes recipient${i + 1}Lock`).join(",\n");
+    const lockParams = Array.from({ length: count }, (_, i) => `  byte[] recipient${i + 1}Spk`).join(",\n");
     const checks = Array.from(
       { length: count },
       (_, i) =>
-        `    require(tx.outputs[${i}].lockingBytecode == recipient${i + 1}Lock);\n` +
+        `    require(tx.outputs[${i}].scriptPubKey == recipient${i + 1}Spk);\n` +
         `    require(tx.outputs[${i}].value >= shareSompi);`
     ).join("\n\n");
     return {
@@ -163,7 +163,10 @@ function buildStarterContractCode(spec: StarterContractSpec, projectName: string
 
 /**
  * @title ${className} (Covenant 1:${count})
- * Splits 1 input UTXO across ${count} recipient outputs.
+ * distribute: operator-signed; the transaction must spend exactly 1 input (this UTXO)
+ * and outputs 0..${count - 1} must pay each recipient scriptPubKey at least shareSompi.
+ * Any further outputs (change) are unconstrained.
+ * cancel: the operator alone can spend this UTXO anywhere (no output checks).
  */
 contract ${className}(
   pubkey operator,
@@ -172,6 +175,8 @@ ${lockParams},
 ) {
   entry distribute(sig operatorSig) {
     require(checkSig(operatorSig, operator));
+    require(tx.inputs.length == 1);
+    require(tx.outputs.length >= ${count});
 
 ${checks}
   }
@@ -191,7 +196,10 @@ ${checks}
 
 /**
  * @title ${className} (Covenant 1:1)
- * Stateful vault that enforces output[0] recreates this covenant with the remaining balance.
+ * Recursive vault: withdrawPartial must spend this UTXO as the only input and send
+ * output[0] back to this same contract (same scriptPubKey) with at least
+ * currentBalance - withdrawSompi; withdrawSompi is capped at maxWithdrawSompi.
+ * emergencySweep: owner + guardian together can spend anywhere (no output checks).
  */
 contract ${className}(
   pubkey owner,
@@ -202,11 +210,12 @@ contract ${className}(
     require(checkSig(ownerSig, owner));
     require(withdrawSompi > 0);
     require(withdrawSompi <= maxWithdrawSompi);
+    require(tx.inputs.length == 1);
 
-    bytes selfLock = tx.inputs[this.activeInputIndex].lockingBytecode;
+    byte[] selfSpk = this.activeScriptPubKey;
     int currentBalance = tx.inputs[this.activeInputIndex].value;
 
-    require(tx.outputs[0].lockingBytecode == selfLock);
+    require(tx.outputs[0].scriptPubKey == selfSpk);
     require(tx.outputs[0].value >= currentBalance - withdrawSompi);
   }
 
@@ -226,31 +235,45 @@ contract ${className}(
 
 /**
  * @title ${className} (2-of-3 Escrow Covenant)
+ * Every spend path needs two of the three signatures (buyer, seller, arbiter), and
+ * output[0] must pay the fixed destination scriptPubKey at least amountSompi:
+ *   buyer + seller   -> releaseToSeller (seller) or refundToBuyer (buyer)
+ *   arbiter + seller -> arbitrateSeller (seller)
+ *   arbiter + buyer  -> arbitrateBuyer (buyer)
  */
 contract ${className}(
   pubkey buyer,
   pubkey seller,
   pubkey arbiter,
-  bytes sellerLock,
-  bytes buyerLock,
+  byte[] sellerSpk,
+  byte[] buyerSpk,
   int amountSompi
 ) {
-  entry releaseToSeller(sig buyerSig) {
+  entry releaseToSeller(sig buyerSig, sig sellerSig) {
     require(checkSig(buyerSig, buyer));
-    require(tx.outputs[0].lockingBytecode == sellerLock);
+    require(checkSig(sellerSig, seller));
+    require(tx.outputs[0].scriptPubKey == sellerSpk);
     require(tx.outputs[0].value >= amountSompi);
   }
 
-  entry refundToBuyer(sig sellerSig) {
+  entry refundToBuyer(sig buyerSig, sig sellerSig) {
+    require(checkSig(buyerSig, buyer));
     require(checkSig(sellerSig, seller));
-    require(tx.outputs[0].lockingBytecode == buyerLock);
+    require(tx.outputs[0].scriptPubKey == buyerSpk);
     require(tx.outputs[0].value >= amountSompi);
   }
 
   entry arbitrateSeller(sig arbiterSig, sig sellerSig) {
     require(checkSig(arbiterSig, arbiter));
     require(checkSig(sellerSig, seller));
-    require(tx.outputs[0].lockingBytecode == sellerLock);
+    require(tx.outputs[0].scriptPubKey == sellerSpk);
+    require(tx.outputs[0].value >= amountSompi);
+  }
+
+  entry arbitrateBuyer(sig arbiterSig, sig buyerSig) {
+    require(checkSig(arbiterSig, arbiter));
+    require(checkSig(buyerSig, buyer));
+    require(tx.outputs[0].scriptPubKey == buyerSpk);
     require(tx.outputs[0].value >= amountSompi);
   }
 }
@@ -265,18 +288,22 @@ contract ${className}(
 
 /**
  * @title ${className} (Timelock Vesting Covenant)
+ * claim: beneficiary-signed; tx.time >= unlockTime is an absolute timestamp lock (CLTV
+ * on the transaction lock time, Unix milliseconds, must be >= 500000000000), and
+ * output[0] must pay beneficiarySpk at least vestAmountSompi.
+ * revoke: grantor + beneficiary together can spend anywhere (no output checks).
  */
 contract ${className}(
   pubkey beneficiary,
   pubkey grantor,
-  bytes beneficiaryLock,
-  int unlockTime,
+  byte[] beneficiarySpk,
+  temporal unlockTime,
   int vestAmountSompi
 ) {
   entry claim(sig beneficiarySig) {
     require(checkSig(beneficiarySig, beneficiary));
     require(tx.time >= unlockTime);
-    require(tx.outputs[0].lockingBytecode == beneficiaryLock);
+    require(tx.outputs[0].scriptPubKey == beneficiarySpk);
     require(tx.outputs[0].value >= vestAmountSompi);
   }
 

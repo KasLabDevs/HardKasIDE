@@ -183,7 +183,7 @@ export function zoomBy(delta: number): void {
 
 /** The one destructive node operation: always behind an explicit confirmation. */
 export async function confirmAndResetNode(engine: Engine): Promise<void> {
-  if (await confirmDialog("Reset the local node from scratch?\n\nThis DELETES the whole local chain (deployed contracts and previous history disappear), then recreates and seeds the dev accounts (100 KAS each from localnet Treasury, waiting for confirmed balances). Account keys are not deleted: .hardkas/accounts.real.json and .hardkas/dev-accounts are moved to .hardkas/backups/reset-<time>/. Artifacts and your files are kept.", { title: "Reset local node", confirmLabel: "Reset from scratch", danger: true })) {
+  if (await confirmDialog("Reset the local node from scratch?\n\nThis DELETES the whole local chain (deployed contracts and previous history disappear), then recreates and seeds the dev accounts (100 KAS each from localnet Treasury, waiting for confirmed balances). Account keys are not deleted: the simnet dev keystores (.hardkas/dev-accounts) are moved to .hardkas/backups/reset-<time>/, and .hardkas/accounts.real.json stays where it is (a copy goes to the same backup), so testnet accounts keep working. Artifacts and your files are kept.", { title: "Reset local node", confirmLabel: "Reset from scratch", danger: true })) {
     await engine.get<EnvironmentPlugin>("environment").resetNode();
   }
 }

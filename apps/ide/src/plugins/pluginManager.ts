@@ -6,6 +6,15 @@ import { usePlugins, validateManifest } from "@/store/plugins";
 import { IframePlugin, type PluginManifest } from "./iframePlugin";
 import { clearGrants } from "./permissions";
 
+/** A plugin installed from the examples bundled with the IDE (served by this server, not third-party code). */
+export function isBundledExample(m: PluginManifest): boolean {
+  try {
+    return new URL(m.url, location.origin).origin === location.origin && new URL(m.url, location.origin).pathname.startsWith("/api/plugins/examples/");
+  } catch {
+    return false;
+  }
+}
+
 /** The set of built-ins the IDE cannot run without. */
 export const REQUIRED_PLUGINS = ["console", "fileManager", "editor", "files", "pluginManager", "vsx"];
 
@@ -34,11 +43,14 @@ export class PluginManagerPlugin extends Plugin {
 
   onActivation(): void {
     // Register installed external plugins; activate the ones the user left active.
-    const { installed, savedActive } = usePlugins.getState();
-    for (const m of installed) {
-      if (!this.engine.has(m.name)) this.engine.register(new IframePlugin(m));
-    }
+    const { installed: all, savedActive } = usePlugins.getState();
     void (async () => {
+      // Third-party plugins run only when the user turned them on; the bundled examples are part of the IDE.
+      const thirdParty = await api.settings.get().then((s) => s.thirdPartyExtensions).catch(() => false);
+      const installed = all.filter((m) => thirdParty || isBundledExample(m));
+      for (const m of installed) {
+        if (!this.engine.has(m.name)) this.engine.register(new IframePlugin(m));
+      }
       for (const m of installed) {
         if (!savedActive || savedActive.includes(m.name)) {
           try {

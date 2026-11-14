@@ -1,21 +1,27 @@
 name: Release Desktop (Windows, macOS, Linux)
 
+# Each OS job only builds and uploads a workflow artifact. One release job, which runs only when all three builds
+# succeeded, checks the tag and puts every installer on the release as a draft: a failed macOS or Linux build can no
+# longer leave a Windows-only release published as "latest" (v0.3.0). Publishing the draft is a manual step.
+#
+# Third-party actions are pinned to full commit SHAs (the version is in the comment next to each one).
+
 on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Release tag name"
-        required: false
-        default: "v0.3.0"
+        description: "Release tag name (an existing tag on the commit this workflow runs on, for example v0.3.1)"
+        required: true
   push:
     tags:
       - "v*"
       - "[0-9]+.*"
 
+permissions:
+  contents: read
+
 jobs:
-  build-and-release:
-    permissions:
-      contents: write
+  build:
     strategy:
       fail-fast: false
       matrix:
@@ -29,32 +35,37 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
 
+    env:
+      TAG: ${{ inputs.tag_name || github.ref_name }}
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       # stage.mjs copies this Node into the installer, and the IDE server runs the HardKas CLI with it:
       # it must be the release the CLI requires.
       - name: Setup Node.js 24.22.1
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24.22.1
           cache: 'pnpm'
 
-      # A tag pushed on a commit that still carries another version would publish mislabelled installers
-      # (and, if it is the wrong commit, old code): stop here, before anything is built or uploaded.
+      # A tag pushed on a commit that still carries another version would build mislabelled installers: stop here,
+      # before anything is built. The release job checks it again before it touches the release.
       - name: Release tag matches the version in the code
-        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.tag_name != '')
-        run: node scripts/version.mjs check --tag "${{ inputs.tag_name || github.ref_name }}"
+        shell: bash
+        run: node scripts/version.mjs check --tag "$TAG"
 
       - name: Setup Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
+        with:
+          toolchain: stable
 
       - name: Rust Cache
-        uses: swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: './apps/desktop/src-tauri -> target'
 
@@ -74,7 +85,7 @@ jobs:
             librsvg2-dev
 
       - name: Install project dependencies
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
 
       # macOS signing and notarization turn on by themselves once the repository has the secrets
       # (Settings > Secrets and variables > Actions; see docs/desktop.md, "Signing"). Without them the app is
@@ -108,7 +119,8 @@ jobs:
       - name: Build and stage desktop application
         run: pnpm --filter @hardkas-ide/desktop run build
 
-      # The website links to a fixed name (releases/latest/download/HardKas-IDE-setup.exe), so every release carries one.
+      # The website links to a fixed name (releases/latest/download/HardKas-IDE-setup.exe), so every release carries
+      # one. It is a copy of the x64 installer (windows-latest is x64); the update checker offers it to x64 only.
       - name: Copy the Windows installer under its stable name
         if: matrix.os == 'windows'
         shell: pwsh
@@ -117,24 +129,8 @@ jobs:
           $exe = Get-ChildItem "$nsis/*-setup.exe" | Select-Object -First 1
           Copy-Item $exe.FullName "$nsis/HardKas-IDE-setup.exe"
 
-      - name: Upload binaries to GitHub Release Assets
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.tag_name != '')
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ inputs.tag_name || github.ref_name }}
-          name: HardKas IDE ${{ inputs.tag_name || github.ref_name }}
-          draft: false
-          prerelease: false
-          files: |
-            apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
-            apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
-            apps/desktop/src-tauri/target/release/bundle/deb/*.deb
-            apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
-
-      - name: Upload artifact for manual download
-        uses: actions/upload-artifact@v4
+      - name: Upload the installers as a workflow artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: hardkas-ide-${{ matrix.os }}
           path: |
@@ -142,4 +138,71 @@ jobs:
             apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
             apps/desktop/src-tauri/target/release/bundle/deb/*.deb
             apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
-          if-no-files-found: warn
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag_name || github.ref_name }}
+      PRERELEASE: ${{ contains(inputs.tag_name || github.ref_name, '-') }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Node.js 24.22.1
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.22.1
+
+      # The installers were built from github.sha: the tag must name that very commit, and the code there must carry
+      # the tag's version.
+      - name: The tag is the built commit and carries its version
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "+refs/tags/$TAG:refs/tags/$TAG"
+          tagged="$(git rev-parse "$TAG^{commit}")"
+          if [ "$tagged" != "$GITHUB_SHA" ]; then
+            echo "::error::tag $TAG is commit $tagged, but the installers were built from $GITHUB_SHA"
+            exit 1
+          fi
+          echo "tag $TAG is $GITHUB_SHA"
+          node scripts/version.mjs check --tag "$TAG"
+
+      - name: Download the installers
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: hardkas-ide-*
+          path: installers
+
+      - name: Every platform has its installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          find installers -type f | sort
+          for kind in '*-setup.exe' 'HardKas-IDE-setup.exe' '*.dmg' '*.AppImage' '*.deb'; do
+            if [ -z "$(find installers -type f -name "$kind" -print -quit)" ]; then
+              echo "::error::no $kind among the downloaded installers"
+              exit 1
+            fi
+          done
+
+      # A draft, never published by this workflow: publish it on GitHub once the installers are checked.
+      - name: Create or update the draft release
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find installers -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \) | sort)
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=true --prerelease="$PRERELEASE" --title "HardKas IDE $TAG"
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --prerelease="$PRERELEASE" \
+              --title "HardKas IDE $TAG" --notes "HardKas IDE $TAG" "${files[@]}"
+          fi
+          echo "draft release $TAG (prerelease: $PRERELEASE) has ${#files[@]} files"

@@ -11,10 +11,7 @@ export interface SilverCompileSummary {
 export const SILVER_TOOLCHAIN = {
   silvercVersion: "1.0.0",
   languageVersion: "0.1.0",
-  supportedPragma: "^0.1.0",
-  txVersion: 1,
-  computeBudgetLimit: 100_000,
-  maxStandardMassGrams: 100_000
+  supportedPragma: "^0.1.0"
 } as const;
 
 export interface SilverVersionCheck {
@@ -36,79 +33,6 @@ export interface SilverSourceDiagnostic {
   code: string;
   message: string;
   hint?: string;
-}
-
-export interface CovenantOutputBinding {
-  outputIndex: number;
-  entrypoint: string;
-  line: number;
-  lockingBinding: string;
-  valueBinding: string;
-  isRecursive: boolean;
-  resultingScriptPreview: string;
-}
-
-export interface ResultingOutputScript {
-  outputIndex: number;
-  role: string;
-  covenantId: string;
-  lockingScriptType: "P2PK" | "Covenant-v1-Continuation" | "P2SH";
-  resultingScriptHex: string;
-  valueConstraint: string;
-}
-
-export interface StateTransitionPreview {
-  entrypoint: string;
-  mode: "recursive-1-1" | "fanout-1-n" | "settlement";
-  summary: string;
-  beforeScriptHex: string;
-  afterOutputs: ResultingOutputScript[];
-}
-
-export interface TxV1Inspection {
-  txVersion: 1;
-  covenantId: string;
-  scriptByteSize: number;
-  estimatedOpcodes: number;
-  sigOpCount: number;
-  computeBudgetUsed: number;
-  computeBudgetLimit: number;
-  computeBudgetPercent: number;
-  estimatedMassGrams: number;
-  outputBindings: CovenantOutputBinding[];
-  stateTransitions: StateTransitionPreview[];
-}
-
-export interface SilverDebugStep {
-  index: number;
-  line: number;
-  code: string;
-  kind: "header" | "local" | "require-sig" | "require-output-lock" | "require-output-value" | "require-time" | "require-general";
-  status: "pass" | "fail";
-  computeCost: number;
-  cumulativeCompute: number;
-  stackTop: string[];
-  variables: Record<string, string>;
-  explanation: string;
-}
-
-/** Deterministic 64-char hex digest (FNV/Sip-inspired) for reproducible Covenant IDs in the UI when node hash isn't supplied. */
-function deterministicHexHash(input: string, prefix = ""): string {
-  let h1 = 0x811c9dc5;
-  let h2 = 0x01000193;
-  let h3 = 0xcbf29ce4;
-  let h4 = 0x84222325;
-  for (let i = 0; i < input.length; i++) {
-    const c = input.charCodeAt(i);
-    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
-    h2 = Math.imul(h2 ^ ((c << 3) | (c >>> 5)), 0x85ebca6b) >>> 0;
-    h3 = Math.imul(h3 ^ ((c << 7) ^ i), 0xc2b2ae35) >>> 0;
-    h4 = Math.imul(h4 ^ (c + i * 31), 0x27d4eb2f) >>> 0;
-  }
-  const base = [h1, h2, h3, h4, h1 ^ h3, h2 ^ h4, (h1 + h4) >>> 0, (h2 + h3) >>> 0]
-    .map((n) => n.toString(16).padStart(8, "0"))
-    .join("");
-  return (prefix + base).slice(0, 64);
 }
 
 /**
@@ -232,8 +156,10 @@ export function parseSilverDiagnostics(
 
       // Check for statements missing semicolon inside functions
       if (
-        /^(require\s*\(|int\s+\w+\s*=|bytes\s+\w+\s*=|pubkey\s+\w+\s*=|bool\s+\w+\s*=)/.test(clean) &&
-        !clean.endsWith(";")
+        /^(require\s*\(|int\s+\w+\s*=|byte\[\d*\]\s+\w+\s*=|bytes\s+\w+\s*=|pubkey\s+\w+\s*=|bool\s+\w+\s*=)/.test(clean) &&
+        !clean.endsWith(";") &&
+        // A statement that goes on to the next line (open parenthesis) is not missing its ';'.
+        (clean.match(/\(/g) ?? []).length === (clean.match(/\)/g) ?? []).length
       ) {
         const alreadyReported = diagnostics.some((d) => d.line === i + 1 && d.severity === "error");
         if (!alreadyReported) {
@@ -284,342 +210,76 @@ export function parseSilverDiagnostics(
   return diagnostics;
 }
 
-/**
- * Requirement 1: Inspects TX v1 metrics (`compute_budget`, `covenant_id`, output covenant bindings,
- * and resulting locking scripts after each state transition).
- */
-export function inspectTxV1AndCovenant(source: string, compileResult?: SilverCompileSummary | null): TxV1Inspection {
-  const lines = source ? source.split(/\r?\n/) : [];
-  const rawScriptHex =
-    compileResult?.scriptPublicKey ||
-    compileResult?.bytecode ||
-    (source.trim() ? `aa20${deterministicHexHash(source)}87` : "");
+export interface SilverOutputRef {
+  entrypoint: string;
+  line: number;
+  outputIndex: number;
+  /** What the source constrains on that output: its script (`scriptPubKey`) or its `value`. */
+  field: "scriptPubKey" | "value";
+  /** The constraint as written in the source, e.g. `>= splitAmount`. */
+  constraint: string;
+}
 
-  const covenantId = deterministicHexHash(rawScriptHex || source || "empty-covenant");
-  const scriptByteSize = rawScriptHex ? Math.max(1, Math.floor(rawScriptHex.replace(/^0x/, "").length / 2)) : Math.max(35, source.length);
-
-  // Count sigOps and output bindings in source
-  const sigMatches = source.match(/\bcheckSig\s*\(|\bcheckMultiSig\s*\(/g) ?? [];
-  const sigOpCount = Math.max(1, sigMatches.length);
-  const requireMatches = source.match(/\brequire\s*\(/g) ?? [];
-  const outputRefMatches = source.match(/\btx\.outputs\s*\[\s*\d+\s*\]/g) ?? [];
-
-  const estimatedOpcodes = Math.max(12, requireMatches.length * 8 + outputRefMatches.length * 6 + sigOpCount * 4 + Math.floor(scriptByteSize / 4));
-  const computeBudgetUsed = Math.min(
-    SILVER_TOOLCHAIN.computeBudgetLimit,
-    estimatedOpcodes * 18 + sigOpCount * 450 + outputRefMatches.length * 120
-  );
-  const computeBudgetPercent = Math.max(1, Math.min(100, Math.round((computeBudgetUsed / SILVER_TOOLCHAIN.computeBudgetLimit) * 1000) / 10));
-  const estimatedMassGrams = 1100 + scriptByteSize * 3 + sigOpCount * 100 + outputRefMatches.length * 240;
-
-  // Extract per-output bindings (`tx.outputs[k]`) with line numbers
-  const outputBindingsMap = new Map<string, CovenantOutputBinding>();
-  let currentEntrypoint = "spend";
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const epMatch = /entrypoint\s+function\s+([A-Za-z0-9_]+)/.exec(line);
-    if (epMatch) {
-      currentEntrypoint = epMatch[1];
-    }
-
-    const lockMatch = /tx\.outputs\[\s*(\d+)\s*\]\.lockingBytecode\s*==\s*(.+?)(?:\)\s*;|$)/.exec(line);
-    if (lockMatch) {
-      const idx = Number(lockMatch[1]);
-      const expr = lockMatch[2].trim();
-      const key = `${currentEntrypoint}:${idx}`;
-      const existing = outputBindingsMap.get(key);
-      const isRecursive = /tx\.inputs|this\.activeBytecode|same|covenant|vaultLock/i.test(expr);
-      const p2pkMatch = /LockingBytecodeP2PK\s*\(\s*([^)]+)\s*\)/.exec(expr);
-      const lockingLabel = isRecursive
-        ? "Recursive Covenant Continuation (same scriptPublicKey)"
-        : p2pkMatch
-          ? `P2PK(${p2pkMatch[1].trim()})`
-          : expr;
-      const resultingScriptPreview = isRecursive
-        ? rawScriptHex || `aa20${covenantId}87`
-        : `20${deterministicHexHash(lockingLabel).slice(0, 64)}ac`;
-
-      outputBindingsMap.set(key, {
-        outputIndex: idx,
-        entrypoint: currentEntrypoint,
-        line: existing?.line ?? i + 1,
-        lockingBinding: lockingLabel,
-        valueBinding: existing?.valueBinding ?? "Unconstrained value",
-        isRecursive,
-        resultingScriptPreview
-      });
-    }
-
-    const valMatch = /tx\.outputs\[\s*(\d+)\s*\]\.value\s*(>=|==|>)\s*([^;)]+)/.exec(line);
-    if (valMatch) {
-      const idx = Number(valMatch[1]);
-      const op = valMatch[2];
-      const rhs = valMatch[3].trim();
-      const key = `${currentEntrypoint}:${idx}`;
-      const existing = outputBindingsMap.get(key);
-      const isRecursive = existing?.isRecursive ?? /newBalance|remaining|state/i.test(rhs);
-      outputBindingsMap.set(key, {
-        outputIndex: idx,
-        entrypoint: currentEntrypoint,
-        line: existing?.line ?? i + 1,
-        lockingBinding: existing?.lockingBinding ?? (isRecursive ? "Recursive Covenant Continuation" : "Unbound scriptPublicKey"),
-        valueBinding: `${op} ${rhs}`,
-        isRecursive,
-        resultingScriptPreview:
-          existing?.resultingScriptPreview ??
-          (isRecursive ? rawScriptHex || `aa20${covenantId}87` : `20${deterministicHexHash(`${key}:${rhs}`).slice(0, 64)}ac`)
-      });
-    }
-  }
-
-  const outputBindings = [...outputBindingsMap.values()].sort((a, b) =>
-    a.entrypoint === b.entrypoint ? a.outputIndex - b.outputIndex : a.entrypoint.localeCompare(b.entrypoint)
-  );
-
-  // Build state transition previews per entrypoint
-  const entrypoints = new Set<string>();
-  for (const b of outputBindings) entrypoints.add(b.entrypoint);
-  if (entrypoints.size === 0) {
-    const epRegex = /entrypoint\s+function\s+([A-Za-z0-9_]+)/g;
-    let m: RegExpExecArray | null;
-    while ((m = epRegex.exec(source)) !== null) entrypoints.add(m[1]);
-  }
-  if (entrypoints.size === 0) entrypoints.add("spend");
-
-  const stateTransitions: StateTransitionPreview[] = [];
-  for (const ep of entrypoints) {
-    const bindings = outputBindings.filter((b) => b.entrypoint === ep);
-    const hasRecursive = bindings.some((b) => b.isRecursive);
-    const mode: StateTransitionPreview["mode"] = hasRecursive
-      ? "recursive-1-1"
-      : bindings.length > 1
-        ? "fanout-1-n"
-        : "settlement";
-
-    const afterOutputs: ResultingOutputScript[] =
-      bindings.length > 0
-        ? bindings.map((b) => ({
-            outputIndex: b.outputIndex,
-            role: b.isRecursive ? `State Continuation (tx.outputs[${b.outputIndex}])` : `Bound Payout (tx.outputs[${b.outputIndex}])`,
-            covenantId: b.isRecursive ? covenantId : deterministicHexHash(b.resultingScriptPreview),
-            lockingScriptType: b.isRecursive ? "Covenant-v1-Continuation" : "P2PK",
-            resultingScriptHex: b.resultingScriptPreview,
-            valueConstraint: b.valueBinding
-          }))
-        : [
-            {
-              outputIndex: 0,
-              role: "Standard Spend Output (tx.outputs[0])",
-              covenantId: deterministicHexHash(`${covenantId}:${ep}:out0`),
-              lockingScriptType: "P2PK",
-              resultingScriptHex: `20${deterministicHexHash(`${ep}:p2pk`).slice(0, 64)}ac`,
-              valueConstraint: "Unconstrained (Standard P2PK spend)"
-            }
-          ];
-
-    stateTransitions.push({
-      entrypoint: ep,
-      mode,
-      summary:
-        mode === "recursive-1-1"
-          ? `1:1 State Transition — Preserves Covenant ID ${covenantId.slice(0, 12)}… in tx.outputs[0]`
-          : mode === "fanout-1-n"
-            ? `1:${bindings.length} Multi-Output Covenant — Enforces ${bindings.length} deterministic output scripts`
-            : `Terminal Settlement — Releases UTXO into bound recipient script`,
-      beforeScriptHex: rawScriptHex || `aa20${covenantId}87`,
-      afterOutputs
-    });
-  }
-
-  return {
-    txVersion: 1,
-    covenantId,
-    scriptByteSize,
-    estimatedOpcodes,
-    sigOpCount,
-    computeBudgetUsed,
-    computeBudgetLimit: SILVER_TOOLCHAIN.computeBudgetLimit,
-    computeBudgetPercent,
-    estimatedMassGrams,
-    outputBindings,
-    stateTransitions
-  };
+export interface SilverSourceSummary {
+  entrypoints: Array<{ name: string; line: number }>;
+  requireCount: number;
+  sigChecks: number;
+  outputRefs: SilverOutputRef[];
+  /** Size in bytes of the locking script silverc produced; null until the contract is compiled. */
+  compiledScriptBytes: number | null;
+  compiledScriptHex: string | null;
 }
 
 /**
- * Requirement 3: Builds a step-by-step Source-Level Debugger (`cli-debugger`) trace for any `.sil` entrypoint
- * so developers can step through `require(...)` assertions, inspect local variables, VM stack & compute budget
- * line by line, and click any step to highlight the exact line in the Monaco editor.
+ * What the `.sil` source itself says: entrypoints, `require(...)` count, signature checks and which outputs each
+ * entrypoint constrains. Read from the text, not executed. The script size comes only from a real silverc result.
  */
-export function buildSilverDebugTrace(
-  source: string,
-  entrypointName?: string,
-  mockContext?: {
-    inputSompi?: number;
-    outputSompi?: number;
-    txTime?: number;
-    signatureValid?: boolean;
-  }
-): { entrypoints: string[]; selectedEntrypoint: string; steps: SilverDebugStep[] } {
+export function summarizeSilverSource(source: string, compileResult?: SilverCompileSummary | null): SilverSourceSummary {
   const lines = source ? source.split(/\r?\n/) : [];
-  const entrypoints: string[] = [];
-  const epLocations: Array<{ name: string; startLine: number; params: string }> = [];
-
+  const entrypoints: SilverSourceSummary["entrypoints"] = [];
+  const outputRefs: SilverOutputRef[] = [];
+  let current = "";
+  let requireCount = 0;
+  let sigChecks = 0;
   for (let i = 0; i < lines.length; i++) {
-    const m = /entrypoint\s+function\s+([A-Za-z0-9_]+)\s*\(([^)]*)\)/.exec(lines[i]);
-    if (m) {
-      entrypoints.push(m[1]);
-      epLocations.push({ name: m[1], startLine: i + 1, params: m[2].trim() });
+    const code = stripLineCommentKeepCols(lines[i]);
+    const ep = /\bentrypoint\s+function\s+([A-Za-z_]\w*)|\bentry\s+([A-Za-z_]\w*)\s*\(/.exec(code);
+    if (ep) {
+      current = ep[1] ?? ep[2];
+      entrypoints.push({ name: current, line: i + 1 });
+    }
+    requireCount += (code.match(/\brequire\s*\(/g) ?? []).length;
+    sigChecks += (code.match(/\bcheck(?:Multi)?Sig\s*\(/g) ?? []).length;
+    const re = /\btx\.outputs\s*\[\s*(\d+)\s*\]\.(scriptPubKey|lockingBytecode|value)\s*(==|>=|<=|>|<|!=)\s*([^;]+?)\s*(?:;|$)/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(code)) !== null) {
+      // `require(a == b);` captures `b)`: drop the parentheses that close the require, keep balanced ones.
+      let rhs = m[4].trim();
+      while (rhs.endsWith(")") && (rhs.match(/\)/g) ?? []).length > (rhs.match(/\(/g) ?? []).length) rhs = rhs.slice(0, -1).trimEnd();
+      outputRefs.push({
+        entrypoint: current || "(contract)",
+        line: i + 1,
+        outputIndex: Number(m[1]),
+        field: m[2] === "value" ? "value" : "scriptPubKey",
+        constraint: `${m[3]} ${rhs}`
+      });
     }
   }
-
-  const selectedEntrypoint = entrypointName && entrypoints.includes(entrypointName) ? entrypointName : (entrypoints[0] ?? "spend");
-  const epInfo = epLocations.find((e) => e.name === selectedEntrypoint) ?? { name: selectedEntrypoint, startLine: 1, params: "" };
-
-  const inputSompi = mockContext?.inputSompi ?? 10_000_000_000; // 100 KAS
-  const outputSompi = mockContext?.outputSompi ?? 10_000_000_000;
-  const txTime = mockContext?.txTime ?? Math.floor(Date.now() / 1000);
-  const sigValid = mockContext?.signatureValid ?? true;
-
-  // Extract constructor state parameters
-  const vars: Record<string, string> = {
-    "tx.version": "1",
-    "tx.time": String(txTime),
-    "tx.inputs[0].value": `${inputSompi} sompi`
+  const hex = (compileResult?.ok ? (compileResult.scriptPublicKey ?? compileResult.bytecode ?? "") : "").replace(/^0x/, "");
+  const validHex = /^[0-9a-fA-F]+$/.test(hex) && hex.length % 2 === 0 ? hex : "";
+  return {
+    entrypoints,
+    requireCount,
+    sigChecks,
+    outputRefs,
+    compiledScriptBytes: validHex ? validHex.length / 2 : null,
+    compiledScriptHex: validHex || null
   };
+}
 
-  const contractMatch = /contract\s+[A-Za-z0-9_]+\s*\(([^)]*)\)/.exec(source);
-  if (contractMatch && contractMatch[1].trim()) {
-    for (const part of contractMatch[1].split(",")) {
-      const tokens = part.trim().split(/\s+/);
-      if (tokens.length >= 2) {
-        const type = tokens[0];
-        const name = tokens[1];
-        vars[name] = type === "int" ? "100000000" : type === "pubkey" ? "0x02a1...f9c4 (Alice)" : "0x...";
-      }
-    }
-  }
-
-  const steps: SilverDebugStep[] = [];
-  let cumulativeCompute = 120;
-
-  // Step 0: Entrypoint invocation
-  steps.push({
-    index: 0,
-    line: epInfo.startLine,
-    code: lines[epInfo.startLine - 1]?.trim() || `entrypoint function ${selectedEntrypoint}(${epInfo.params})`,
-    kind: "header",
-    status: "pass",
-    computeCost: 120,
-    cumulativeCompute,
-    stackTop: [`fn:${selectedEntrypoint}`, "tx.v1"],
-    variables: { ...vars },
-    explanation: `Enter Covenant v1 entrypoint '${selectedEntrypoint}'. Loaded constructor parameters & TX v1 sighash context.`
-  });
-
-  // Walk lines inside the entrypoint block
-  let depth = 0;
-  let started = false;
-  for (let i = epInfo.startLine - 1; i < lines.length; i++) {
-    const rawLine = lines[i];
-    const clean = rawLine.replace(/\/\/.*$/, "").trim();
-    if (!clean) continue;
-
-    for (const ch of clean) {
-      if (ch === "{") {
-        depth++;
-        started = true;
-      } else if (ch === "}") {
-        depth--;
-      }
-    }
-
-    if (i === epInfo.startLine - 1) continue;
-    if (started && depth <= 0) break;
-
-    // Local variable declaration
-    const localMatch = /^(int|bytes|pubkey|bool)\s+([A-Za-z0-9_]+)\s*=\s*([^;]+);?/.exec(clean);
-    if (localMatch) {
-      const [, varType, varName, expr] = localMatch;
-      const val = varType === "int" ? String(outputSompi) : expr.slice(0, 32);
-      vars[varName] = `${val} (${expr})`;
-      const cost = 65;
-      cumulativeCompute += cost;
-      steps.push({
-        index: steps.length,
-        line: i + 1,
-        code: clean,
-        kind: "local",
-        status: "pass",
-        computeCost: cost,
-        cumulativeCompute,
-        stackTop: [`${varName} = ${val}`],
-        variables: { ...vars },
-        explanation: `Computed local ${varType} '${varName}' = ${val} from expression '${expr}'.`
-      });
-      continue;
-    }
-
-    // require(...) statements
-    const reqMatch = /^require\s*\((.+)\)\s*;?$/.exec(clean);
-    if (reqMatch) {
-      const cond = reqMatch[1].trim();
-      let kind: SilverDebugStep["kind"] = "require-general";
-      let cost = 95;
-      let pass = true;
-      let stackTop: string[] = ["true (0x01)"];
-      let explanation = `Assertion 'require(${cond})' evaluated to TRUE.`;
-
-      if (/checkSig|checkMultiSig/.test(cond)) {
-        kind = "require-sig";
-        cost = 450;
-        pass = sigValid;
-        stackTop = [sigValid ? "sig_ok (0x01)" : "sig_fail (0x00)", "schnorr_verify"];
-        explanation = sigValid
-          ? `Schnorr signature verification passed (${cond}) — consumed 1 SigOp (450 compute units).`
-          : `Schnorr signature verification FAILED (${cond}) — invalid signature for pubkey.`;
-      } else if (/lockingBytecode/.test(cond)) {
-        kind = "require-output-lock";
-        cost = 180;
-        const outIdx = /tx\.outputs\[\s*(\d+)\s*\]/.exec(cond)?.[1] ?? "0";
-        vars[`tx.outputs[${outIdx}].lockingBytecode`] = "0x20...ac (bound)";
-        stackTop = ["bytecode_eq (0x01)", `tx.outputs[${outIdx}].lockingBytecode`];
-        explanation = `Verified TX v1 output #${outIdx} lockingBytecode binding (${cond}).`;
-      } else if (/\.value/.test(cond)) {
-        kind = "require-output-value";
-        cost = 140;
-        const outIdx = /tx\.outputs\[\s*(\d+)\s*\]/.exec(cond)?.[1] ?? "0";
-        pass = outputSompi >= 1000;
-        vars[`tx.outputs[${outIdx}].value`] = `${outputSompi} sompi`;
-        stackTop = [pass ? "value_ok (0x01)" : "value_underflow (0x00)", `${outputSompi} sompi`];
-        explanation = pass
-          ? `Verified TX v1 output #${outIdx} value constraint (${cond}) with ${outputSompi} sompi.`
-          : `Output #${outIdx} value (${outputSompi} sompi) failed constraint (${cond}).`;
-      } else if (/tx\.time/.test(cond)) {
-        kind = "require-time";
-        cost = 110;
-        stackTop = ["timelock_ok (0x01)", `tx.time=${txTime}`];
-        explanation = `Verified DAA / timestamp lock constraint (${cond}) at tx.time = ${txTime}.`;
-      }
-
-      cumulativeCompute += cost;
-      steps.push({
-        index: steps.length,
-        line: i + 1,
-        code: clean,
-        kind,
-        status: pass ? "pass" : "fail",
-        computeCost: cost,
-        cumulativeCompute,
-        stackTop,
-        variables: { ...vars },
-        explanation
-      });
-    }
-  }
-
-  return { entrypoints, selectedEntrypoint, steps };
+/** True when a silverc / CLI error says the pinned SilverScript compiler is not installed yet. */
+export function isSilvercMissing(text: string | undefined | null): boolean {
+  return !!text && (/toolchain install silverc/i.test(text) || /\bsilverc\b[^\n]*\bnot installed\b/i.test(text) || /SILVERC_(?:NOT_FOUND|MISSING|TOOLCHAIN_NOT_INSTALLED)/.test(text));
 }
 
 /** Extracts plain human/compiler error text from `silverc` results without stringifying timestamps or hashes. */

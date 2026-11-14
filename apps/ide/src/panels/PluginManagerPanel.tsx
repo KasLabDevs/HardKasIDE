@@ -22,6 +22,25 @@ export function PluginManagerPanel() {
   const [tab, setTab] = useState<Tab>("installed");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Open VSX and npm / URL plugins run code nobody reviewed: the server keeps them off until the user turns them on.
+  const [thirdParty, setThirdParty] = useState<boolean | null>(null);
+  useEffect(() => {
+    api.settings.get().then((s) => setThirdParty(s.thirdPartyExtensions)).catch(() => setThirdParty(false));
+  }, []);
+  const setThirdPartyOn = async (on: boolean) => {
+    if (
+      on &&
+      !(await confirmDialog(
+        "Turn on third-party extensions?\n\nOpen VSX extensions and plugins from npm or a URL are code that the HardKas team has not reviewed. Plugins run in a sandbox and ask before they use the IDE, but install only what you trust.\n\nThe IDE reloads to load them.",
+        { title: "Third-party extensions", confirmLabel: "Turn on" }
+      ))
+    )
+      return;
+    const s = await api.settings.set({ thirdPartyExtensions: on });
+    setThirdParty(s.thirdPartyExtensions);
+    location.reload();
+  };
+  const tabs: Tab[] = thirdParty ? ["installed", "vscode", "install"] : ["installed", "install"];
 
   const plugins = engine.list().sort((a, b) => (a.profile.order ?? 100) - (b.profile.order ?? 100));
   const builtins = plugins.filter((p) => p.profile.kind !== "external");
@@ -43,7 +62,7 @@ export function PluginManagerPanel() {
   return (
     <div className="text-xs">
       <div role="tablist" aria-label="Extensions tabs" className="flex border-b border-border text-[11px] uppercase tracking-wider">
-        {(["installed", "vscode", "install"] as Tab[]).map((t) => (
+        {tabs.map((t) => (
           <button
             key={t}
             type="button"
@@ -59,6 +78,27 @@ export function PluginManagerPanel() {
 
       {tab === "installed" && (
         <div className="p-2 space-y-3">
+          {thirdParty !== null && (
+            <div className="rounded border border-border bg-bg-elev p-2 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-fg">Third-party extensions</span>
+                <button
+                  type="button"
+                  onClick={() => void setThirdPartyOn(!thirdParty)}
+                  aria-pressed={thirdParty}
+                  aria-label={thirdParty ? "Turn off third-party extensions" : "Turn on third-party extensions"}
+                  className={clsx("cursor-pointer", thirdParty ? "text-accent" : "text-fg-muted hover:text-fg")}
+                >
+                  {thirdParty ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                </button>
+              </div>
+              <div className="text-[10px] text-fg-muted">
+                {thirdParty
+                  ? "On: Open VSX extensions and plugins from npm or a URL can be installed and run."
+                  : "Off: Open VSX extensions and plugins from npm or a URL are not installed or run. The built-in views and the bundled example plugins work as usual."}
+              </div>
+            </div>
+          )}
           <div>
             <div className="label tabular-nums">External · {externals.length}</div>
             {externals.length === 0 && <div className="text-fg-muted px-1">None yet. Install one from the Install tab (try the bundled example).</div>}
@@ -75,8 +115,8 @@ export function PluginManagerPanel() {
         </div>
       )}
 
-      {tab === "vscode" && <VsxTab />}
-      {tab === "install" && <InstallForms manager={manager} busy={busy} run={run} />}
+      {tab === "vscode" && thirdParty && <VsxTab />}
+      {tab === "install" && <InstallForms manager={manager} busy={busy} run={run} thirdParty={thirdParty === true} />}
 
       {msg && <div role="status" aria-live="polite" className="px-3 py-2 text-[11px] text-accent border-t border-border">{msg}</div>}
     </div>
@@ -155,7 +195,7 @@ function PluginRow({ plugin, manifest, onToggle, onUninstall }: { plugin: Plugin
   );
 }
 
-function InstallForms({ manager, busy, run }: { manager: PluginManagerPlugin; busy: boolean; run: (label: string, fn: () => Promise<unknown>) => Promise<void> }) {
+function InstallForms({ manager, busy, run, thirdParty }: { manager: PluginManagerPlugin; busy: boolean; run: (label: string, fn: () => Promise<unknown>) => Promise<void>; thirdParty: boolean }) {
   const [url, setUrl] = useState("");
   const [pkg, setPkg] = useState("");
   const [examples, setExamples] = useState<Array<{ name: string; manifestUrl: string }>>([]);
@@ -179,6 +219,9 @@ function InstallForms({ manager, busy, run }: { manager: PluginManagerPlugin; bu
         </div>
       )}
 
+      {!thirdParty && <div className="text-[10px] text-fg-muted">Installing from a URL, npm or by hand needs third-party extensions turned on (Installed tab).</div>}
+      {thirdParty && (
+      <>
       <div>
         <div className="label flex items-center gap-1">
           <Globe size={11} /> From a manifest URL
@@ -221,6 +264,8 @@ function InstallForms({ manager, busy, run }: { manager: PluginManagerPlugin; bu
           </button>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

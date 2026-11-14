@@ -132,21 +132,92 @@ interface RemoteNpmCache {
 let releaseCache: RemoteReleaseCache | null = null;
 let npmCache: RemoteNpmCache | null = null;
 
-function pickPlatformAsset(assets: Array<{ name?: string; browser_download_url?: string }>): string | null {
-  const names = assets.filter((a) => typeof a.name === "string" && typeof a.browser_download_url === "string");
-  const findByExt = (pred: (lower: string) => boolean) =>
-    names.find((a) => pred(a.name!.toLowerCase()))?.browser_download_url ?? null;
-  if (process.platform === "win32") {
+interface ReleaseAsset {
+  name?: string;
+  browser_download_url?: string;
+}
+
+interface GithubRelease {
+  tag_name?: string;
+  name?: string;
+  html_url?: string;
+  published_at?: string;
+  body?: string;
+  draft?: boolean;
+  prerelease?: boolean;
+  assets?: ReleaseAsset[];
+}
+
+/**
+ * Keeps a link only when it points into this repository's releases on GitHub (`https://github.com/<owner>/<repo>/releases/…`),
+ * after URL normalisation (so `..` segments, other hosts, credentials or ports do not pass). Anything else is dropped.
+ */
+export function releaseLink(raw: unknown, repoSlug: string = REPO_SLUG): string | null {
+  if (typeof raw !== "string") return null;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.host !== "github.com" || url.username || url.password) return null;
+  return url.href.startsWith(`https://github.com/${repoSlug}/releases/`) ? url.href : null;
+}
+
+/** The architecture words Tauri, Debian and AppImage put in installer names. */
+const ARCH_WORDS: Record<string, string[]> = {
+  x64: ["x64", "x86_64", "amd64"],
+  arm64: ["arm64", "aarch64"]
+};
+
+/**
+ * The installer for this platform and architecture, or null. A name must say its architecture (macOS also accepts a
+ * universal build): an Intel Mac never gets an aarch64.dmg, Windows on Arm never gets an x64 setup, and there is no
+ * "any .exe" fallback. The one name without an architecture, HardKas-IDE-setup.exe (the stable name the website
+ * links to), is a copy of the x64 NSIS installer that build-desktop.yml makes on its x64 Windows runner.
+ */
+export function pickPlatformAsset(
+  assets: ReleaseAsset[],
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch
+): string | null {
+  const archWords = ARCH_WORDS[arch];
+  if (!archWords) return null;
+  const named = assets.filter(
+    (a): a is { name: string; browser_download_url: string } =>
+      typeof a.name === "string" && typeof a.browser_download_url === "string"
+  );
+  const words = (name: string) => name.toLowerCase().split(/[\s._-]+/);
+  const forArch = (name: string, extra: string[] = []) => words(name).some((w) => archWords.includes(w) || extra.includes(w));
+  const find = (pred: (lower: string, name: string) => boolean) =>
+    named.find((a) => pred(a.name.toLowerCase(), a.name))?.browser_download_url ?? null;
+  if (platform === "win32") {
     return (
-      findByExt((n) => n === "hardkas-ide-setup.exe") ??
-      findByExt((n) => n.endsWith("-setup.exe") || n.endsWith(".exe")) ??
-      findByExt((n) => n.endsWith(".msi"))
+      (arch === "x64" ? find((n) => n === "hardkas-ide-setup.exe") : null) ??
+      find((n, name) => n.endsWith("-setup.exe") && forArch(name)) ??
+      find((n, name) => n.endsWith(".msi") && forArch(name))
     );
   }
-  if (process.platform === "darwin") {
-    return findByExt((n) => n.endsWith(".dmg"));
+  if (platform === "darwin") {
+    return find((n, name) => n.endsWith(".dmg") && forArch(name)) ?? find((n, name) => n.endsWith(".dmg") && forArch(name, ["universal"]));
   }
-  return findByExt((n) => n.endsWith(".appimage")) ?? findByExt((n) => n.endsWith(".deb"));
+  if (platform === "linux") {
+    return find((n, name) => n.endsWith(".appimage") && forArch(name)) ?? find((n, name) => n.endsWith(".deb") && forArch(name));
+  }
+  return null;
+}
+
+/** The newest stable release: drafts and prereleases are ignored, whether the URL returns one release or a list. */
+function newestStableRelease(json: unknown): GithubRelease | null {
+  const list = (Array.isArray(json) ? json : [json]).filter(
+    (r): r is GithubRelease => typeof r === "object" && r !== null && !Array.isArray(r)
+  );
+  let best: GithubRelease | null = null;
+  for (const r of list) {
+    if (r.draft === true || r.prerelease === true || !parseSemver(r.tag_name)) continue;
+    if (!best || compareSemver(r.tag_name, best.tag_name) > 0) best = r;
+  }
+  return best;
 }
 
 async function fetchIdeRelease(currentVersion: string, force: boolean): Promise<RemoteReleaseCache> {
@@ -178,22 +249,33 @@ async function fetchIdeRelease(currentVersion: string, force: boolean): Promise<
       releaseCache = entry;
       return entry;
     }
-    const json = (await res.json()) as {
-      tag_name?: string;
-      name?: string;
-      html_url?: string;
-      published_at?: string;
-      body?: string;
-      assets?: Array<{ name?: string; browser_download_url?: string }>;
-    };
-    const parsedTag = parseSemver(json.tag_name) ? json.tag_name!.trim().replace(/^v/i, "") : null;
+    const json = newestStableRelease(await res.json());
+    if (!json) {
+      const entry: RemoteReleaseCache = {
+        at: Date.now(),
+        url,
+        latestVersion: null,
+        releaseName: null,
+        releaseUrl: RELEASES_PAGE,
+        downloadUrl: null,
+        publishedAt: null,
+        notes: null,
+        error: "No stable release published yet"
+      };
+      releaseCache = entry;
+      return entry;
+    }
+    const parsedTag = json.tag_name!.trim().replace(/^v/i, "");
+    // Only links into this repository's releases are passed on: the UI opens them, and the installer is what users run.
+    const assets = (json.assets ?? []).filter((a) => releaseLink(a.browser_download_url) !== null);
+    const download = pickPlatformAsset(assets);
     const entry: RemoteReleaseCache = {
       at: Date.now(),
       url,
       latestVersion: parsedTag,
       releaseName: json.name ?? json.tag_name ?? null,
-      releaseUrl: json.html_url ?? RELEASES_PAGE,
-      downloadUrl: pickPlatformAsset(json.assets ?? []),
+      releaseUrl: releaseLink(json.html_url) ?? RELEASES_PAGE,
+      downloadUrl: download ? releaseLink(download) : null,
       publishedAt: json.published_at ?? null,
       notes: typeof json.body === "string" && json.body.trim() ? json.body.trim().slice(0, 1500) : null,
       error: null

@@ -2,7 +2,7 @@ import { Clock, FolderOpen, FolderPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, IdeApiError, type CliInfo, type RecentEntry, type WorkspaceInfo } from "@/api/client";
 import { HardKasMark, HardKasWordmark } from "@/shell/Logo";
-import { NewProjectDialog } from "./NewProjectDialog";
+import { joinPath, NewProjectDialog } from "./NewProjectDialog";
 
 interface Props {
   onOpened: (workspace: WorkspaceInfo) => void;
@@ -127,7 +127,7 @@ export function HomeScreen({ onOpened }: Props) {
         </div>
       </div>
 
-      {showNew && <NewProjectDialog defaultParent={home ? `${home}\\hardkas-projects` : ""} onClose={() => setShowNew(false)} onCreated={(ws) => onOpened(ws)} />}
+      {showNew && <NewProjectDialog defaultParent={home ? joinPath(home, "hardkas-projects") : ""} onClose={() => setShowNew(false)} onCreated={(ws) => onOpened(ws)} />}
     </div>
   );
 }

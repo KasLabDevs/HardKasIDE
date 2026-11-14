@@ -5,8 +5,9 @@ import path from "node:path";
 import * as wsfs from "./fs.js";
 import { startJob, waitForJob } from "./runner.js";
 import { runAcpTurn } from "./acpAgent.js";
-import { getRoot } from "./workspace.js";
-import { deleteApiKey, isKeyProvider, KEY_ENV, resolveApiKey, saveApiKey, type KeyProvider, type KeySource } from "./secrets.js";
+import { getRoot, requireTrusted } from "./workspace.js";
+import { deleteApiKey, hasStoredKey, isKeyProvider, KEY_ENV, originOf, resolveApiKey, saveApiKey, type KeyProvider, type KeySource } from "./secrets.js";
+import { isAgentForbidden } from "./secretPaths.js";
 
 /**
  * Assistant backend: provider-agnostic chat, grounded in the official Kaspa docs.
@@ -40,6 +41,8 @@ export interface AssistantConfig {
   apiKey: string;
   /** Where apiKey came from; null when there is none. Not written to the file either. */
   keySource: KeySource | null;
+  /** A saved key exists but belongs to another host than baseUrl, so it is not sent: the host it belongs to. */
+  keyBoundTo?: string | null;
   docs: DocsMode;
   maxTokens: number;
   /**
@@ -68,14 +71,16 @@ async function writeConfigFile(data: object): Promise<void> {
 }
 
 /**
- * Earlier versions kept the API key in assistant.json. Move it to the credential store and drop it from the file.
+ * Earlier versions kept the API key in assistant.json. Move it to the credential store (bound to the URL saved with
+ * it) and drop it from the file. A key already in the store wins: an old file never overwrites it (another IDE
+ * instance or a test home with an old assistant.json must not replace the user's current key).
  * Returns false when no store is available: the file is then left as it is, so the key is not lost.
  */
 async function moveKeyOutOfFile(raw: Partial<AssistantConfig>): Promise<boolean> {
   const key = String(raw.apiKey).trim();
   const provider: KeyProvider = isKeyProvider(raw.provider) ? raw.provider : key.startsWith("sk-ant-") ? "anthropic" : "openai";
   try {
-    await saveApiKey(provider, key);
+    if (!(await hasStoredKey(provider))) await saveApiKey(provider, key, isKeyProvider(raw.provider) ? raw.baseUrl : undefined);
   } catch {
     return false;
   }
@@ -93,12 +98,13 @@ export async function loadConfig(): Promise<AssistantConfig> {
   }
   let legacyKey = "";
   if (typeof raw.apiKey === "string" && raw.apiKey.trim() && !(await moveKeyOutOfFile(raw))) legacyKey = raw.apiKey.trim();
-  const { apiKey: _key, keySource: _source, ...persisted } = raw;
-  const base: AssistantConfig = { ...defaultConfig, ...persisted, apiKey: "", keySource: null };
-  const resolved = await resolveApiKey(base.provider);
+  const { apiKey: _key, keySource: _source, keyBoundTo: _bound, ...persisted } = raw;
+  const base: AssistantConfig = { ...defaultConfig, ...persisted, apiKey: "", keySource: null, keyBoundTo: null };
+  const resolved = await resolveApiKey(base.provider, base.baseUrl);
   if (resolved.key) return { ...base, apiKey: resolved.key, keySource: resolved.source };
-  if (legacyKey && isKeyProvider(base.provider)) return { ...base, apiKey: legacyKey, keySource: "file" };
-  return base;
+  // A key that could only stay in the file is used only for the URL it was saved with.
+  if (legacyKey && isKeyProvider(base.provider) && originOf(raw.baseUrl) === originOf(base.baseUrl)) return { ...base, apiKey: legacyKey, keySource: "file" };
+  return { ...base, keyBoundTo: resolved.boundTo };
 }
 
 /** What the browser may see: everything except the key. */
@@ -125,7 +131,7 @@ export async function saveConfig(patch: Partial<AssistantConfig> & { clearKey?: 
 
   // The key goes to the credential store of the provider being saved, never into the file.
   if (isKeyProvider(next.provider)) {
-    if (typeof patch.apiKey === "string" && patch.apiKey.trim()) await saveApiKey(next.provider, patch.apiKey.trim());
+    if (typeof patch.apiKey === "string" && patch.apiKey.trim()) await saveApiKey(next.provider, patch.apiKey.trim(), next.baseUrl);
     if (patch.clearKey) {
       try {
         await deleteApiKey(next.provider);
@@ -136,7 +142,7 @@ export async function saveConfig(patch: Partial<AssistantConfig> & { clearKey?: 
   }
   // A key that could only stay in the file (no credential store) is kept there unless it is being removed or replaced.
   const keepLegacy = current.keySource === "file" && !patch.clearKey && !(typeof patch.apiKey === "string" && patch.apiKey.trim());
-  const { apiKey: _key, keySource: _source, ...persisted } = next;
+  const { apiKey: _key, keySource: _source, keyBoundTo: _bound, ...persisted } = next;
   await writeConfigFile(keepLegacy ? { ...persisted, apiKey: current.apiKey } : persisted);
   return loadConfig();
 }
@@ -196,10 +202,9 @@ export interface ChatRequest {
   context?: { workspace?: string; environment?: string; file?: { path: string; content: string } | null };
 }
 
-const SENSITIVE = /(accounts\.real\.json|dev-server-token|\.hardkas[\\/]+dev-accounts|\.env($|\.)|id_rsa|\.pem$|keystore)/i;
-
+/** Keys, keystores, backups of them, the dev-server token, .env and SSH/PEM keys: never for an agent or a model. */
 export function isSensitivePath(p: string): boolean {
-  return SENSITIVE.test(p);
+  return isAgentForbidden(p);
 }
 
 function systemPrompt(req: ChatRequest, docs: { text: string; mode: DocsMode } | null): string {
@@ -286,11 +291,16 @@ export async function* streamChat(req: ChatRequest, signal: AbortSignal): AsyncG
   const cfg = await loadConfig();
   if (cfg.provider === "opencode") {
     requireOpenCodeConsent(cfg);
+    // The hosted agent reads the open project: only one the user trusts (with no project open it runs in an empty folder).
+    if (getRoot()) await requireTrusted();
     if (!req.messages?.length) throw new AssistantError(400, "BAD_REQUEST", "messages is required");
     yield { type: "meta", docs: null, model: cfg.model || "opencode default" };
     let produced = false;
     // Chat is read-only ("plan" mode): any permission request is declined without asking.
-    for await (const ev of runAcpTurn({ cwd: getRoot() ?? os.homedir(), prompt: chatPromptForAgent(req), model: cfg.model, mode: "plan", streamText: true, decide: async () => false, signal })) {
+    // With no project open, the agent starts in an empty folder of its own, never in the user's home.
+    const noProject = path.join(HOME, "opencode", "no-project");
+    const chatCwd: string = getRoot() ?? (await fs.mkdir(noProject, { recursive: true }), noProject);
+    for await (const ev of runAcpTurn({ cwd: chatCwd, prompt: chatPromptForAgent(req), model: cfg.model, mode: "plan", streamText: true, decide: async () => false, signal })) {
       if (ev.type === "delta") {
         produced = true;
         yield ev;
@@ -303,7 +313,7 @@ export async function* streamChat(req: ChatRequest, signal: AbortSignal): AsyncG
   if (!cfg.model) throw new AssistantError(400, "NO_MODEL", "Pick a model in the assistant settings first.");
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(cfg.baseUrl);
   if (!cfg.apiKey && !(cfg.provider === "openai" && isLocal)) {
-    throw new AssistantError(400, "NO_KEY", `Add your API key in the assistant settings (click the model name at the top of the panel) or set ${keyEnvName(cfg.provider) ?? "the provider's key variable"}. A local Ollama or LM Studio endpoint needs no key.`);
+    throw new AssistantError(400, "NO_KEY", cfg.keyBoundTo ? `The saved key belongs to ${cfg.keyBoundTo}, so it is not sent to ${originOf(cfg.baseUrl)}. Enter the key again for this URL in the assistant settings.` : `Add your API key in the assistant settings (click the model name at the top of the panel) or set ${keyEnvName(cfg.provider) ?? "the provider's key variable"}. A local Ollama or LM Studio endpoint needs no key.`);
   }
   if (!req.messages?.length) throw new AssistantError(400, "BAD_REQUEST", "messages is required");
 
@@ -613,14 +623,14 @@ async function executeAgentTool(name: string, args: Record<string, unknown>, sig
       case "write_file": {
         const p = String(args.path ?? "").replace(/^[/\\]+/, "");
         const content = String(args.content ?? "");
-        await wsfs.writeFile(p, content);
+        await wsfs.writeFile(p, content, "agent");
         return { ok: true, title: `Wrote ${p} (${content.length} chars)`, output: `Successfully wrote ${p}` };
       }
       case "read_file": {
         const p = String(args.path ?? "").replace(/^[/\\]+/, "");
         // Same rule as the chat context: keys, keystores and .env never go to the model provider.
         if (isSensitivePath(p)) return { ok: false, title: `Refused to read ${p}`, output: "This file holds secrets (keys, keystores or environment) and is not readable by the agent.", error: "sensitive path" };
-        const content = await wsfs.readFile(p);
+        const content = await wsfs.readFile(p, "agent");
         return { ok: true, title: `Read ${p}`, output: content.length > 8000 ? content.slice(0, 8000) + "\n...(truncated)" : content };
       }
       case "list_files": {
@@ -688,6 +698,8 @@ async function executeAgentTool(name: string, args: Record<string, unknown>, sig
 
 export async function* streamAgent(req: AgentRequest, signal: AbortSignal): AsyncGenerator<AgentEvent> {
   const cfg = await loadConfig();
+  // Any agent edits files and runs the project's tools: only in a folder the user trusts.
+  await requireTrusted();
   if (cfg.provider === "opencode") {
     requireOpenCodeConsent(cfg);
     if (!req.goal?.trim()) throw new AssistantError(400, "BAD_REQUEST", "goal is required");
@@ -714,7 +726,7 @@ export async function* streamAgent(req: AgentRequest, signal: AbortSignal): Asyn
   if (!cfg.model) throw new AssistantError(400, "NO_MODEL", "Pick a model in the assistant settings first.");
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(cfg.baseUrl);
   if (!cfg.apiKey && !(cfg.provider === "openai" && isLocal)) {
-    throw new AssistantError(400, "NO_KEY", `Add your API key in the assistant settings (click the model name at the top of the panel) or set ${keyEnvName(cfg.provider) ?? "the provider's key variable"} to run the agent.`);
+    throw new AssistantError(400, "NO_KEY", cfg.keyBoundTo ? `The saved key belongs to ${cfg.keyBoundTo}, so it is not sent to ${originOf(cfg.baseUrl)}. Enter the key again for this URL in the assistant settings.` : `Add your API key in the assistant settings (click the model name at the top of the panel) or set ${keyEnvName(cfg.provider) ?? "the provider's key variable"} to run the agent.`);
   }
   if (!req.goal?.trim()) throw new AssistantError(400, "BAD_REQUEST", "goal is required");
 

@@ -4,7 +4,7 @@
 
 ## Run it
 
-The IDE server must be running with a project open (`pnpm dev:server -- --workspace <folder>`, or open one from the IDE).
+The IDE server must be running with a project open (`pnpm dev:server -- --workspace <folder>`, or open one from the IDE). Nothing of the project runs (CLI, tests) until you have trusted the folder in the IDE.
 
 ```bash
 pnpm install
@@ -37,7 +37,7 @@ During development use `pnpm --filter @hardkas-ide/mcp dev` (tsx) instead of the
 
 | Group | Tool | What it does |
 | --- | --- | --- |
-| Project | `workspace_status`, `open_workspace` | Which project is open; open another folder |
+| Project | `workspace_status`, `open_workspace` | Which project is open; open another HardKas project |
 | | `list_files`, `read_file`, `write_file` | Files inside the project (paths are always project-relative) |
 | | `list_artifacts` | Plans, signed txs, receipts and SilverScript records under `.hardkas/artifacts` |
 | | `query_index` | Read-only SQL over HardKAS's query store (artifacts, events, lineage, traces), or its health when called without SQL |
@@ -48,15 +48,18 @@ During development use `pnpm --filter @hardkas-ide/mcp dev` (tsx) instead of the
 | Transactions | `send_payment` | Plan, sign and send in one call, with artifact paths and the receipt |
 | | `tx_status` | State and confirmations of a transaction |
 | SilverScript | `compile_silverscript` | Compile a `.sil` file; returns contracts, entries and the compile record |
-| | `deploy_contract`, `spend_contract` | Deploy a compiled contract and call one of its entries |
+| | `deploy_contract`, `spend_contract` | Deploy a compiled contract and call one of its entries, always on the local node (simnet) |
 | Quality | `run_tests` | vitest in the project, per-test results |
 | Knowledge | `hardkas_help`, `kaspa_docs` | Real CLI options; the official Kaspa docs as text (docs.kaspa.org only) |
 
-Environments are `simulator` (in memory), `localnet` (Docker rusty-kaspad, simnet) and `testnet` (testnet-10). Mainnet is not available. `query_index` cannot write: the IDE server accepts a single SELECT and cuts long queries.
+Environments are `simulator` (in memory), `localnet` (Docker rusty-kaspad, simnet) and `testnet` (testnet-10). Mainnet is not available. `account_balance` and `tx_status` can read testnet-10. Tools that spend stay on the simulator and the local node: `fund_account` takes only `simulator` or `localnet`, `deploy_contract` and `spend_contract` always use simnet, and `send_payment` accepts `testnet` only when the MCP server was started with `HARDKAS_MCP_ALLOW_TESTNET=1`. `query_index` cannot write: the IDE server accepts a single SELECT and cuts long queries.
 
 ## What it deliberately does not do
 
-- It never returns private keys or key material.
+Every request the MCP server sends carries the header `x-hardkas-client: mcp`, and the IDE server applies the agent rules to it:
+
+- It never returns private keys or key material. Key stores, `.env` files (templates such as `.env.example` excepted), SSH keys and `.pem`/`.p12`/`.pfx` files cannot be read or written through these tools.
+- `open_workspace` opens only HardKas projects (a `hardkas.config.*` or a `package.json` that uses `@hardkas/`). An agent can never trust a folder; only you can, in the IDE.
 - It cannot wipe the local chain ("reset from scratch" stays a confirmed action in the IDE).
 - It cannot run arbitrary commands: every tool maps to one fixed `hardkas` subcommand with validated arguments (names, amounts, tx ids and project-relative paths only).
 - It cannot touch files outside the open project.

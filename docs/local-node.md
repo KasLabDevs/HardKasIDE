@@ -21,9 +21,13 @@ The miner container exists only after the first funding; before that the card sa
 
 The **Explorer** card (Blocks tab) shows the blocks the miner found, its rate, and how many blocks the node refused in the current log window.
 
+## Reset from scratch
+
+The reset (it asks first) stops the node, clears the project's chain state (`.hardkas/node-data`, `.hardkas/localnet`), wipes the node with `hardkas node reset --yes`, starts a fresh one and funds the dev accounts. Keys are never deleted: the dev keystores (`.hardkas/dev-accounts`) are moved to `.hardkas/backups/reset-<time>/`, and `.hardkas/accounts.real.json` (which can hold testnet keys) stays in place while a copy goes to the same backup. The reset is refused when `.hardkas` is a link to another folder, and in a folder that is not trusted.
+
 ## Which hardkas runs
 
-The server resolves the CLI in this order: the project's `node_modules/.bin/hardkas`, `HARDKAS_BIN`, the repo's demo workspace, then `npx @hardkas/cli@<pinned>`. `GET /api/cli` reports the resolved binary and its `--version`; the status bar and the Local node card show it and turn amber when it differs from the version the IDE was tested with (`HARDKAS_CLI_VERSION` in `packages/ide-server/src/runner.ts`).
+The server resolves the CLI in this order: `HARDKAS_BIN`; then, only when `HARDKAS_IDE_CLI_FROM_REPO=1` (for work on HardKas itself), a sibling `HardKas-repo` build and the IDE repo's demo workspace; then the project's `node_modules/.bin/hardkas`; then `npx @hardkas/cli@<pinned>`. In a folder that is not trusted the CLI is not run, so no version is shown. `GET /api/cli` reports the resolved binary and its `--version`; the status bar and the Local node card show it and turn amber when it differs from the version the IDE was tested with (`HARDKAS_CLI_VERSION` in `packages/ide-server/src/runner.ts`).
 
 Records under `.hardkas/artifacts/silver` carry a `schema` (`hardkas.silverDeploy.v1`, …). The IDE checks it when reading them (`apps/ide/src/utils/silverRecords.ts`): a record from a newer schema or with missing fields is listed in the Console and counted in Deploy & Run instead of being read as empty strings.
 

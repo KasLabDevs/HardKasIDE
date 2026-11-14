@@ -12,6 +12,7 @@ import { RightDock } from "./RightDock";
 import { SearchDialog } from "./SearchDialog";
 import { SidePanel } from "./SidePanel";
 import { TitleBar } from "./TitleBar";
+import { TrustBanner } from "./TrustBanner";
 import { useEngine, useEngineVersion } from "@/engine/context";
 import { StatusBar } from "./StatusBar";
 
@@ -50,6 +51,7 @@ export function Workbench({ onHome }: Props) {
             <Panel id="main" order={2} minSize={30}>
               <div ref={mainRef} className="h-full flex flex-col min-w-0">
                 <EnvBar />
+                <TrustBanner />
                 <NodeOpBanner />
                 <div className="flex-1 min-h-0">
                   <PanelGroup direction="vertical">

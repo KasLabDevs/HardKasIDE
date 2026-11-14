@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
 
 /**
@@ -12,8 +12,11 @@ import path from "node:path";
 export const CHAIN_STATE = ["node-data", "localnet"] as const;
 
 /**
- * Key material. A reset never deletes it: `accounts.real.json` can hold real accounts for other networks
- * (testnet keys with funds) next to the simnet ones, so it is moved to a timestamped backup instead.
+ * Key material. A reset never deletes it:
+ *   - `dev-accounts` (the simnet dev keystores, re-created by the seeding after a reset) is moved to the backup;
+ *   - `accounts.real.json` can hold real accounts for other networks (testnet keys with funds) next to the simnet
+ *     ones. It is not chain state, so it stays where it is and only a copy goes to the backup: a local reset never
+ *     takes a testnet account out of use.
  */
 export const KEY_STATE = ["dev-accounts", "accounts.real.json"] as const;
 
@@ -30,8 +33,12 @@ export class LocalNodeError extends Error {
 export interface ResetResult {
   /** Chain-derived paths that were deleted (relative to the workspace, forward slashes). */
   wiped: string[];
-  /** Key paths that were moved to `backupDir`. */
+  /** Key paths saved in `backupDir` (moved or copied). */
   backedUp: string[];
+  /** Key paths moved into `backupDir` (no longer in place). */
+  moved: string[];
+  /** Key paths copied into `backupDir` (still in place). */
+  copied: string[];
   /** Where the keys went (relative to the workspace), or null when there were none. */
   backupDir: string | null;
 }
@@ -52,6 +59,11 @@ async function exists(p: string): Promise<boolean> {
  */
 export async function resetWorkspaceChainState(root: string, now: Date = new Date()): Promise<ResetResult> {
   const hardkasDir = path.join(root, ".hardkas");
+  // A .hardkas that is a link would make the reset delete chain state wherever it points.
+  const hardkasStat = await fs.lstat(hardkasDir).catch(() => null);
+  if (hardkasStat?.isSymbolicLink()) {
+    throw new LocalNodeError(409, "HARDKAS_DIR_IS_LINK", ".hardkas is a link to another folder: the reset only works on a real .hardkas folder. Nothing was changed.");
+  }
   const stamp = now.toISOString().replace(/[:.]/g, "-");
   // Never reuse a backup folder (or a file in its way): a second reset in the same millisecond gets reset-<time>-2,
   // so it can never overwrite the keys an earlier reset saved.
@@ -59,22 +71,36 @@ export async function resetWorkspaceChainState(root: string, now: Date = new Dat
   for (let n = 2; await exists(path.join(root, ...backupRel.split("/"))); n++) backupRel = `.hardkas/backups/reset-${stamp}-${n}`;
   const backupAbs = path.join(root, ...backupRel.split("/"));
 
-  const backedUp: string[] = [];
-  for (const rel of KEY_STATE) {
-    const from = path.join(hardkasDir, rel);
-    if (!(await exists(from))) continue;
+  const moved: string[] = [];
+  const copied: string[] = [];
+  const fail = (rel: string, verb: string, error: unknown) =>
+    new LocalNodeError(
+      409,
+      "KEY_BACKUP_FAILED",
+      `Could not ${verb} .hardkas/${rel} to ${backupRel} (${error instanceof Error ? error.message : String(error)}). Nothing was deleted${copied.length ? `; a copy of ${copied.join(", ")} is in ${backupRel}` : ""}.`
+    );
+  // First the copy (nothing leaves its place), then the move: a failure at either step deletes nothing.
+  const realAccounts = path.join(hardkasDir, "accounts.real.json");
+  if (await exists(realAccounts)) {
     try {
       await fs.mkdir(backupAbs, { recursive: true });
-      await fs.rename(from, path.join(backupAbs, rel));
+      await fs.copyFile(realAccounts, path.join(backupAbs, "accounts.real.json"), fsConstants.COPYFILE_EXCL);
     } catch (error) {
-      throw new LocalNodeError(
-        409,
-        "KEY_BACKUP_FAILED",
-        `Could not move .hardkas/${rel} to ${backupRel} (${error instanceof Error ? error.message : String(error)}). Nothing was deleted.`
-      );
+      throw fail("accounts.real.json", "copy", error);
     }
-    backedUp.push(`.hardkas/${rel}`);
+    copied.push(".hardkas/accounts.real.json");
   }
+  const devAccounts = path.join(hardkasDir, "dev-accounts");
+  if (await exists(devAccounts)) {
+    try {
+      await fs.mkdir(backupAbs, { recursive: true });
+      await fs.rename(devAccounts, path.join(backupAbs, "dev-accounts"));
+    } catch (error) {
+      throw fail("dev-accounts", "move", error);
+    }
+    moved.push(".hardkas/dev-accounts");
+  }
+  const backedUp = [...moved, ...copied];
 
   const wiped: string[] = [];
   for (const rel of CHAIN_STATE) {
@@ -88,7 +114,7 @@ export async function resetWorkspaceChainState(root: string, now: Date = new Dat
     }
   }
 
-  return { wiped, backedUp, backupDir: backedUp.length > 0 ? backupRel : null };
+  return { wiped, backedUp, moved, copied, backupDir: backedUp.length > 0 ? backupRel : null };
 }
 
 /**

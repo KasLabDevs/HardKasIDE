@@ -4,6 +4,7 @@ import { Plugin } from "@/engine/engine";
 import { CompilePanel } from "@/panels/CompilePanel";
 import { useIde } from "@/store/ide";
 import { useSilver } from "@/store/silver";
+import { normalizeSilverArgsText } from "@/utils/silverArgs";
 import { parseSilverDiagnostics } from "@/utils/silverInspector";
 import type { EditorDiagnostic } from "./editor";
 import type { ConsolePlugin } from "./console";
@@ -207,9 +208,11 @@ export class CompilerPlugin extends Plugin {
     let usedArgsText: string | null = null;
     if (options?.args !== undefined && options.args.trim() !== "") {
       JSON.parse(options.args); // fail early on invalid JSON
-      await this.call("fileManager", "writeFile", argsFile, options.args);
+      // Hex bytes and "pubkey" are written in the CLI's own form (bytes as a list of numbers).
+      const normalized = normalizeSilverArgsText(options.args);
+      await this.call("fileManager", "writeFile", argsFile, normalized);
       await this.call("fileManager", "refresh");
-      usedArgsText = options.args;
+      usedArgsText = normalized;
       cliArgs.push("--args", argsFile);
     } else {
       const existingArgs = await this.readArgs(file);
