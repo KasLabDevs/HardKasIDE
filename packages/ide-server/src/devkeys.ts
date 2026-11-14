@@ -98,12 +98,43 @@ async function readRealAccounts(root: string): Promise<Map<string, RealAccountEn
 
 /** Names whose key the IDE can export: simnet dev keystores and simnet plaintext real accounts. */
 export async function listDevAccountNames(root: string | null = getRoot()): Promise<string[]> {
-  if (!root) return [];
-  const set = new Set<string>();
+  return Object.keys(await listDevAccountsInternal(root)).sort();
+}
+
+/** Public simnet addresses recorded in .hardkas/dev-accounts and simnet entries of accounts.real.json (no keys read). */
+export async function listDevAccountAddresses(root: string | null = getRoot()): Promise<Record<string, string>> {
+  const entries = await listDevAccountsInternal(root);
+  const out: Record<string, string> = {};
+  for (const name of Object.keys(entries).sort()) {
+    const addr = entries[name];
+    if (addr) out[name] = addr;
+  }
+  return out;
+}
+
+async function listDevAccountsInternal(root: string | null): Promise<Record<string, string | undefined>> {
+  const out: Record<string, string | undefined> = {};
+  if (!root) return out;
   try {
-    const files = await fs.readdir(path.join(root, ".hardkas", "dev-accounts"));
+    const devDir = path.join(root, ".hardkas", "dev-accounts");
+    const files = await fs.readdir(devDir);
     for (const f of files) {
-      if (f.endsWith(".json")) set.add(f.slice(0, -5));
+      if (!f.endsWith(".json")) continue;
+      const name = f.slice(0, -5);
+      let addr: string | undefined;
+      try {
+        const raw = JSON.parse((await fs.readFile(path.join(devDir, f), "utf8")).replace(/^\uFEFF/, "")) as EncryptedKeystoreV2;
+        if (
+          raw.metadata?.network === "simnet" &&
+          typeof raw.metadata?.address === "string" &&
+          networkFromAddress(raw.metadata.address) === "simnet"
+        ) {
+          addr = raw.metadata.address;
+        }
+      } catch {
+        // Keep listing the alias even if metadata couldn't be parsed.
+      }
+      out[name] = addr;
     }
   } catch {
     // dev-accounts folder does not exist
@@ -111,9 +142,12 @@ export async function listDevAccountNames(root: string | null = getRoot()): Prom
   const real = await readRealAccounts(root);
   for (const [name, entry] of real) {
     const { network, conflict } = realAccountNetwork(entry);
-    if (network === "simnet" && !conflict) set.add(name);
+    if (network === "simnet" && !conflict) {
+      const addr = entry.address && networkFromAddress(entry.address) === "simnet" ? entry.address : undefined;
+      out[name] = out[name] ?? addr;
+    }
   }
-  return [...set].sort();
+  return out;
 }
 
 export async function revealDevAccountKey(name: string, root: string | null = getRoot()): Promise<DevAccountKey> {

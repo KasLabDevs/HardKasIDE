@@ -47,7 +47,7 @@ export function NodeOpBanner() {
   const setNodeOp = useEnv((s) => s.setNodeOp);
   if (!op) return null;
   return (
-    <div role="status" aria-live="polite" className={clsx("shrink-0 px-3 py-2 border-b text-xs", op.state === "error" ? "border-error/40 bg-error/10" : op.state === "done" ? "border-ok/40 bg-ok/10" : "border-accent/40 bg-accent/10")}>
+    <div role="status" aria-live="polite" className={clsx("shrink-0 px-3 py-2 mb-[3px] rounded-[6px] border text-xs", op.state === "error" ? "border-error/40 bg-error/10" : op.state === "done" ? "border-ok/40 bg-ok/10" : "border-accent/40 bg-accent/10")}>
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0 space-y-1.5">
           <div className={clsx("font-semibold", op.state === "error" ? "text-error" : op.state === "done" ? "text-ok" : "text-accent")}>

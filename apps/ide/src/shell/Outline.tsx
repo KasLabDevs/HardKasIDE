@@ -28,7 +28,7 @@ export function Outline() {
   const goto = (line: number) => engine.get<EditorPlugin>("editor").gotoLine(line);
 
   return (
-    <aside className="h-full bg-bg-panel border-l border-border flex flex-col text-xs min-w-0">
+    <aside className="h-full bg-bg-panel panel-card flex flex-col text-xs min-w-0">
       <header className="panel-title flex items-center justify-between">
         <span className="flex items-center gap-1.5">
           <ListTree size={13} /> Outline

@@ -98,6 +98,8 @@ export interface AssistantConfigView {
   maxTokens: number;
   hasKey: boolean;
   keyHint: string;
+  /** Where the key in use comes from: an environment variable, the system credential store, or (no store available) the settings file. */
+  keySource?: "env" | "keychain" | "file" | null;
   /** The user agreed that prompts and the files the agent reads go to OpenCode's hosted models. */
   opencodeConsent?: boolean;
 }
@@ -248,6 +250,8 @@ export const api = {
   devkeys: {
     /** Aliases with a keystore in .hardkas/dev-accounts (alice…erin). */
     list: () => request<{ names: string[] }>("/api/devkeys").then((r) => r.names),
+    /** Known public simnet addresses for .hardkas/dev-accounts and simnet real accounts (no private keys read). */
+    addresses: () => request<{ addresses?: Record<string, string> }>("/api/devkeys").then((r) => r.addresses ?? {}),
     /** Decrypts a simnet dev keystore (fixed HardKas dev password) and returns its raw hex private key. */
     reveal: (name: string) =>
       request<{ name: string; address: string; network: string; privateKey: string }>("/api/devkeys/reveal", {

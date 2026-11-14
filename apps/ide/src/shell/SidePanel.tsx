@@ -24,11 +24,11 @@ export function SidePanel() {
   const shown = left.some((p) => p.profile.name === active) ? active : (left.find((p) => p.profile.name === "files") ?? left[0])?.profile.name;
 
   return (
-    <aside className="h-full bg-bg-panel border-r border-border flex flex-col min-w-0">
+    <aside className="h-full flex flex-col min-w-0">
       <div className="flex-1 min-h-0">
         <PanelGroup direction="vertical">
           <Panel id="side-main" order={0} minSize={15} defaultSize={below.length ? 55 : 100}>
-            <div className="h-full flex flex-col min-h-0">
+            <div className="h-full flex flex-col min-w-0 bg-bg-panel panel-card">
               {left.map((p) => {
                 const View = p.view;
                 if (!View) return null;
@@ -54,7 +54,7 @@ export function SidePanel() {
             const View = p.view!;
             return (
               <StackedPanel key={p.profile.name} id={`side-${p.profile.name}`}>
-                <section className="h-full flex flex-col min-h-0 border-t border-border">
+                <section className="h-full flex flex-col min-w-0 bg-bg-panel panel-card">
                   <header className="panel-title flex items-center justify-between gap-2">
                     <span className="truncate">{p.profile.displayName}</span>
                     <span className="flex items-center gap-0.5 shrink-0">
@@ -88,7 +88,7 @@ export function SidePanel() {
 function StackedPanel({ id, children }: { id: string; children: React.ReactNode }) {
   return (
     <>
-      <PanelResizeHandle className="h-px bg-border hover:bg-accent transition-colors" />
+      <PanelResizeHandle className="ide-split-v" />
       <Panel id={id} order={1} minSize={10}>{children}</Panel>
     </>
   );

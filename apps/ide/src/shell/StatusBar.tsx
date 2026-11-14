@@ -5,7 +5,7 @@ import { useEditorCursor } from "@/store/editorCursor";
 import { useIde } from "@/store/ide";
 import { isTextFile, openPalette } from "./actions";
 
-export function StatusBar() {
+export function StatusBar({ borderless = false }: { borderless?: boolean } = {}) {
   const workspace = useIde((s) => s.workspace);
   const activeFile = useIde((s) => s.activeFile);
   const status = useIde((s) => s.statusMessage);
@@ -16,7 +16,7 @@ export function StatusBar() {
   const showCursor = isTextFile(activeFile) && cursorFile === activeFile;
 
   return (
-    <footer className="h-[1.45rem] shrink-0 bg-bg-panel border-t border-border flex items-center gap-2.5 px-2.5 text-[11px] text-fg-muted select-none overflow-hidden">
+    <footer className={clsx("h-[1.45rem] shrink-0 bg-bg-panel flex items-center gap-2.5 px-2.5 text-[11px] text-fg-muted select-none overflow-hidden", !borderless && "border-t border-border")}>
       <span className="flex items-center gap-1.5 text-fg shrink-0 max-w-[180px] truncate" title={workspace?.root ?? ""}>
         <FolderOpen size={12} className="shrink-0" /> <span className="truncate">{workspace?.name ?? "no workspace"}</span>
       </span>

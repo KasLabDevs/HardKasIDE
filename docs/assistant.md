@@ -14,10 +14,10 @@ The sections below (tools table, approvals) describe the IDE's own agent, used w
 
 ## Setup
 
-Settings → Assistant, or the gear in the panel:
+Settings → Assistant, or the model name at the top of the panel:
 
 - **Provider**: OpenCode (the default, see above), Anthropic (Messages API) or any OpenAI-compatible endpoint (`baseUrl` + model).
-- **API key**: stored in `~/.hardkas-ide/assistant.json` on this machine, shown back only as a hint (`sk-…abcd`). `PUT /api/assistant/config` accepts it only from the IDE's own origin.
+- **API key** (Anthropic and OpenAI-compatible only): saved in the system credential store (Windows Credential Manager, macOS Keychain, the Linux Secret Service; service `hardkas-ide`, account `anthropic-api-key` or `openai-api-key`), never in a file, and shown back only as a hint (`…abcd`). If `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` is set in the environment, that key is used instead, which also covers a Linux machine without a keyring. A key that earlier versions kept in `~/.hardkas-ide/assistant.json` moves to the credential store the first time the IDE reads its settings; if no store is available it stays in the file, the panel says so, and a new key is refused with a pointer to the variable. `PUT /api/assistant/config` accepts a key only from the IDE's own origin (`packages/ide-server/src/secrets.ts`).
 - **Kaspa docs**: `off`, `core` (the `llms.txt` pack from docs.kaspa.org) or `full` (`llms-full.txt`). Fetched by the server, cached, and prepended to the system prompt; the panel shows the approximate token cost.
 
 ## Chat
@@ -49,5 +49,5 @@ The green **Finished** badge and the final summary are the model's own account o
 
 - Only local origins may call the assistant routes (`localOnly` in `packages/ide-server/src/index.ts`).
 - With the OpenCode provider nothing leaves the machine before the user turns it on in the panel (`requireOpenCodeConsent` in `assistant.ts`).
-- The agent never reads key material (see the table above) and cannot run anything in the terminal without a click.
+- The agent never reads key material (see the table above) and cannot run anything in the terminal without a click. The OpenCode agent's policy also denies the IDE's own settings folder, `~/.hardkas-ide`.
 - Commands run with the workspace as `cwd`, through the same job runner as the Console (`/api/run` allows `hardkas`, `npm` and `npx vitest` only; the agent's terminal tool runs a shell and is the reason for the approval step).

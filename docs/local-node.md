@@ -26,3 +26,12 @@ The **Explorer** card (Blocks tab) shows the blocks the miner found, its rate, a
 The server resolves the CLI in this order: the project's `node_modules/.bin/hardkas`, `HARDKAS_BIN`, the repo's demo workspace, then `npx @hardkas/cli@<pinned>`. `GET /api/cli` reports the resolved binary and its `--version`; the status bar and the Local node card show it and turn amber when it differs from the version the IDE was tested with (`HARDKAS_CLI_VERSION` in `packages/ide-server/src/runner.ts`).
 
 Records under `.hardkas/artifacts/silver` carry a `schema` (`hardkas.silverDeploy.v1`, …). The IDE checks it when reading them (`apps/ide/src/utils/silverRecords.ts`): a record from a newer schema or with missing fields is listed in the Console and counted in Deploy & Run instead of being read as empty strings.
+
+## One local node
+
+The IDE works with HardKAS' single local node and nothing else. Earlier IDE versions also had a **Cluster** card that started extra simnet nodes next to it; it was removed because contract work needs one node, and extra nodes only cost Docker resources next to the shared one. Containers it created are named `hardkas-ide-n<number>` and carry the label `hardkas-ide.cluster=extra`; the IDE no longer touches them. To remove leftovers (only those, never the HardKAS node):
+
+```sh
+docker ps -a --filter label=hardkas-ide.cluster=extra
+docker rm -f $(docker ps -aq --filter label=hardkas-ide.cluster=extra)
+```

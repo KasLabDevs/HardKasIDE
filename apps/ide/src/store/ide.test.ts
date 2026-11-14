@@ -53,10 +53,10 @@ describe("useIde tab closing helpers", () => {
 describe("parseDetachQuery", () => {
   it("parses detached file and view targets", () => {
     expect(parseDetachQuery("?detachFile=src%2FApp.tsx")).toEqual({ kind: "file", path: "src/App.tsx" });
-    expect(parseDetachQuery("?detachView=cluster&detachTitle=Cluster%20pods")).toEqual({
+    expect(parseDetachQuery("?detachView=covenant&detachTitle=Covenant%20graph")).toEqual({
       kind: "view",
-      pluginName: "cluster",
-      title: "Cluster pods"
+      pluginName: "covenant",
+      title: "Covenant graph"
     });
     expect(parseDetachQuery("?detachView=lineage")).toEqual({
       kind: "view",

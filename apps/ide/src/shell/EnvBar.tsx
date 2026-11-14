@@ -1,10 +1,84 @@
 import clsx from "clsx";
-import { Cpu, Play, Server, Users } from "lucide-react";
+import { Check, ChevronDown, Cpu, Play, Server, Users } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { EnvironmentPlugin } from "@/plugins/environment";
 import { EnvAccountsTrigger } from "@/shell/EnvAccountsTrigger";
 import { useEnv } from "@/store/env";
 import { ENVIRONMENTS, envOf, useIde, type ExecutionTarget } from "@/store/ide";
+
+function EnvTargetPicker({ target, onChange }: { target: ExecutionTarget; onChange: (next: ExecutionTarget) => void }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const current = envOf(target);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative flex items-center gap-1 whitespace-nowrap shrink-0">
+      <Cpu size={12} />
+      <span>env</span>
+      <button
+        type="button"
+        aria-label="Execution environment"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        title={current.description}
+        className="inline-flex items-center gap-1 px-1.5 py-[2px] rounded border border-border/80 bg-bg/60 hover:bg-bg-hover text-accent font-medium text-[11px] leading-none cursor-pointer transition-colors"
+      >
+        <span>{current.label}</span>
+        <ChevronDown size={11} className={clsx("text-fg-muted transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <ul
+          role="listbox"
+          aria-label="Execution environment options"
+          className="absolute left-0 top-full mt-1 z-50 w-64 py-0.5 rounded-md border border-border bg-bg-elev shadow-2xl"
+        >
+          {ENVIRONMENTS.map((e) => {
+            const selected = e.id === target;
+            return (
+              <li key={e.id} role="option" aria-selected={selected}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(e.id);
+                    setOpen(false);
+                  }}
+                  className={clsx(
+                    "w-full text-left px-2.5 py-1.5 flex items-start gap-2 cursor-pointer transition-colors hover:bg-bg-hover",
+                    selected && "bg-bg-hover/60"
+                  )}
+                >
+                  <span className="mt-0.5 w-3.5 shrink-0 text-accent">{selected ? <Check size={12} /> : null}</span>
+                  <span className="min-w-0 flex-1 whitespace-normal">
+                    <span className={clsx("block text-[11px] font-medium", selected ? "text-accent" : "text-fg")}>{e.label}</span>
+                    <span className="block text-[10px] text-fg-muted leading-snug mt-0.5 line-clamp-2">{e.description}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 /** Thin strip above the editor: the environment you are on, the node (when it matters) and the accounts at a glance. */
 export function EnvBar() {
@@ -44,27 +118,12 @@ export function EnvBar() {
   }
 
   return (
-    <div className="h-6 shrink-0 flex items-center gap-2.5 px-2.5 border-b border-border bg-bg-panel text-[11px] text-fg-muted select-none overflow-visible relative z-20">
-      <label className="flex items-center gap-1.5 whitespace-nowrap shrink-0">
-        <Cpu size={12} /> env
-        <select
-          aria-label="Execution environment"
-          className="bg-transparent text-accent font-medium outline-none cursor-pointer rounded px-1 hover:bg-bg-hover"
-          value={target}
-          onChange={(e) => setTarget(e.target.value as ExecutionTarget)}
-          title={current.description}
-        >
-          {ENVIRONMENTS.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.label}
-            </option>
-          ))}
-        </select>
-      </label>
+    <div className="h-[25px] shrink-0 flex items-center gap-2 px-2 mb-[3px] rounded-[6px] border border-border bg-bg-panel text-[11px] text-fg-muted select-none overflow-visible relative z-20">
+      <EnvTargetPicker target={target} onChange={setTarget} />
       <button
         type="button"
         onClick={() => setActiveSidePlugin("environment")}
-        className="flex items-center gap-1.5 hover:text-fg whitespace-nowrap min-w-0 shrink overflow-hidden cursor-pointer rounded px-1 py-0.5 hover:bg-bg-hover transition-colors"
+        className="flex items-center gap-1 hover:text-fg whitespace-nowrap min-w-0 shrink overflow-hidden cursor-pointer rounded px-1 py-[2px] leading-none hover:bg-bg-hover transition-colors"
         title={`${nodeText}${current.needsNode && node?.virtualDaaScore ? ` · DAA ${node.virtualDaaScore}` : ""} (Open Servers view)`}
       >
         <Server size={12} className="shrink-0" />

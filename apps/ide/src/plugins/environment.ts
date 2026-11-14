@@ -5,7 +5,7 @@ import { copyText } from "@/utils/clipboard";
 import { ServersPanel } from "@/panels/ServersPanel";
 import { useEnv, type AccountInfo, type NodeOp, type NodeStatus } from "@/store/env";
 import { useIde, userChoseTarget, type ExecutionTarget } from "@/store/ide";
-import type { ConsolePlugin } from "./console";
+import type { ConsolePlugin, RunResult } from "./console";
 
 /**
  * Environment service, in the spirit of Eclipse's "Servers" view: the node you
@@ -27,6 +27,11 @@ export class EnvironmentPlugin extends Plugin {
   view = ServersPanel;
   private offs: Array<() => void> = [];
   private timer: ReturnType<typeof setInterval> | null = null;
+  private devAddressByName = new Map<string, string>();
+  private lastCliCommand: string | null = null;
+  private seedSupported: boolean | null = null;
+  private treasurySupported: boolean | null = null;
+  private simnetBalanceByNameBroken = false;
 
   constructor() {
     super({
@@ -73,6 +78,12 @@ export class EnvironmentPlugin extends Plugin {
   async refreshCli(): Promise<void> {
     try {
       const cli = await api.cli();
+      if (cli.command !== this.lastCliCommand) {
+        this.lastCliCommand = cli.command;
+        this.seedSupported = null;
+        this.treasurySupported = null;
+        this.simnetBalanceByNameBroken = false;
+      }
       useEnv.getState().setCli(cli);
       if (cli.version && cli.version !== cli.pinned) {
         this.console().warn(`HardKas CLI ${cli.version} (${cli.source}); this IDE was tested with ${cli.pinned}. Records and command output may differ.`);
@@ -275,19 +286,64 @@ export class EnvironmentPlugin extends Plugin {
     return promise;
   }
 
+  private resolveSimnetAddress(name: string): string | undefined {
+    if (name.startsWith("kaspasim:")) return name;
+    const fromDev = this.devAddressByName.get(name);
+    if (fromDev?.startsWith("kaspasim:")) return fromDev;
+    const fromState = useEnv.getState().accounts.find((a) => a.name === name)?.address;
+    return fromState?.startsWith("kaspasim:") ? fromState : undefined;
+  }
+
+  private async loadDevAccountAddresses(): Promise<Record<string, string>> {
+    const fn = (api.devkeys as { addresses?: () => Promise<Record<string, string>> }).addresses;
+    if (typeof fn !== "function") return {};
+    const addrs = await fn().catch(() => ({} as Record<string, string>));
+    for (const [k, v] of Object.entries(addrs)) {
+      if (typeof v === "string" && v.startsWith("kaspasim:")) this.devAddressByName.set(k, v);
+    }
+    return addrs;
+  }
+
+  private async fetchBalanceOnce(
+    targetId: string,
+    network: string
+  ): Promise<{ balance?: { balanceSompi: string; utxoCount: number; address?: string }; errorMsg?: string }> {
+    const b = await this.console().runHardkas(["accounts", "balance", targetId, "--network", network, "--json"], { quiet: true });
+    if (b.status === "succeeded") {
+      const res = unwrapEnvelope(b.result) as { balanceSompi?: string | number; utxoCount?: number; address?: string } | null;
+      if (res && res.balanceSompi !== undefined && res.balanceSompi !== null) {
+        return {
+          balance: {
+            balanceSompi: String(res.balanceSompi),
+            utxoCount: typeof res.utxoCount === "number" ? res.utxoCount : 0,
+            address: typeof res.address === "string" && res.address ? res.address : undefined
+          }
+        };
+      }
+    }
+    return { errorMsg: extractCliError(b.result, b.stderr) ?? undefined };
+  }
+
   private async readAccountBalance(name: string, network: string): Promise<{ balanceSompi: string; utxoCount: number; address?: string } | null> {
+    let simnetAddr = network === "simnet" ? this.resolveSimnetAddress(name) : undefined;
+    const queryTarget = network === "simnet" && this.simnetBalanceByNameBroken && simnetAddr ? simnetAddr : name;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const b = await this.console().runHardkas(["accounts", "balance", name, "--network", network, "--json"], { quiet: true });
-        if (b.status === "succeeded") {
-          const res = unwrapEnvelope(b.result) as { balanceSompi?: string | number; utxoCount?: number; address?: string } | null;
-          if (res && res.balanceSompi !== undefined && res.balanceSompi !== null) {
-            return {
-              balanceSompi: String(res.balanceSompi),
-              utxoCount: typeof res.utxoCount === "number" ? res.utxoCount : 0,
-              address: typeof res.address === "string" && res.address ? res.address : undefined
-            };
+        const res = await this.fetchBalanceOnce(queryTarget, network);
+        if (res.balance) return res.balance;
+        // HardKas CLI <= 0.12.x passes synthetic "kaspa:sim_<name>" when queried by alias on --network simnet;
+        // re-query directly with the real kaspasim: address from dev-accounts instead of failing/retrying by name.
+        if (network === "simnet" && queryTarget === name && res.errorMsg && /address prefix is missing/i.test(res.errorMsg)) {
+          this.simnetBalanceByNameBroken = true;
+          if (!simnetAddr) {
+            await this.loadDevAccountAddresses();
+            simnetAddr = this.resolveSimnetAddress(name);
           }
+          if (simnetAddr) {
+            const byAddr = await this.fetchBalanceOnce(simnetAddr, network);
+            if (byAddr.balance) return byAddr.balance;
+          }
+          return null;
         }
       } catch {
         // transient RPC or subprocess error; retry once
@@ -301,9 +357,10 @@ export class EnvironmentPlugin extends Plugin {
     const env = useEnv.getState();
     env.setAccountsBusy(true);
     try {
-      const [run, devKeyNames] = await Promise.all([
+      const [run, devKeyNames, devAddresses] = await Promise.all([
         this.console().runHardkas(["accounts", "list", "--json"], { quiet: true }),
-        api.devkeys.list().catch(() => [] as string[])
+        api.devkeys.list().catch(() => [] as string[]),
+        this.loadDevAccountAddresses()
       ]);
       if (seq !== this.accountsSeq) return useEnv.getState().accounts;
       const devKeySet = new Set(devKeyNames);
@@ -313,7 +370,13 @@ export class EnvironmentPlugin extends Plugin {
         const canExport = devKeySet.has(a.name);
         const prev = prevByName.get(a.name);
         const sameNet = prev?.balanceNetwork === network;
-        const resolvedAddr = sameNet && prev?.address && (network !== "simnet" || prev.address.startsWith("kaspasim:")) ? prev.address : a.address;
+        const simnetFromStore = network === "simnet" ? devAddresses[a.name] ?? this.devAddressByName.get(a.name) : undefined;
+        const resolvedAddr =
+          sameNet && prev?.address && (network !== "simnet" || prev.address.startsWith("kaspasim:"))
+            ? prev.address
+            : network === "simnet" && !a.address.startsWith("kaspasim:") && simnetFromStore
+              ? simnetFromStore
+              : a.address;
         const isRealLocalKey = network === "simnet" && (canExport || resolvedAddr.startsWith("kaspasim:"));
         return {
           name: a.name,
@@ -408,7 +471,10 @@ export class EnvironmentPlugin extends Plugin {
       const accounts = await this.refreshAccounts();
       return accounts.map((a) => ({ name: a.name, balanceSompi: a.balanceSompi ?? "0" }));
     }
-    const run = await this.console().runHardkas(["accounts", "list", "--json"], { quiet: true });
+    const [run] = await Promise.all([
+      this.console().runHardkas(["accounts", "list", "--json"], { quiet: true }),
+      ...(network === "simnet" && this.devAddressByName.size === 0 ? [this.loadDevAccountAddresses()] : [])
+    ]);
     const list = Array.isArray(run.result) ? (run.result as Array<{ name: string }>) : [];
     return Promise.all(
       list.map(async (a) => {
@@ -416,6 +482,28 @@ export class EnvironmentPlugin extends Plugin {
         return { name: a.name, balanceSompi: bal?.balanceSompi ?? "0" };
       })
     );
+  }
+
+  private async runLocalnetFund(name: string, amountKas: string, note?: (text: string) => void): Promise<RunResult> {
+    const buildArgs = (withTreasury: boolean) => [
+      "localnet",
+      "fund",
+      name,
+      ...(withTreasury ? ["--treasury"] : []),
+      "--amount",
+      amountKas,
+      "--profile",
+      "toccata-v2",
+      "--stop-miner",
+      "--json"
+    ];
+    let run = await this.console().runHardkas(buildArgs(this.treasurySupported !== false));
+    if (this.treasurySupported !== false && run.status !== "succeeded" && isUnsupportedCliFeature(run, "--treasury")) {
+      this.treasurySupported = false;
+      note?.(`CLI lacks --treasury; mining localnet block directly for ${name}…`);
+      run = await this.console().runHardkas(buildArgs(false));
+    }
+    return run;
   }
 
   async fund(name: string, amountKas: string, opts?: { refreshAfter?: boolean; target?: ExecutionTarget; note?: (text: string) => void }): Promise<void> {
@@ -428,18 +516,18 @@ export class EnvironmentPlugin extends Plugin {
     const beforeSompi = parseSompi(before?.balanceSompi);
 
     if (target === "localnet") {
-      let run = await this.console().runHardkas(["localnet", "fund", name, "--treasury", "--amount", amountKas, "--profile", "toccata-v2", "--stop-miner", "--json"]);
+      let run = await this.runLocalnetFund(name, amountKas, opts?.note);
       if (run.status !== "succeeded") {
-        throw new Error(extractCliError(run.result) ?? `Funding ${name} failed (exit ${run.exitCode}). See the Console for details.`);
+        throw new Error(extractCliError(run.result, run.stderr) ?? `Funding ${name} failed (exit ${run.exitCode}). See the Console for details.`);
       }
       let payload = unwrapEnvelope(run.result);
       let after = (payload?.after ?? null) as { matureBalanceSompi?: string | number } | null;
       const cmdBefore = (payload?.before ?? null) as { matureBalanceSompi?: string | number } | null;
       if (payload?.status === "TOCCATA_FUNDING_PENDING_MATURITY" || parseSompi(after?.matureBalanceSompi) <= parseSompi(cmdBefore?.matureBalanceSompi)) {
         opts?.note?.(`waiting for Treasury funding settlement on ${name}…`);
-        run = await this.console().runHardkas(["localnet", "fund", name, "--treasury", "--amount", amountKas, "--profile", "toccata-v2", "--stop-miner", "--json"]);
+        run = await this.runLocalnetFund(name, amountKas, opts?.note);
         if (run.status !== "succeeded") {
-          throw new Error(extractCliError(run.result) ?? `Funding retry for ${name} failed (exit ${run.exitCode}).`);
+          throw new Error(extractCliError(run.result, run.stderr) ?? `Funding retry for ${name} failed (exit ${run.exitCode}).`);
         }
         payload = unwrapEnvelope(run.result);
         after = (payload?.after ?? null) as { matureBalanceSompi?: string | number } | null;
@@ -452,7 +540,7 @@ export class EnvironmentPlugin extends Plugin {
       // `simulator fund` is the stable replacement for the deprecated `accounts fund`.
       const run = await this.console().runHardkas(["simulator", "fund", name, "--amount", amountKas, "--json"]);
       if (run.status !== "succeeded") {
-        throw new Error(extractCliError(run.result) ?? `Simulator funding for ${name} failed (exit ${run.exitCode}).`);
+        throw new Error(extractCliError(run.result, run.stderr) ?? `Simulator funding for ${name} failed (exit ${run.exitCode}).`);
       }
       await this.waitForConfirmedBalance(name, network, beforeSompi, 10_000, opts?.note);
     }
@@ -461,7 +549,8 @@ export class EnvironmentPlugin extends Plugin {
 
   /**
    * Funds accounts on the target network (`localnet seed` 1 -> N Treasury transfer on Docker simnet,
-   * or `simulator fund` in-memory) and verifies every account has confirmed spendable balance > 0 KAS.
+   * falling back to individual `localnet fund` calls on older CLIs, or `simulator fund` in-memory)
+   * and verifies every account has confirmed spendable balance > 0 KAS.
    */
   async fundAll(
     amountKas = "100",
@@ -483,7 +572,8 @@ export class EnvironmentPlugin extends Plugin {
     }
     const list = opts?.onlyEmpty ? empty : empty.length > 0 ? empty : current;
 
-    if (target === "localnet") {
+    let seededBatch = false;
+    if (target === "localnet" && this.seedSupported !== false) {
       note?.(`seeding ${list.map((a) => a.name).join(", ")} (${amountKas} KAS each) from Treasury…`);
       const args = ["localnet", "seed", "--amount", amountKas, "--profile", "toccata-v2", "--stop-miner", "--json"];
       if (opts?.onlyEmpty || empty.length > 0) {
@@ -492,10 +582,17 @@ export class EnvironmentPlugin extends Plugin {
         args.push("--accounts", list.map((a) => a.name).join(","));
       }
       const run = await this.console().runHardkas(args);
-      if (run.status !== "succeeded") {
-        throw new Error(extractCliError(run.result) ?? `Seeding localnet accounts failed (exit ${run.exitCode}). See the Console for details.`);
+      if (run.status === "succeeded") {
+        seededBatch = true;
+      } else if (isUnsupportedCliFeature(run, "seed")) {
+        this.seedSupported = false;
+        note?.("CLI lacks batched localnet seed; funding accounts individually…");
+      } else {
+        throw new Error(extractCliError(run.result, run.stderr) ?? `Seeding localnet accounts failed (exit ${run.exitCode}). See the Console for details.`);
       }
-    } else {
+    }
+
+    if (!seededBatch) {
       for (let i = 0; i < list.length; i++) {
         const a = list[i];
         note?.(`funding ${a.name} (${i + 1}/${list.length})…`);
@@ -546,7 +643,10 @@ export class EnvironmentPlugin extends Plugin {
    */
   async mineBurst(account: string): Promise<void> {
     await this.minerOp("burst", async () => {
-      await this.runCli(["localnet", "fund", account, "--treasury", "--amount", "1", "--stop-miner", "--profile", "toccata-v2", "--json"], "Mining burst failed");
+      const run = await this.runLocalnetFund(account, "1");
+      if (run.status !== "succeeded") {
+        throw new Error(extractCliError(run.result, run.stderr) ?? `Mining burst failed (exit ${run.exitCode}). See the Console for details.`);
+      }
       await this.refreshAccounts();
     });
   }
@@ -616,13 +716,29 @@ function unwrapEnvelope(raw: unknown): Record<string, unknown> | null {
   return obj;
 }
 
-function extractCliError(raw: unknown): string | null {
-  if (!raw || typeof raw !== "object") return null;
-  const obj = raw as { error?: { message?: unknown } | string; message?: unknown };
-  if (typeof obj.error === "string" && obj.error) return obj.error;
-  if (obj.error && typeof obj.error === "object" && typeof obj.error.message === "string") return obj.error.message;
-  if (typeof obj.message === "string" && obj.message) return obj.message;
+function extractCliError(raw: unknown, stderr?: string): string | null {
+  if (raw && typeof raw === "object") {
+    const obj = raw as { error?: { message?: unknown } | string; message?: unknown };
+    if (typeof obj.error === "string" && obj.error) return obj.error;
+    if (obj.error && typeof obj.error === "object" && typeof obj.error.message === "string") return obj.error.message;
+    if (typeof obj.message === "string" && obj.message) return obj.message;
+  }
+  if (typeof stderr === "string" && stderr.trim()) {
+    const lines = stderr
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const errLine = lines.find((l) => /^error:/i.test(l)) ?? lines[0];
+    if (errLine) return errLine.slice(0, 240);
+  }
   return null;
+}
+
+function isUnsupportedCliFeature(run: Pick<RunResult, "result" | "stderr">, feature: string): boolean {
+  const escaped = feature.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`unknown (?:command|option)\\s+['"]?${escaped}['"]?`, "i");
+  const text = `${extractCliError(run.result, run.stderr) ?? ""}\n${run.stderr ?? ""}`;
+  return pattern.test(text);
 }
 
 /** One stage of a node operation: `run` may report short progress notes through `note`. */

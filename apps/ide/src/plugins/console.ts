@@ -11,6 +11,7 @@ export interface RunResult {
   status: JobSummary["status"];
   exitCode: number | null;
   result: unknown;
+  stderr?: string;
   job: JobSummary;
 }
 
@@ -58,6 +59,7 @@ export class ConsolePlugin extends Plugin {
     const job = await api.jobs.run(args, { cwd: options?.cwd, command: options?.command, wait: quiet });
     this.emit("jobStarted", job);
     let stdoutBuffer = "";
+    let stderrBuffer = "";
     const done =
       job.status !== "running"
         ? { status: job.status, exitCode: job.exitCode, result: job.result }
@@ -67,12 +69,21 @@ export class ConsolePlugin extends Plugin {
               stdoutBuffer += data;
               if (!args.includes("--json")) state.log("log", data.trimEnd());
             } else if (type === "stderr") {
+              stderrBuffer += data;
               if (!options?.quiet) state.log(data.toLowerCase().includes("error") ? "error" : "log", data.trimEnd());
             } else {
               state.log("error", data);
             }
           });
-    const result: RunResult = { ...done, job: { ...job, status: done.status, exitCode: done.exitCode, result: done.result } };
+    if (done.status === "failed" && !stderrBuffer && (done.result === null || done.result === undefined)) {
+      const detail = await api.jobs.get(job.id).catch(() => null);
+      if (detail?.stderr) stderrBuffer = detail.stderr;
+    }
+    const result: RunResult = {
+      ...done,
+      ...(stderrBuffer ? { stderr: stderrBuffer } : {}),
+      job: { ...job, status: done.status, exitCode: done.exitCode, result: done.result }
+    };
     if (!quiet) {
       if (done.result !== null && done.result !== undefined) {
         state.log("json", `${label} → ${done.status}`, done.result);

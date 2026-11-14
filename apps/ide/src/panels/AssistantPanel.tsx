@@ -1,11 +1,13 @@
 import clsx from "clsx";
 import {
   AlertCircle,
+  ArrowUp,
   BookOpen,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Coins,
   Copy,
   ExternalLink,
   FileCode2,
@@ -14,8 +16,10 @@ import {
   KeyRound,
   Loader2,
   MessageSquare,
-  Send,
-  Settings2,
+  Paperclip,
+  RotateCcw,
+  ShieldCheck,
+  Sparkles,
   Square,
   TextCursorInput,
   Trash2,
@@ -36,20 +40,44 @@ const RESEARCH_GPT = "https://chatgpt.com/g/g-6887632bd778819191d51022323293ea-k
 const DOCS_FOR_AI = "https://docs.kaspa.org/llms.txt";
 const OPENCODE_MODELS_PRIVACY = "https://opencode.ai/docs/zen";
 
-const STARTERS = [
-  "Explain what the open contract does and how each entry is spent.",
-  "Review this contract for mistakes a Toccata/UTXO developer would catch.",
-  "Write a SilverScript escrow with a timeout refund.",
-  "How do I fund and spend a covenant output on simnet with HardKas?"
+/** Suggestions on an empty panel: a short label to read, the full prompt to send. */
+type Starter = { label: string; prompt: string; icon: typeof FileCode2 };
+
+const STARTERS: Starter[] = [
+  { icon: FileCode2, label: "Explain the open contract", prompt: "Explain what the open contract does and how each entry is spent." },
+  { icon: ShieldCheck, label: "Review it for UTXO mistakes", prompt: "Review this contract for mistakes a Toccata/UTXO developer would catch." },
+  { icon: FilePlus2, label: "Write an escrow with a timeout refund", prompt: "Write a SilverScript escrow with a timeout refund." },
+  { icon: Coins, label: "Fund and spend a covenant on simnet", prompt: "How do I fund and spend a covenant output on simnet with HardKas?" }
 ];
 
-const AGENT_STARTERS = [
-  "Run 'hardkas --version' in the terminal and check the state of the environment",
-  "Write an Escrow contract in SilverScript with a refund after a timeout, and compile it",
-  "Write an Auction contract with bids, plus its Vitest test",
-  "Compile and verify every contract in contracts/",
-  "Write a Counter contract with an increment entry and its test suite"
+const AGENT_STARTERS: Starter[] = [
+  { icon: TerminalSquare, label: "Check the environment", prompt: "Run 'hardkas --version' in the terminal and check the state of the environment" },
+  { icon: FilePlus2, label: "Write and compile an escrow", prompt: "Write an Escrow contract in SilverScript with a refund after a timeout, and compile it" },
+  { icon: FilePlus2, label: "Write an auction with its test", prompt: "Write an Auction contract with bids, plus its Vitest test" },
+  { icon: FileCode2, label: "Compile every contract", prompt: "Compile and verify every contract in contracts/" },
+  { icon: FilePlus2, label: "Write a counter with tests", prompt: "Write a Counter contract with an increment entry and its test suite" }
 ];
+
+/** One list of suggestions: bordered rows, quiet until hovered. */
+function StarterList({ starters, busy, onPick }: { starters: Starter[]; busy: boolean; onPick: (prompt: string) => void }) {
+  return (
+    <div className="rounded-md border border-border divide-y divide-border overflow-hidden">
+      {starters.map(({ icon: Icon, label, prompt }) => (
+        <button
+          key={label}
+          type="button"
+          onClick={() => onPick(prompt)}
+          disabled={busy}
+          title={prompt}
+          className="w-full flex items-center gap-2 px-2.5 py-2 text-left text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer transition-colors disabled:opacity-50 group"
+        >
+          <Icon size={13} className="shrink-0 text-fg-muted group-hover:text-accent transition-colors" />
+          <span className="truncate">{label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /** Chat with any LLM about Kaspa and SilverScript, or run an autonomous agent with real workspace tools. */
 export function AssistantPanel() {
@@ -74,7 +102,10 @@ export function AssistantPanel() {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [turns, agentRun?.steps, agentRun?.thoughts, agentRun?.summary]);
 
-  const notReady = config && !config.model ? "Pick a model in the settings." : config && !config.hasKey && config.provider === "anthropic" ? "Add your API key to start (gear icon)." : null;
+  const notReady = config && !config.model ? "Pick a model to start" : config && !config.hasKey && config.provider === "anthropic" ? "Add your API key to start" : null;
+  const modelName = config ? (config.model ? config.model.split("/").pop() : "no model") : "…";
+  const docsInfo = meta?.docs ? `Kaspa docs ${meta.docs.mode} (~${Math.round(meta.docs.chars / 4000)}k tokens)` : config && config.provider !== "opencode" && config.docs !== "off" ? `Kaspa docs ${config.docs}` : "";
+  const sharedFile = activeFile && !activeFile.startsWith("view:") ? activeFile.split("/").pop() : null;
   const needsConsent = config?.provider === "opencode" && !config.opencodeConsent;
 
   const send = (text = input) => {
@@ -100,55 +131,57 @@ export function AssistantPanel() {
 
   return (
     <div className="h-full flex flex-col text-xs min-h-0">
-      <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-border text-fg-muted">
-        <span className="truncate flex-1" title={config ? `${config.provider} · ${config.model}` : ""}>
-          {config ? (config.model ? `${config.model}` : "no model") : "…"}
-          {meta?.docs ? <span className="ml-1 text-[10px]">· Kaspa docs {meta.docs.mode} (~{Math.round(meta.docs.chars / 4000)}k tok)</span> : config?.docs !== "off" && config ? <span className="ml-1 text-[10px]">· Kaspa docs {config.docs}</span> : null}
-        </span>
-        <button type="button" onClick={() => (mode === "agent" ? assistant.resetAgent() : assistant.clear())} className="p-1 rounded hover:text-fg hover:bg-bg-hover cursor-pointer" title={mode === "agent" ? "Reset agent" : "Clear chat"} aria-label={mode === "agent" ? "Reset agent" : "Clear chat"} disabled={mode === "agent" ? !agentRun : turns.length === 0}>
-          <Trash2 size={13} />
-        </button>
-        <button type="button" onClick={() => setSettingsOpen(!settingsOpen)} className={clsx("p-1 rounded cursor-pointer", settingsOpen ? "text-accent bg-bg-hover" : "hover:text-fg hover:bg-bg-hover")} title="Assistant settings" aria-label="Assistant settings" aria-pressed={settingsOpen}>
-          <Settings2 size={13} />
-        </button>
-      </div>
-
-      {/* Mode Switcher */}
-      <div className="shrink-0 flex items-center justify-between px-3 py-1 border-b border-border bg-bg-elev/40">
-        <div className="inline-flex rounded p-0.5 bg-bg border border-border">
-          <button
-            type="button"
-            onClick={() => setMode("chat")}
-            className={clsx(
-              "flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium transition-colors cursor-pointer",
-              mode === "chat" ? "bg-bg-elev text-accent font-semibold shadow-sm" : "text-fg-muted hover:text-fg"
-            )}
-          >
-            <MessageSquare size={12} />
-            Chat
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("agent")}
-            className={clsx(
-              "flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium transition-colors cursor-pointer",
-              mode === "agent" ? "bg-accent/15 text-accent font-semibold shadow-sm" : "text-fg-muted hover:text-fg"
-            )}
-          >
-            <Wand2 size={12} />
-            Agent Mode
-            <span className="text-[9px] px-1 py-0.2 rounded bg-accent/20 text-accent font-mono uppercase tracking-wider">Beta</span>
-          </button>
+      {/* One toolbar: the mode on the left, the model (opens the settings) and the panel actions on the right. */}
+      <div className="shrink-0 flex items-center gap-1.5 px-2 py-1.5 border-b border-border">
+        <div role="tablist" aria-label="Assistant mode" className="inline-flex shrink-0 rounded-md border border-border bg-bg-panel p-0.5">
+          {(["chat", "agent"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="tab"
+              aria-selected={mode === m}
+              onClick={() => setMode(m)}
+              className={clsx(
+                "flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors cursor-pointer",
+                mode === m ? "bg-bg-elev text-fg" : "text-fg-muted hover:text-fg"
+              )}
+            >
+              {m === "chat" ? <MessageSquare size={11} /> : <Wand2 size={11} />}
+              {m === "chat" ? "Chat" : "Agent"}
+            </button>
+          ))}
         </div>
-        {mode === "agent" && agentRun && (
-          <button
-            type="button"
-            onClick={() => assistant.resetAgent()}
-            className="text-[11px] text-fg-muted hover:text-fg hover:underline cursor-pointer"
-          >
-            New task
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(!settingsOpen)}
+          className={clsx(
+            "inline-flex min-w-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors cursor-pointer",
+            settingsOpen ? "border-accent/60 text-accent" : "border-border text-fg-muted hover:text-fg hover:border-fg-muted/40"
+          )}
+          title={[config ? `${config.provider} · ${config.model || "no model"}` : "", docsInfo, "Assistant settings"].filter(Boolean).join("\n")}
+          aria-label="Assistant settings"
+          aria-pressed={settingsOpen}
+        >
+          <Sparkles size={11} className="shrink-0" />
+          <span className="truncate">{modelName}</span>
+          <ChevronDown size={11} className="shrink-0" />
+        </button>
+        {mode === "chat" && (
+          <button type="button" onClick={() => void askResearchGpt()} className="shrink-0 p-1 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer" title="Ask the Kaspa Research GPT instead: copies your question and its context, then opens the GPT" aria-label="Ask the Kaspa Research GPT instead">
+            <ExternalLink size={13} />
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => (mode === "agent" ? assistant.resetAgent() : assistant.clear())}
+          className="shrink-0 p-1 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer disabled:opacity-40 disabled:cursor-default"
+          title={mode === "agent" ? "New task" : "Clear chat"}
+          aria-label={mode === "agent" ? "New task" : "Clear chat"}
+          disabled={mode === "agent" ? !agentRun : turns.length === 0}
+        >
+          {mode === "agent" ? <RotateCcw size={13} /> : <Trash2 size={13} />}
+        </button>
       </div>
 
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
@@ -164,22 +197,22 @@ export function AssistantPanel() {
         ) : (
           <>
             {turns.length === 0 && (
-              <div className="space-y-3 pt-2">
-                <div className="text-fg-muted leading-relaxed">
-                  Ask about Kaspa, Toccata and SilverScript. Answers are grounded in the official docs at <a className="text-accent hover:underline" href={DOCS_FOR_AI} target="_blank" rel="noreferrer">docs.kaspa.org</a>, and the open file is shared as context. It only chats: nothing runs unless you copy it.
+              <div className="space-y-3 pt-5">
+                <div className="flex flex-col items-center gap-1 text-center">
+                  <MessageSquare size={18} className="text-accent" />
+                  <div className="text-[13px] font-medium text-fg">Ask about Kaspa</div>
+                  <div className="max-w-[34ch] leading-relaxed text-fg-muted">
+                    SilverScript, Toccata and HardKas, grounded in <a className="text-accent hover:underline" href={DOCS_FOR_AI} target="_blank" rel="noreferrer">docs.kaspa.org</a>, with the open file as context. It only chats: nothing runs.
+                  </div>
                 </div>
-                {notReady && (
-                  <button type="button" className="btn-primary w-full justify-center" onClick={() => setSettingsOpen(true)}>
-                    <KeyRound size={13} /> {notReady}
+                {notReady && !needsConsent && (
+                  <button type="button" onClick={() => setSettingsOpen(true)} className="w-full flex items-center gap-2 rounded-md border border-warn/40 bg-warn/10 px-2.5 py-1.5 text-left text-[11px] text-warn hover:bg-warn/15 cursor-pointer transition-colors">
+                    <KeyRound size={12} className="shrink-0" />
+                    <span className="flex-1">{notReady}</span>
+                    <span className="underline underline-offset-2">Settings</span>
                   </button>
                 )}
-                <div className="space-y-1">
-                  {STARTERS.map((s) => (
-                    <button key={s} type="button" onClick={() => send(s)} disabled={busy} className="w-full text-left rounded border border-border bg-bg-elev px-2 py-1.5 text-fg-muted hover:text-fg hover:border-accent/50 cursor-pointer disabled:opacity-50">
-                      {s}
-                    </button>
-                  ))}
-                </div>
+                <StarterList starters={STARTERS} busy={busy || needsConsent} onPick={(p) => send(p)} />
               </div>
             )}
             {turns.map((t) => (
@@ -190,56 +223,59 @@ export function AssistantPanel() {
         <div ref={endRef} />
       </div>
 
-      <div className="shrink-0 border-t border-border p-2 space-y-1.5">
+      <div className="shrink-0 p-2">
         {needsConsent && config && <OpenCodeConsent model={config.model} onOwnProvider={() => setSettingsOpen(true)} />}
         {!needsConsent && (
-        <>
-        <label className="flex items-center gap-1.5 text-[11px] text-fg-muted cursor-pointer select-none">
-          <input type="checkbox" checked={includeFile} onChange={(e) => setIncludeFile(e.target.checked)} />
-          <span className="truncate">Share the open file{activeFile && !activeFile.startsWith("view:") ? `: ${activeFile.split("/").pop()}` : " (none open)"}</span>
-        </label>
-        <div className="flex items-end gap-1">
-          <textarea
-            className="input resize-none min-h-[54px] max-h-40"
-            placeholder={
-              mode === "agent"
-                ? "Goal for the agent (e.g. 'Write an Escrow contract and compile it')…  Enter to run"
-                : "Ask about Kaspa or SilverScript…  (Enter to send, Shift+Enter for a new line)"
-            }
-            value={input}
-            rows={2}
-            aria-label={mode === "agent" ? "Goal for the agent" : "Message the assistant"}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
-            }}
-          />
-          {busy ? (
-            <button type="button" className="btn-ghost shrink-0 h-[54px]" onClick={() => assistant.stop()} title="Stop" aria-label="Stop generating">
-              <Square size={14} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className={clsx("shrink-0 h-[54px]", mode === "agent" ? "btn-primary bg-accent/90 hover:bg-accent" : "btn-primary")}
-              onClick={() => send()}
-              disabled={!input.trim()}
-              title={mode === "agent" ? "Run the agent" : "Send"}
-              aria-label={mode === "agent" ? "Run agent goal" : "Send message"}
-            >
-              {mode === "agent" ? <Wand2 size={14} /> : <Send size={14} />}
-            </button>
-          )}
-        </div>
-        {mode === "chat" && (
-          <button type="button" onClick={() => void askResearchGpt()} className="w-full flex items-center justify-center gap-1.5 rounded border border-dashed border-border py-1 text-[11px] text-fg-muted hover:text-fg hover:border-accent/50 cursor-pointer" title="ChatGPT custom GPTs have no API and cannot be embedded: this copies your question with its context and opens the GPT">
-            <ExternalLink size={11} /> Ask the Kaspa Research GPT instead (copies your question)
-          </button>
-        )}
-        </>
+          /* One composer box: the text, then a row with the shared file and the send button. */
+          <div className="rounded-lg border border-border bg-bg transition-colors focus-within:border-accent/60">
+            <textarea
+              className="block w-full resize-none bg-transparent px-2.5 pt-2 pb-1 text-xs text-fg outline-none placeholder:text-fg-muted min-h-[2.75rem] max-h-40 [field-sizing:content]"
+              placeholder={mode === "agent" ? "Describe a goal for the agent" : "Ask about Kaspa or SilverScript"}
+              title="Enter to send, Shift+Enter for a new line"
+              value={input}
+              rows={2}
+              aria-label={mode === "agent" ? "Goal for the agent" : "Message the assistant"}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+            />
+            <div className="flex items-center gap-1.5 px-2 pb-1.5">
+              <button
+                type="button"
+                onClick={() => setIncludeFile(!includeFile)}
+                aria-pressed={includeFile}
+                title={sharedFile ? (includeFile ? `${activeFile} is shared as context. Click to stop sharing it.` : `Click to share ${activeFile} as context.`) : "Open a file to share it as context"}
+                className={clsx(
+                  "inline-flex min-w-0 max-w-[70%] items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors cursor-pointer",
+                  includeFile && sharedFile ? "border-accent/40 bg-accent/10 text-accent" : "border-border text-fg-muted hover:text-fg"
+                )}
+              >
+                <Paperclip size={11} className="shrink-0" />
+                <span className={clsx("truncate", !includeFile && sharedFile && "line-through")}>{sharedFile ?? "No file open"}</span>
+              </button>
+              <span className="flex-1" />
+              {busy ? (
+                <button type="button" onClick={() => assistant.stop()} title="Stop" aria-label="Stop generating" className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border text-fg hover:bg-bg-hover cursor-pointer">
+                  <Square size={12} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => send()}
+                  disabled={!input.trim()}
+                  title={mode === "agent" ? "Run the agent (Enter)" : "Send (Enter)"}
+                  aria-label={mode === "agent" ? "Run agent goal" : "Send message"}
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg transition-all hover:brightness-110 cursor-pointer disabled:cursor-default disabled:bg-bg-elev disabled:text-fg-muted"
+                >
+                  {mode === "agent" ? <Wand2 size={13} /> : <ArrowUp size={14} />}
+                </button>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -323,38 +359,15 @@ function AgentView({
 
   if (!agentRun) {
     return (
-      <div className="space-y-4 pt-1">
-        <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 space-y-2">
-          <div className="flex items-center gap-2 text-accent font-semibold text-xs">
-            <Wand2 size={14} /> Agent mode
-          </div>
-          <p className="text-fg-muted leading-relaxed text-[11px]">
-            The agent works on the workspace by itself: it writes files, runs terminal commands, compiles with <code className="font-mono text-accent">silverc</code>, runs the tests and retries on errors. Every step shows up below as it happens, and Stop ends the run.
-          </p>
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {["execute_terminal_command", "write_file", "compile_silverscript", "run_tests", "fund_account"].map((t) => (
-              <span key={t} className="px-1.5 py-0.5 rounded border border-border bg-bg-elev font-mono text-[10px] text-fg-muted">
-                ⚡ {t}
-              </span>
-            ))}
+      <div className="space-y-3 pt-5">
+        <div className="flex flex-col items-center gap-1 text-center">
+          <Wand2 size={18} className="text-accent" />
+          <div className="text-[13px] font-medium text-fg">Give the agent a goal</div>
+          <div className="max-w-[34ch] leading-relaxed text-fg-muted">
+            It works on the workspace by itself: writes files, runs HardKas commands, compiles and tests. Each step shows here as it happens; commands ask you first.
           </div>
         </div>
-
-        <div className="space-y-1.5">
-          <div className="text-[11px] font-medium text-fg-muted uppercase tracking-wider">Suggested tasks</div>
-          {AGENT_STARTERS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => onRunStarter(s)}
-              disabled={busy}
-              className="w-full text-left rounded border border-border bg-bg-elev px-2.5 py-2 text-fg hover:border-accent/50 hover:bg-bg-hover cursor-pointer transition-colors disabled:opacity-50 group flex items-center justify-between"
-            >
-              <span className="truncate pr-2">{s}</span>
-              <Wand2 size={12} className="opacity-0 group-hover:opacity-100 text-accent transition-opacity shrink-0" />
-            </button>
-          ))}
-        </div>
+        <StarterList starters={AGENT_STARTERS} busy={busy} onPick={onRunStarter} />
       </div>
     );
   }
@@ -693,6 +706,19 @@ function Settings({ onClose }: { onClose: () => void }) {
     };
   }, [docs]);
 
+  // The key status describes the saved provider; while another provider is picked but not saved yet there is none.
+  const sameProvider = config?.provider === provider;
+  const envName = provider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY";
+  const keyState = !sameProvider || !config
+    ? null
+    : config.keySource === "env"
+      ? { text: `from ${envName}`, warn: false }
+      : config.keySource === "keychain"
+        ? { text: `saved ${config.keyHint}`, warn: false }
+        : config.keySource === "file"
+          ? { text: "still in a settings file: save it again or set the variable", warn: true }
+          : null;
+
   const pickProvider = (p: "opencode" | "anthropic" | "openai") => {
     setProvider(p);
     if (defaults) {
@@ -757,10 +783,18 @@ function Settings({ onClose }: { onClose: () => void }) {
       <div>
         <div className="label flex items-center justify-between">
           <span>API key</span>
-          {config?.hasKey && <span className="normal-case tracking-normal text-ok">saved {config.keyHint}</span>}
+          {keyState && <span className={clsx("normal-case tracking-normal", keyState.warn ? "text-warn" : "text-ok")}>{keyState.text}</span>}
         </div>
-        <input className="input font-mono" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={config?.hasKey ? "leave empty to keep the saved key" : "paste your key"} />
-        <div className="text-[10px] text-fg-muted mt-1">Stored in ~/.hardkas-ide/assistant.json on this machine and used only by ide-server. It is never sent back to the browser.</div>
+        {sameProvider && config?.keySource === "env" ? (
+          <div className="text-[11px] text-fg-muted">
+            The key comes from <code className="font-mono">{envName}</code>. Remove that variable to manage the key here.
+          </div>
+        ) : (
+          <input className="input font-mono" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={sameProvider && config?.hasKey ? "leave empty to keep the saved key" : "paste your key"} />
+        )}
+        <div className="text-[10px] text-fg-muted mt-1">
+          Saved in your system's credential store (Windows Credential Manager, macOS Keychain or the Linux Secret Service), never in a file, and never sent back to the browser. If <code className="font-mono">{envName}</code> is set, that key is used instead.
+        </div>
       </div>
       )}
       {provider !== "opencode" && (
@@ -780,7 +814,7 @@ function Settings({ onClose }: { onClose: () => void }) {
         <button type="button" className="btn-primary flex-1 justify-center" onClick={() => void save()}>
           Save
         </button>
-        {config?.hasKey && (
+        {sameProvider && (config?.keySource === "keychain" || config?.keySource === "file") && (
           <button type="button" className="btn-ghost" onClick={() => void save({ clearKey: true })} title="Delete the saved key">
             Remove key
           </button>

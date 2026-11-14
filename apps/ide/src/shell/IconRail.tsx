@@ -75,7 +75,7 @@ export function IconRail() {
   };
 
   return (
-    <nav aria-label="Workbench navigation" className="w-10 shrink-0 bg-bg-panel border-r border-border flex flex-col items-center py-1.5 gap-0.5 select-none overflow-y-auto overflow-x-hidden">
+    <nav aria-label="Workbench navigation" className="w-10 shrink-0 bg-bg-panel flex flex-col items-center py-1.5 gap-0.5 select-none overflow-y-auto overflow-x-hidden">
       {plugins.map((p) => {
         const Icon = p.profile.icon;
         const { isActive, where, toggle } = sideToggleState(p);
