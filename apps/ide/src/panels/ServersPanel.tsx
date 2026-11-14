@@ -41,7 +41,7 @@ export function ServersPanel() {
             ))}
           </select>
           <div className="text-fg-muted">{current.description}</div>
-          <div className="text-[10px] text-fg-muted">
+          <div className="text-[12px] text-fg-muted">
             HardKas names: <code>--target {current.id}</code> · <code>--network {current.networkId}</code>
           </div>
         </div>
@@ -74,7 +74,12 @@ export function ServersPanel() {
                 )}{" "}
                 Until then, use the Simulator: it needs nothing.
               </div>
-              {docker?.error && <div className="text-[10px] text-fg-muted font-mono break-all">{docker.error}</div>}
+              {docker?.error && (
+                <details className="text-[12px] text-fg-muted">
+                  <summary className="cursor-pointer hover:text-fg">Technical details</summary>
+                  <div className="mt-1 font-mono break-all select-text">{docker.error}</div>
+                </details>
+              )}
               {target === "localnet" && (
                 <button type="button" className="btn-ghost w-full justify-center" onClick={() => setTarget("simulator")}>
                   Switch to Simulator
@@ -82,11 +87,11 @@ export function ServersPanel() {
               )}
             </div>
           )}
-          {docker?.running && <div className="text-[10px] text-fg-muted">Docker {docker.serverVersion} running</div>}
+          {docker?.running && <div className="text-[12px] text-fg-muted">Docker {docker.serverVersion} running</div>}
           <div className="rounded border border-border bg-bg-elev p-2 space-y-1">
             <div className="flex items-center justify-between">
               <span className="font-semibold text-fg">rusty-kaspad · {node?.network ?? "simnet"}</span>
-              <span className={clsx("text-[10px] uppercase tracking-wide", node?.rpcReady ? "text-ok" : node?.running ? "text-warn" : "text-error")}>
+              <span className={clsx("text-[12px] uppercase tracking-wide", node?.rpcReady ? "text-ok" : node?.running ? "text-warn" : "text-error")}>
                 {node ? (node.rpcReady ? "ready" : node.running ? "starting" : "stopped") : "unknown"}
               </span>
             </div>
@@ -103,7 +108,7 @@ export function ServersPanel() {
           {nodeOp && <div className="rounded border border-border bg-bg p-2"><OpSteps op={nodeOp} compact /></div>}
           <MinerNotice />
           {cli && (
-            <div className={clsx("text-[10px] break-words", cliMismatch(cli) ? "text-warn" : "text-fg-muted")} title={cli.command}>
+            <div className={clsx("text-[12px] break-words", cliMismatch(cli) ? "text-warn" : "text-fg-muted")} title={cli.command}>
               CLI {cli.version ?? "not found"} · {cli.source === "project" ? "project node_modules" : cli.source === "npx" ? "npx" : cli.source === "env" ? "HARDKAS_BIN" : "repo"}
               {cliMismatch(cli) ? ` · the IDE was tested with ${cli.pinned}` : ""}
               {!cli.version && cli.error ? ` · ${cli.error}` : ""}
@@ -172,7 +177,7 @@ function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex gap-2 min-w-0">
       <span className="w-16 shrink-0 text-fg-muted">{k}</span>
-      <span className="font-mono text-[11px] truncate tabular-nums" title={v}>
+      <span className="font-mono text-[12px] truncate tabular-nums" title={v}>
         {v}
       </span>
     </div>

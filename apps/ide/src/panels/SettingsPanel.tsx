@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useEnv } from "@/store/env";
 import { useIde } from "@/store/ide";
 import { useUpdates } from "@/store/updates";
@@ -10,6 +11,14 @@ export function SettingsPanel() {
   const checking = useUpdates((s) => s.checking);
   const checkUpdates = useUpdates((s) => s.check);
   const openUpdates = useUpdates((s) => s.openPopover);
+  // The addresses this IDE really talks to (the server reports its own port and the dev-server it proxies to).
+  const [info, setInfo] = useState<{ port?: number; devServer?: string } | null>(null);
+  useEffect(() => {
+    fetch("/api/info")
+      .then((r) => r.json() as Promise<{ port?: number; devServer?: string }>)
+      .then(setInfo)
+      .catch(() => setInfo(null));
+  }, []);
 
   const updateSummary = !report
     ? "not checked yet"
@@ -61,9 +70,9 @@ export function SettingsPanel() {
       <div>
         <div className="label">Servers</div>
         <dl className="space-y-1">
-          <Row k="ide-server" v="http://127.0.0.1:7421 (files, jobs, proxy)" mono />
-          <Row k="dev-server" v="http://127.0.0.1:7420 (hardkas dev)" mono />
-          <Row k="ui" v="http://localhost:5173" mono />
+          <Row k="ide-server" v={info?.port ? `http://127.0.0.1:${info.port} (files, jobs, proxy)` : "not reachable"} mono />
+          <Row k="dev-server" v={`${info?.devServer ?? "http://localhost:7420"} (hardkas dev)`} mono />
+          <Row k="ui" v={location.origin} mono />
         </dl>
       </div>
       <div>
@@ -78,9 +87,10 @@ export function SettingsPanel() {
 
 function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
-    <div className="flex gap-2">
-      <dt className="w-28 shrink-0 text-fg-muted">{k}</dt>
-      <dd className={mono ? "font-mono break-all" : ""}>{v}</dd>
+    // The label sits above the value: a long path or address gets the whole panel width instead of a narrow column.
+    <div>
+      <dt className="text-fg-muted">{k}</dt>
+      <dd className={mono ? "font-mono break-all" : "break-words"}>{v}</dd>
     </div>
   );
 }

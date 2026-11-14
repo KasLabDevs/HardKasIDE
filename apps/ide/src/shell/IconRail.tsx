@@ -114,7 +114,8 @@ export function IconRail() {
               isActive ? "text-accent bg-bg-hover" : "text-fg-muted hover:text-fg hover:bg-bg-hover"
             )}
           >
-            {isActive && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-accent rounded-r" />}
+            {/* A view open as a tab is marked on the right edge, a side panel on the left: two lit icons tell apart. */}
+            {isActive && <span className="absolute right-0 top-1.5 bottom-1.5 w-0.5 bg-accent rounded-l" />}
             {Icon ? <Icon size={17} /> : <span className="text-xs font-semibold">{p.profile.displayName[0]}</span>}
           </button>
         );

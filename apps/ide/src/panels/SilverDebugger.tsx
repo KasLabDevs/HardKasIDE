@@ -144,13 +144,13 @@ export function SilverDebugger({ file, source, argsJson, jumpToLine }: Props) {
   }, [view?.variables]);
 
   return (
-    <div className="rounded border border-border bg-bg-panel p-2.5 space-y-2 text-[11px]">
+    <div className="rounded border border-border bg-bg-panel p-2.5 space-y-2 text-[12px]">
       <div className="flex items-center justify-between">
         <span className="font-semibold text-fg flex items-center gap-1.5">
           <Bug size={13} className="text-accent shrink-0" /> SilverScript debugger
         </span>
         {view && view.file === file && view.state !== "idle" && (
-          <span className={clsx("font-mono text-[10px] uppercase", view.state === "failed" ? "text-error" : view.state === "finished" ? "text-ok" : "text-fg-muted")}>
+          <span className={clsx("font-mono text-[12px] uppercase", view.state === "failed" ? "text-error" : view.state === "finished" ? "text-ok" : "text-fg-muted")}>
             {view.state === "paused" ? `line ${view.line}` : view.state === "failed" ? "rejected" : view.state === "finished" ? "passed" : view.state}
           </span>
         )}
@@ -163,8 +163,8 @@ export function SilverDebugger({ file, source, argsJson, jumpToLine }: Props) {
           <div className="flex items-center gap-1.5 font-semibold text-warn">
             <ShieldAlert size={12} /> Unverified local runner
           </div>
-          <div className="text-fg-muted break-all font-mono text-[10px]">{runner.path}</div>
-          <div className="text-fg-muted break-all font-mono text-[10px]">sha256 {runner.sha256}</div>
+          <div className="text-fg-muted break-all font-mono text-[12px]">{runner.path}</div>
+          <div className="text-fg-muted break-all font-mono text-[12px]">sha256 {runner.sha256}</div>
           <button type="button" className="btn-ghost w-full justify-center" disabled={busy !== null} onClick={() => void approve()}>
             Approve this build
           </button>
@@ -207,7 +207,7 @@ export function SilverDebugger({ file, source, argsJson, jumpToLine }: Props) {
                   </label>
                 );
               })}
-              <div className="text-[10px] text-fg-muted">
+              <div className="text-[12px] text-fg-muted">
                 Breakpoints: click the gutter of {file.split("/").pop()} ({(breakpoints ?? []).length} set). Constructor arguments come from the box above.
               </div>
               <button type="button" className="btn-primary w-full justify-center" disabled={busy !== null || !current} onClick={() => void start()}>
@@ -253,9 +253,9 @@ export function SilverDebugger({ file, source, argsJson, jumpToLine }: Props) {
             <div className="space-y-1.5">
               {sections.map(([section, vars]) => (
                 <div key={section}>
-                  <div className="text-[10px] font-semibold uppercase text-fg-muted">{section}</div>
+                  <div className="text-[12px] font-semibold uppercase text-fg-muted">{section}</div>
                   {vars.map((v) => (
-                    <div key={`${section}.${v.name}`} className="flex gap-2 font-mono text-[10px] min-w-0">
+                    <div key={`${section}.${v.name}`} className="flex gap-2 font-mono text-[12px] min-w-0">
                       <span className="text-accent shrink-0">{v.name}</span>
                       <span className="text-fg-muted shrink-0">{v.type}</span>
                       <span className="text-fg truncate" title={v.value}>
@@ -267,9 +267,9 @@ export function SilverDebugger({ file, source, argsJson, jumpToLine }: Props) {
               ))}
               {view.stack.length > 0 && (
                 <div>
-                  <div className="text-[10px] font-semibold uppercase text-fg-muted">Stack</div>
+                  <div className="text-[12px] font-semibold uppercase text-fg-muted">Stack</div>
                   {view.stack.map((s, i) => (
-                    <div key={i} className="font-mono text-[10px] text-fg truncate" title={s}>
+                    <div key={i} className="font-mono text-[12px] text-fg truncate" title={s}>
                       [{i}] {s}
                     </div>
                   ))}
@@ -289,18 +289,18 @@ export function SilverDebugger({ file, source, argsJson, jumpToLine }: Props) {
                   </button>
                 </form>
               )}
-              {view.output && /=/.test(view.output) && !/^\s*\d+\s*\|/m.test(view.output) && <pre className="font-mono text-[10px] bg-bg border border-border rounded p-1.5 whitespace-pre-wrap">{view.output}</pre>}
+              {view.output && /=/.test(view.output) && !/^\s*\d+\s*\|/m.test(view.output) && <pre className="font-mono text-[12px] bg-bg border border-border rounded p-1.5 whitespace-pre-wrap">{view.output}</pre>}
             </div>
           )}
 
-          <div className="text-[10px] text-fg-muted">
+          <div className="text-[12px] text-fg-muted">
             Runs the Kaspa script engine on a test transaction (one input of this contract): it checks the contract's logic, not that a node would accept a real spend. Runner: unverified local build.
           </div>
         </>
       )}
 
       {/* Useful without the runner too: pubkey constructor arguments take these keys. */}
-      <button type="button" className="text-[10px] text-accent hover:underline cursor-pointer" onClick={() => setShowKeys((v) => !v)}>
+      <button type="button" className="text-[12px] text-accent hover:underline cursor-pointer" onClick={() => setShowKeys((v) => !v)}>
         {showKeys ? "Hide" : "Show"} the dev accounts' public keys (for pubkey arguments)
       </button>
       {showKeys && (
@@ -310,7 +310,7 @@ export function SilverDebugger({ file, source, argsJson, jumpToLine }: Props) {
             if (!pk) return null;
             const hex = `0x${bytesToHex(pk)}`;
             return (
-              <div key={name} className="flex items-center gap-1 font-mono text-[10px] min-w-0">
+              <div key={name} className="flex items-center gap-1 font-mono text-[12px] min-w-0">
                 <span className="text-accent shrink-0 w-10">{name}</span>
                 <span className="truncate text-fg-muted" title={hex}>
                   {hex}
@@ -321,8 +321,8 @@ export function SilverDebugger({ file, source, argsJson, jumpToLine }: Props) {
               </div>
             );
           })}
-          {Object.keys(addresses).length === 0 && <div className="text-[10px] text-fg-muted">No simnet dev accounts in this project yet (start the local node once to create them).</div>}
-          <div className="text-[10px] text-fg-muted">Paste one as {'{"kind":"pubkey","value":"0x…"}'} in the constructor arguments.</div>
+          {Object.keys(addresses).length === 0 && <div className="text-[12px] text-fg-muted">No simnet dev accounts in this project yet (start the local node once to create them).</div>}
+          <div className="text-[12px] text-fg-muted">Paste one as {'{"kind":"pubkey","value":"0x…"}'} in the constructor arguments.</div>
         </div>
       )}
 

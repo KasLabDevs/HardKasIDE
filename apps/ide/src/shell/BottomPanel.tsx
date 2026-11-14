@@ -86,7 +86,7 @@ export function BottomPanel() {
 
   return (
     <div className="h-full flex flex-col bg-bg panel-card">
-      <div role="tablist" aria-label="Bottom panel tabs" className="h-[26px] shrink-0 flex items-stretch border-b border-border bg-bg-panel text-[11px] select-none">
+      <div role="tablist" aria-label="Bottom panel tabs" className="h-[26px] shrink-0 flex items-stretch border-b border-border bg-bg-panel text-[12px] select-none">
         <TabButton active={active.kind === "console"} onClick={() => setActive({ kind: "console" })} icon={<ScrollText size={13} />} label="Console" />
         {bottomSearchOpen && (
           <TabButton
@@ -137,8 +137,8 @@ export function BottomPanel() {
           ))}
         </div>
         {active.kind === "terminal" && terminals.length > 0 && (
-          <aside className="w-44 shrink-0 border-l border-border bg-bg-panel text-[11px] overflow-auto">
-            <div className="flex items-center justify-between px-2 py-1 text-fg-muted uppercase tracking-wider text-[10px]">
+          <aside className="w-44 shrink-0 border-l border-border bg-bg-panel text-[12px] overflow-auto">
+            <div className="flex items-center justify-between px-2 py-1 text-fg-muted uppercase tracking-wider text-[12px]">
               <span>Terminals</span>
               <button type="button" onClick={addTerminal} className="p-0.5 rounded hover:text-fg hover:bg-bg-hover cursor-pointer" title="New terminal" aria-label="New terminal">
                 <Plus size={12} />
@@ -173,7 +173,7 @@ export function BottomPanel() {
                       <input
                         autoFocus
                         aria-label="Rename terminal"
-                        className="input py-0 px-1 text-[11px]"
+                        className="input py-0 px-1 text-[12px]"
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
                         onBlur={commitRename}
@@ -217,7 +217,7 @@ export function BottomPanel() {
                 );
               })}
             </ul>
-            <div className="px-2 py-1 text-[10px] text-fg-muted">double-click or F2 to rename</div>
+            <div className="px-2 py-1 text-[12px] text-fg-muted">double-click or F2 to rename</div>
           </aside>
         )}
       </div>

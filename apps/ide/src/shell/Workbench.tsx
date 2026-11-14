@@ -42,7 +42,8 @@ export function Workbench({ onHome }: Props) {
           <PanelGroup direction="horizontal" className="flex-1 min-w-0">
             {sidebarOpen && (
               <>
-                <Panel id="side" order={1} defaultSize={22} minSize={14} maxSize={45}>
+                {/* 26% by default: the Deploy & Run selects ("alice (synthetic)…") and node details were clipped at 22%. */}
+                <Panel id="side" order={1} defaultSize={26} minSize={14} maxSize={45}>
                   <SidePanel />
                 </Panel>
                 <PanelResizeHandle className="ide-split-h" />

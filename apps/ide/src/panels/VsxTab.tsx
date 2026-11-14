@@ -50,7 +50,7 @@ export function VsxTab() {
 
   return (
     <div className="p-3 space-y-4">
-      <div className="text-[10px] text-fg-muted">
+      <div className="text-[12px] text-fg-muted">
         Extensions come from <a className="text-accent hover:underline" href="https://open-vsx.org" target="_blank" rel="noreferrer">Open VSX</a>, the open registry used by Theia, Gitpod and VSCodium. The IDE applies their <b>themes, grammars, languages and snippets</b>; extension code that needs the VS Code extension host is not run.
       </div>
 
@@ -67,7 +67,7 @@ export function VsxTab() {
               </option>
             ))}
           </select>
-          <label className="flex items-center gap-2 mt-1 cursor-pointer text-[11px]">
+          <label className="flex items-center gap-2 mt-1 cursor-pointer text-[12px]">
             <input type="checkbox" checked={applyUi} onChange={(e) => void vsx.setApplyUi(e.target.checked)} />
             <span>Also recolor the IDE with the theme's workbench colors</span>
           </label>
@@ -86,9 +86,9 @@ export function VsxTab() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="font-semibold text-fg truncate">{e.displayName}</span>
-                      <span className="text-[10px] text-fg-muted shrink-0">v{e.version}</span>
+                      <span className="text-[12px] text-fg-muted shrink-0">v{e.version}</span>
                     </div>
-                    <div className="text-[10px] text-fg-muted truncate">{e.id}</div>
+                    <div className="text-[12px] text-fg-muted truncate">{e.id}</div>
                   </div>
                   <button
                     type="button"
@@ -110,7 +110,7 @@ export function VsxTab() {
                     <Trash2 size={13} />
                   </button>
                 </div>
-                <div className="text-[10px] text-fg-muted mt-1 flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums">
+                <div className="text-[12px] text-fg-muted mt-1 flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums">
                   {c.themes.length > 0 && <span>{c.themes.length} theme{c.themes.length === 1 ? "" : "s"}</span>}
                   {c.grammars.length > 0 && <span>{c.grammars.length} grammar{c.grammars.length === 1 ? "" : "s"}</span>}
                   {c.languages.length > 0 && <span>{c.languages.length} language{c.languages.length === 1 ? "" : "s"}</span>}
@@ -118,7 +118,7 @@ export function VsxTab() {
                   {c.themes.length + c.grammars.length + c.languages.length + c.snippets.length === 0 && <span>nothing the IDE can apply</span>}
                 </div>
                 {e.unsupported.length > 0 && (
-                  <div className="text-[10px] text-warn mt-1 flex items-start gap-1">
+                  <div className="text-[12px] text-warn mt-1 flex items-start gap-1">
                     <ShieldAlert size={11} className="shrink-0 mt-0.5" /> <span>not supported here: {e.unsupported.join(", ")}</span>
                   </div>
                 )}
@@ -133,7 +133,7 @@ export function VsxTab() {
                           type="button"
                           aria-pressed={on}
                           onClick={() => void vsx.applyTheme(on ? null : id)}
-                          className={clsx("text-[10px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors", on ? "border-accent text-accent bg-bg-hover/50" : "border-border text-fg-muted hover:text-fg")}
+                          className={clsx("text-[12px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors", on ? "border-accent text-accent bg-bg-hover/50" : "border-border text-fg-muted hover:text-fg")}
                         >
                           {on && <Check size={10} className="inline mr-0.5" />}
                           {t.label}
@@ -147,15 +147,15 @@ export function VsxTab() {
           })}
         </div>
       )}
-      {error && <div role="alert" className="text-error text-[11px] whitespace-pre-wrap break-words">{error}</div>}
+      {error && <div role="alert" className="text-error text-[12px] whitespace-pre-wrap break-words">{error}</div>}
 
       <div>
         <div className="relative">
           <Search size={12} className="absolute left-2 top-2 text-fg-muted pointer-events-none" />
           <input aria-label="Search Open VSX extensions" className="input pl-6" placeholder="Search Open VSX (themes, languages, snippets)…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <div className="text-[10px] text-fg-muted mt-1 tabular-nums">{searching ? "searching…" : hits ? `${total.toLocaleString()} extension${total === 1 ? "" : "s"}${q ? ` for "${q}"` : " (showing themes)"}` : ""}</div>
-        {searchErr && <div role="alert" className="text-error text-[11px]">{searchErr}</div>}
+        <div className="text-[12px] text-fg-muted mt-1 tabular-nums">{searching ? "searching…" : hits ? `${total.toLocaleString()} extension${total === 1 ? "" : "s"}${q ? ` for "${q}"` : " (showing themes)"}` : ""}</div>
+        {searchErr && <div role="alert" className="text-error text-[12px]">{searchErr}</div>}
         <div className="mt-2 space-y-1.5">
           {hits?.map((h) => (
             <div key={h.id} className="rounded border border-border bg-bg-elev p-2 flex items-center gap-2">
@@ -163,13 +163,13 @@ export function VsxTab() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="font-semibold text-fg truncate">{h.displayName}</span>
-                  <span className="text-[10px] text-fg-muted shrink-0">v{h.version}</span>
+                  <span className="text-[12px] text-fg-muted shrink-0">v{h.version}</span>
                   {h.verified && <Check size={10} className="text-ok shrink-0" aria-label="Verified publisher" />}
                 </div>
-                <div className="text-[10px] text-fg-muted truncate" title={h.description}>
+                <div className="text-[12px] text-fg-muted truncate" title={h.description}>
                   {h.description || h.id}
                 </div>
-                <div className="text-[10px] text-fg-muted tabular-nums">
+                <div className="text-[12px] text-fg-muted tabular-nums">
                   {h.namespace} · {h.downloadCount?.toLocaleString() ?? "?"} downloads
                 </div>
               </div>

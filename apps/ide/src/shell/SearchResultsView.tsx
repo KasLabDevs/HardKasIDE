@@ -30,7 +30,7 @@ function renderHighlightedLine(m: SearchMatchLine) {
   const matched = text.slice(start, end);
   const after = text.slice(end);
   return (
-    <span className="font-mono text-[11px] whitespace-pre">
+    <span className="font-mono text-[12px] whitespace-pre">
       <span className="text-fg-muted">{before}</span>
       <mark className="bg-warn/30 text-fg font-semibold px-0.5 rounded-xs border border-warn/50">{matched}</mark>
       <span className="text-fg-muted">{after}</span>
@@ -129,7 +129,7 @@ export function SearchResultsView() {
                 }
               }}
               placeholder="Search text in workspace…"
-              className="input pl-7 py-0.5 text-[11px] font-mono w-full"
+              className="input pl-7 py-0.5 text-[12px] font-mono w-full"
             />
           </div>
 
@@ -137,7 +137,7 @@ export function SearchResultsView() {
             type="button"
             onClick={() => setOptions({ caseSensitive: !caseSensitive })}
             className={clsx(
-              "px-1.5 py-0.5 rounded border font-mono text-[10px] cursor-pointer",
+              "px-1.5 py-0.5 rounded border font-mono text-[12px] cursor-pointer",
               caseSensitive ? "border-accent bg-accent/15 text-accent font-bold" : "border-border bg-bg text-fg-muted hover:text-fg"
             )}
             title="Match Case (Case sensitive)"
@@ -148,7 +148,7 @@ export function SearchResultsView() {
             type="button"
             onClick={() => setOptions({ wholeWord: !wholeWord })}
             className={clsx(
-              "px-1.5 py-0.5 rounded border font-mono text-[10px] cursor-pointer",
+              "px-1.5 py-0.5 rounded border font-mono text-[12px] cursor-pointer",
               wholeWord ? "border-accent bg-accent/15 text-accent font-bold" : "border-border bg-bg text-fg-muted hover:text-fg"
             )}
             title="Match Whole Word"
@@ -159,7 +159,7 @@ export function SearchResultsView() {
             type="button"
             onClick={() => setOptions({ regex: !regex })}
             className={clsx(
-              "px-1.5 py-0.5 rounded border font-mono text-[10px] cursor-pointer",
+              "px-1.5 py-0.5 rounded border font-mono text-[12px] cursor-pointer",
               regex ? "border-accent bg-accent/15 text-accent font-bold" : "border-border bg-bg text-fg-muted hover:text-fg"
             )}
             title="Use Regular Expression"
@@ -177,7 +177,7 @@ export function SearchResultsView() {
               }
             }}
             placeholder="Files: *.sil, *.ts"
-            className="input py-0.5 px-2 w-32 font-mono text-[11px]"
+            className="input py-0.5 px-2 w-32 font-mono text-[12px]"
             title="File name patterns (e.g. *.sil, *.ts)"
           />
 
@@ -185,7 +185,7 @@ export function SearchResultsView() {
             type="button"
             disabled={!query.trim() || busy}
             onClick={() => void runSearch({ revealInBottom: false })}
-            className="btn-primary px-2.5 py-0.5 text-[11px]"
+            className="btn-primary px-2.5 py-0.5 text-[12px]"
             title="Run search"
           >
             {busy ? <Loader2 size={12} className="animate-spin" /> : <RotateCw size={12} />}
@@ -196,7 +196,7 @@ export function SearchResultsView() {
             type="button"
             onClick={() => setShowReplace(!showReplace)}
             className={clsx(
-              "btn-ghost border px-2 py-0.5 text-[11px]",
+              "btn-ghost border px-2 py-0.5 text-[12px]",
               showReplace ? "border-accent bg-accent/10 text-accent" : "border-border"
             )}
             title="Toggle Replace across files"
@@ -248,7 +248,7 @@ export function SearchResultsView() {
           <button
             type="button"
             onClick={() => openSearchDialog({ mode: "eclipse-search" })}
-            className="btn-ghost border border-border px-2 py-0.5 text-[11px]"
+            className="btn-ghost border border-border px-2 py-0.5 text-[12px]"
             title="Open Eclipse Search Dialog (Ctrl+H)"
           >
             <FolderSearch size={12} className="text-accent" /> Search Dialog…
@@ -273,27 +273,27 @@ export function SearchResultsView() {
             value={replacement}
             onChange={(e) => setReplacement(e.target.value)}
             placeholder="Replace with…"
-            className="input py-0.5 text-[11px] font-mono max-w-xs"
+            className="input py-0.5 text-[12px] font-mono max-w-xs"
           />
           <button
             type="button"
             disabled={!query.trim() || results.length === 0 || busy}
             onClick={() => void handleReplace()}
-            className="btn-ghost border border-warn/50 bg-warn/10 text-warn hover:bg-warn/20 px-2.5 py-0.5 text-[11px]"
+            className="btn-ghost border border-warn/50 bg-warn/10 text-warn hover:bg-warn/20 px-2.5 py-0.5 text-[12px]"
           >
             Replace All ({totalMatches} matches in {totalFiles} files)
           </button>
-          {replaceStatus && <span className="text-[11px] text-ok font-mono">{replaceStatus}</span>}
+          {replaceStatus && <span className="text-[12px] text-ok font-mono">{replaceStatus}</span>}
         </div>
       )}
 
       {/* Eclipse Search Summary Subheader */}
-      <div className="px-3 py-1 bg-bg-elev border-b border-border text-[11px] text-fg-muted font-mono flex items-center justify-between shrink-0">
+      <div className="px-3 py-1 bg-bg-elev border-b border-border text-[12px] text-fg-muted font-mono flex items-center justify-between shrink-0">
         <span className="truncate">
           {lastSummary || "No active search — type above or press Ctrl+H to open the Eclipse Search dialog."}
         </span>
         {results.length > 0 && (
-          <span className="text-[10px] text-accent shrink-0">
+          <span className="text-[12px] text-accent shrink-0">
             Click any line to jump in editor
           </span>
         )}
@@ -335,7 +335,7 @@ export function SearchResultsView() {
                   )}
                   <FileIcon name={fileName} size={14} />
                   <span className="font-semibold text-fg truncate">{fileName}</span>
-                  {folderPath && <span className="text-[10px] text-fg-muted font-mono truncate">— {folderPath}</span>}
+                  {folderPath && <span className="text-[12px] text-fg-muted font-mono truncate">— {folderPath}</span>}
                   <span className="ml-auto flex items-center gap-1.5 shrink-0">
                     {showReplace && (
                       <button
@@ -344,13 +344,13 @@ export function SearchResultsView() {
                           e.stopPropagation();
                           void handleReplace([fileRes.path]);
                         }}
-                        className="px-1.5 py-0.2 rounded border border-warn/40 bg-warn/10 text-warn hover:bg-warn/20 text-[10px] font-mono cursor-pointer"
+                        className="px-1.5 py-0.2 rounded border border-warn/40 bg-warn/10 text-warn hover:bg-warn/20 text-[12px] font-mono cursor-pointer"
                         title={`Replace matches in ${fileRes.path}`}
                       >
                         Replace ({fileRes.matches.length})
                       </button>
                     )}
-                    <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-bg border border-border text-fg-muted">
+                    <span className="font-mono text-[12px] px-1.5 py-0.2 rounded bg-bg border border-border text-fg-muted">
                       {fileRes.matches.length} {fileRes.matches.length === 1 ? "match" : "matches"}
                     </span>
                     <button
@@ -386,7 +386,7 @@ export function SearchResultsView() {
                           )}
                         >
                           <FileCode2 size={11} className="text-accent shrink-0" />
-                          <span className="font-mono text-[10px] text-accent w-12 shrink-0 tabular-nums">
+                          <span className="font-mono text-[12px] text-accent w-12 shrink-0 tabular-nums">
                             {m.line}:{m.column}
                           </span>
                           <div className="truncate flex-1">{renderHighlightedLine(m)}</div>

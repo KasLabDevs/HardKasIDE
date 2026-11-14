@@ -36,10 +36,10 @@ export function MinerNotice({ compact = false }: { compact?: boolean }) {
           <Pickaxe size={13} className={busy ? "animate-spin" : ""} />
           {busy === "burst" ? "Mining a burst…" : busy === "start" ? "Starting the miner…" : busy === "stop" ? "Stopping the miner…" : running ? "Miner running: blocks are being mined" : miner ? "Miner stopped: nothing confirms" : "No miner yet: nothing confirms"}
         </span>
-        {!compact && miner && <span className="text-[10px] text-fg-muted font-mono">{miner.status || (running ? "running" : "stopped")}</span>}
+        {!compact && miner && <span className="text-[12px] text-fg-muted font-mono">{miner.status || (running ? "running" : "stopped")}</span>}
       </div>
       {!compact && (
-        <p className="text-[10px] text-fg-muted leading-relaxed">
+        <p className="text-[12px] text-fg-muted leading-relaxed">
           {running
             ? "A miner running flat out floods the node and confirmations slow down (the miner log shows \"route is full\"). Stop it once your transactions are in; mine a burst when you need blocks."
             : miner
@@ -63,7 +63,7 @@ export function MinerNotice({ compact = false }: { compact?: boolean }) {
           )
         )}
       </div>
-      {error && busy === null && <div role="alert" className="text-error text-[10px] break-words">{error}</div>}
+      {error && busy === null && <div role="alert" className="text-error text-[12px] break-words">{error}</div>}
     </div>
   );
 }

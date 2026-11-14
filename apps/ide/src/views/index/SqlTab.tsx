@@ -103,13 +103,13 @@ export function SqlTab() {
         {tables.map((t) => (
           <details key={t.name} className="rounded">
             <summary className="cursor-pointer flex items-center gap-1 hover:text-accent" onClick={() => insert(t.name)} title="Click to put the name in the query">
-              <span className="font-mono text-[11px]">{t.name}</span>
-              <span className="ml-auto text-[10px] text-fg-muted tabular-nums">{t.rows}</span>
+              <span className="font-mono text-[12px]">{t.name}</span>
+              <span className="ml-auto text-[12px] text-fg-muted tabular-nums">{t.rows}</span>
             </summary>
             <ul className="pl-3 mt-0.5">
               {t.columns.map((c) => (
                 <li key={c.name}>
-                  <button type="button" className="font-mono text-[10px] text-fg-muted hover:text-accent cursor-pointer text-left" onClick={() => insert(c.name)} title={c.type}>
+                  <button type="button" className="font-mono text-[12px] text-fg-muted hover:text-accent cursor-pointer text-left" onClick={() => insert(c.name)} title={c.type}>
                     {c.name}
                   </button>
                 </li>
@@ -190,7 +190,7 @@ export function SqlTab() {
               {result.columns.length === 0 ? (
                 <div className="px-3 text-fg-muted">The query returned no rows.</div>
               ) : (
-                <table className="min-w-full text-[11px]">
+                <table className="min-w-full text-[12px]">
                   <thead className="sticky top-0 bg-bg-panel">
                     <tr>
                       {result.columns.map((c) => (

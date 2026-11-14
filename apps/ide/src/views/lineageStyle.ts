@@ -3,11 +3,15 @@ export const SCHEMA_STYLE: Record<string, { color: string; label: string }> = {
   txPlan: { color: "var(--info)", label: "plan" },
   signedTx: { color: "var(--warn)", label: "signed" },
   txReceipt: { color: "var(--ok)", label: "receipt" },
-  txSubmission: { color: "var(--ok)", label: "submitted" },
-  txObservation: { color: "var(--accent)", label: "observation" },
+  txSubmission: { color: "var(--ok)", label: "sent" },
+  txObservation: { color: "var(--accent)", label: "node check" },
   txTrace: { color: "var(--fg-muted)", label: "trace" },
-  snapshot: { color: "var(--fg-muted)", label: "snapshot" },
-  silverCompile: { color: "var(--accent)", label: "silver" },
+  // "snapshot" is the saved state of the simulator; the word is also used for "read from disk", so the kind says "state".
+  snapshot: { color: "var(--fg-muted)", label: "state" },
+  silverCompile: { color: "var(--accent)", label: "compile" },
+  silverDeploy: { color: "var(--info)", label: "deploy" },
+  silverSpend: { color: "var(--warn)", label: "spend" },
+  scenarioResult: { color: "var(--ok)", label: "scenario" },
   replayReport: { color: "var(--ok)", label: "replay" }
 };
 

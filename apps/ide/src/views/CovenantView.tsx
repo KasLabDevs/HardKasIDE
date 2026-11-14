@@ -70,14 +70,14 @@ function Head({ icon, title, badge, tone }: { icon: React.ReactNode; title: stri
         {icon}
         <span className="truncate">{title}</span>
       </div>
-      <span className={clsx("text-[9px] font-mono uppercase px-1.5 py-0.5 rounded border shrink-0", chip)}>{badge}</span>
+      <span className={clsx("text-[12px] font-mono uppercase px-1.5 py-0.5 rounded border shrink-0", chip)}>{badge}</span>
     </div>
   );
 }
 
 function Row({ label, value, mono = true, className }: { label: string; value: React.ReactNode; mono?: boolean; className?: string }) {
   return (
-    <div className="flex items-center justify-between gap-2 text-[11px]">
+    <div className="flex items-center justify-between gap-2 text-[12px]">
       <span className="text-fg-muted shrink-0">{label}</span>
       <span className={clsx("truncate text-fg", mono && "font-mono tabular-nums", className)}>{value}</span>
     </div>
@@ -112,13 +112,13 @@ function CovenantNodeView({ data }: NodeProps<Node<CovenantNodeData, "covenant">
         {data.contract.constructorParams && data.contract.constructorParams.length > 0 && (
           <div className="flex flex-wrap gap-1 pt-0.5">
             {data.contract.constructorParams.map((p) => (
-              <span key={p.name} className="px-1.5 py-0.5 rounded bg-bg border border-border text-[10px] font-mono text-fg">
+              <span key={p.name} className="px-1.5 py-0.5 rounded bg-bg border border-border text-[12px] font-mono text-fg">
                 {p.name}: <span className="text-accent">{p.kind}</span>
               </span>
             ))}
           </div>
         )}
-        <div className="font-mono text-[10px] text-accent truncate bg-bg px-1.5 py-0.5 rounded border border-border" title={data.address ?? undefined}>
+        <div className="font-mono text-[12px] text-accent truncate bg-bg px-1.5 py-0.5 rounded border border-border" title={data.address ?? undefined}>
           {data.address ?? "address unknown until compiled with constructor args"}
         </div>
       </div>
@@ -133,10 +133,10 @@ function EntryNodeView({ data }: NodeProps<Node<EntryNodeData, "entry">>) {
       <div className="pt-2 space-y-1.5">
         <div className="flex flex-wrap gap-1">
           {data.entry.params.length === 0 ? (
-            <span className="text-[10px] text-fg-muted italic">no arguments</span>
+            <span className="text-[12px] text-fg-muted italic">no arguments</span>
           ) : (
             data.entry.params.map((p) => (
-              <span key={p.name} className="px-1.5 py-0.5 rounded bg-bg border border-border text-[10px] font-mono text-fg">
+              <span key={p.name} className="px-1.5 py-0.5 rounded bg-bg border border-border text-[12px] font-mono text-fg">
                 {p.name}: <span className="text-warn">{p.kind}</span>
               </span>
             ))
@@ -169,7 +169,7 @@ function UnrecordedNodeView({ data }: NodeProps<Node<UnrecordedNodeData, "unreco
       <Head icon={<AlertTriangle size={13} />} title="Without a record" badge={`${data.utxos.length} on node`} tone="warn" />
       <div className="pt-2 space-y-1.5">
         <Row label="Locked" value={formatKas(sumSompi(data.utxos))} className="font-semibold text-warn" />
-        <p className="text-[10px] text-fg-muted leading-snug">
+        <p className="text-[12px] text-fg-muted leading-snug">
           The node holds {data.utxos.length === 1 ? "an output" : "outputs"} at this address that no deploy record describes.
         </p>
       </div>
@@ -254,7 +254,7 @@ export function CovenantView() {
         <div className="max-w-md text-center space-y-3">
           <GitFork size={28} className="mx-auto text-fg-muted" />
           <div className="text-sm font-semibold">Nothing to draw yet</div>
-          <p className="text-[11px] text-fg-muted leading-relaxed">
+          <p className="text-[12px] text-fg-muted leading-relaxed">
             The covenant graph draws a SilverScript contract from its compile record, plus the deploy and spend records HardKas wrote for it. This workspace has no deploy records, and nothing has been compiled in this session: compile a <code>.sil</code> file (Ctrl+Enter in the editor) to see it here.
           </p>
           <button type="button" className="btn-primary mx-auto" onClick={() => useIde.getState().setActiveSidePlugin("silverCompiler")}>
@@ -289,29 +289,29 @@ export function CovenantView() {
           ) : (
             <span className="font-medium text-fg">{contract.name}</span>
           )}
-          <span className="text-fg-muted truncate font-mono text-[10px]" title={subject.recordPath}>
+          <span className="text-fg-muted truncate font-mono text-[12px]" title={subject.recordPath}>
             {subject.sourcePath ?? subject.recordPath}
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {subject.sourcePath && (
-            <button type="button" onClick={() => open(subject.sourcePath!)} className="btn-ghost !py-1 !h-7 text-[11px]" title="Open the contract source in the editor">
+            <button type="button" onClick={() => open(subject.sourcePath!)} className="btn-ghost !py-1 !h-7 text-[12px]" title="Open the contract source in the editor">
               <FileCode2 size={12} className="text-accent" /> Source
             </button>
           )}
-          <button type="button" onClick={() => open(subject.recordPath)} className="btn-ghost !py-1 !h-7 text-[11px]" title="Open the compile record (JSON)">
+          <button type="button" onClick={() => open(subject.recordPath)} className="btn-ghost !py-1 !h-7 text-[12px]" title="Open the compile record (JSON)">
             <FileJson size={12} /> Compile record
           </button>
           <button
             type="button"
             onClick={() => address && void checkChain(address)}
             disabled={!canAskNode || checking}
-            className="btn-ghost !py-1 !h-7 text-[11px]"
+            className="btn-ghost !py-1 !h-7 text-[12px]"
             title={canAskNode ? `hardkas rpc utxos ${address}` : target !== "localnet" ? "Switch the environment to Local node to compare the records with the chain" : "Start the local node to compare the records with the chain"}
           >
             <RadioTower size={12} className={clsx(canAskNode ? "text-ok" : "text-fg-muted", checking && "animate-pulse")} /> {checking ? "Asking the node…" : chain ? "Check again" : "Check on node"}
           </button>
-          <button type="button" onClick={() => useIde.getState().setActiveSidePlugin("deployRun")} className="btn-primary !py-1 !h-7 text-[11px]" title="Deploy or call the contract from Deploy & Run">
+          <button type="button" onClick={() => useIde.getState().setActiveSidePlugin("deployRun")} className="btn-primary !py-1 !h-7 text-[12px]" title="Deploy or call the contract from Deploy & Run">
             <Play size={11} /> Deploy &amp; Run
           </button>
         </div>
@@ -339,14 +339,14 @@ export function CovenantView() {
             <MiniMap pannable zoomable nodeColor={(n) => ({ deploy: "var(--info)", covenant: "var(--accent)", entry: "var(--warn)", spend: "var(--ok)", unrecorded: "var(--warn)" })[n.type ?? "covenant"] ?? "#888"} />
           </ReactFlow>
 
-          <div className="absolute bottom-3 left-3 z-10 flex flex-col gap-1 px-3 py-1.5 rounded-lg border border-border bg-bg-elev/90 backdrop-blur-sm text-[11px] shadow-sm">
+          <div className="absolute bottom-3 left-3 z-10 flex flex-col gap-1 px-3 py-1.5 rounded-lg border border-border bg-bg-elev/90 backdrop-blur-sm text-[12px] shadow-sm">
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1 text-info font-medium"><span className="w-2 h-2 rounded-full bg-info" /> Deploys ({deploys.length})</span>
               <span className="flex items-center gap-1 text-accent font-medium"><span className="w-2 h-2 rounded-full bg-accent" /> Covenant</span>
               <span className="flex items-center gap-1 text-warn font-medium"><span className="w-2 h-2 rounded-full bg-warn" /> Entries ({contract.entries.length})</span>
               <span className="flex items-center gap-1 text-ok font-medium"><span className="w-2 h-2 rounded-full bg-ok" /> Spends ({contractSpends.length})</span>
             </div>
-            <div className="flex items-center gap-1.5 text-[10px] text-fg-muted tabular-nums">
+            <div className="flex items-center gap-1.5 text-[12px] text-fg-muted tabular-nums">
               <RadioTower size={10} className={chain ? "text-ok" : "text-fg-muted"} />
               {checkError ? (
                 <span className="text-error">{checkError}</span>
@@ -390,15 +390,15 @@ export function CovenantView() {
           ) : (
             <div className="p-4 text-xs space-y-3">
               <div className="font-semibold text-fg">Inspector</div>
-              <p className="text-fg-muted text-[11px] leading-relaxed">Click a node to see the record behind it: the compile record for the covenant and its entries, the silverDeploy and silverSpend records for the rest. Every value shown comes from those files, or from the node when it has been asked.</p>
+              <p className="text-fg-muted text-[12px] leading-relaxed">Click a node to see the record behind it: the compile record for the covenant and its entries, the silverDeploy and silverSpend records for the rest. Every value shown comes from those files, or from the node when it has been asked.</p>
               {deploys.length === 0 && (
-                <p className="text-fg-muted text-[11px] leading-relaxed">
+                <p className="text-fg-muted text-[12px] leading-relaxed">
                   <span className="text-fg font-medium">{contract.name}</span> has not been deployed from this compile record, so there are no deploy or spend nodes yet. Deploy it from Deploy &amp; Run and they appear here.
                 </p>
               )}
-              {subject.fromDeploy && <p className="text-fg-muted text-[11px] leading-relaxed">Shown from its deploy record and the compile record that deploy points at. Compile the source again to refresh the ABI.</p>}
+              {subject.fromDeploy && <p className="text-fg-muted text-[12px] leading-relaxed">Shown from its deploy record and the compile record that deploy points at. Compile the source again to refresh the ABI.</p>}
               {chain && chain.unrecorded.length > 0 && (
-                <p className="text-warn text-[11px] leading-relaxed">
+                <p className="text-warn text-[12px] leading-relaxed">
                   The node holds {chain.unrecorded.length} output{chain.unrecorded.length === 1 ? "" : "s"} at this address with no deploy record: usually a deploy whose confirmation the CLI stopped waiting for. The coins are locked by the covenant all the same; they can be spent from Deploy &amp; Run only once a record exists.
                 </p>
               )}
@@ -415,7 +415,7 @@ export function CovenantView() {
 function Field({ label, value, copyKey, copied, onCopy, mono = true }: { label: string; value: string; copyKey?: string; copied?: string | null; onCopy?: (key: string, text: string) => void; mono?: boolean }) {
   return (
     <div className="space-y-1">
-      <div className="flex items-center justify-between text-[10px] text-fg-muted font-semibold uppercase tracking-wider">
+      <div className="flex items-center justify-between text-[12px] text-fg-muted font-semibold uppercase tracking-wider">
         <span>{label}</span>
         {copyKey && onCopy && (
           <button type="button" onClick={() => onCopy(copyKey, value)} className="text-accent hover:underline flex items-center gap-1 cursor-pointer normal-case tracking-normal font-normal">
@@ -424,14 +424,14 @@ function Field({ label, value, copyKey, copied, onCopy, mono = true }: { label: 
           </button>
         )}
       </div>
-      <div className={clsx("text-[10px] p-2 rounded bg-bg border border-border break-all", mono && "font-mono")}>{value}</div>
+      <div className={clsx("text-[12px] p-2 rounded bg-bg border border-border break-all", mono && "font-mono")}>{value}</div>
     </div>
   );
 }
 
 function RecordButton({ path, onOpen, label = "Open record (JSON)" }: { path: string; onOpen: (p: string) => void; label?: string }) {
   return (
-    <button type="button" onClick={() => onOpen(path)} className="btn-ghost w-full justify-center text-[11px]" title={path}>
+    <button type="button" onClick={() => onOpen(path)} className="btn-ghost w-full justify-center text-[12px]" title={path}>
       <FileJson size={12} /> {label}
     </button>
   );
@@ -444,15 +444,15 @@ function CovenantInspector({ data, compiled, chain, copied, onCopy, onOpen }: { 
   return (
     <>
       <div>
-        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Contract</div>
+        <div className="text-[12px] text-fg-muted uppercase tracking-wider font-semibold">Contract</div>
         <div className="font-semibold text-sm text-accent">{c.name}</div>
-        <div className="text-[10px] text-fg-muted">
+        <div className="text-[12px] text-fg-muted">
           {data.deployCount === 0 ? "compiled, not deployed" : `${data.deployCount} deploy${data.deployCount === 1 ? "" : "s"}, ${data.liveCount} live${data.fromChain ? " on the node" : " by the records"}`}
           {compiled.networkId ? ` · ${compiled.networkId}` : ""}
         </div>
       </div>
       {chain && (
-        <div className="p-2.5 rounded-lg border border-border bg-bg space-y-1 text-[11px]">
+        <div className="p-2.5 rounded-lg border border-border bg-bg space-y-1 text-[12px]">
           <div className="flex items-center gap-1.5 text-ok font-semibold">
             <RadioTower size={12} /> On the node
           </div>
@@ -460,17 +460,17 @@ function CovenantInspector({ data, compiled, chain, copied, onCopy, onOpen }: { 
             {chain.unspent.size} deploy output{chain.unspent.size === 1 ? "" : "s"} unspent, {chain.spent.size} gone
             {chain.unrecorded.length > 0 ? `, ${chain.unrecorded.length} without a record (${formatKas(sumSompi(chain.unrecorded))})` : ""}
           </div>
-          <div className="text-[10px] text-fg-muted tabular-nums">hardkas rpc utxos · {new Date(chain.checkedAt).toLocaleTimeString(undefined, { hour12: false })}</div>
+          <div className="text-[12px] text-fg-muted tabular-nums">hardkas rpc utxos · {new Date(chain.checkedAt).toLocaleTimeString(undefined, { hour12: false })}</div>
         </div>
       )}
       {data.address && <Field label="P2SH address" value={data.address} copyKey="addr" copied={copied} onCopy={onCopy} />}
       {c.lockingScript && <Field label="Locking script (hex)" value={c.lockingScript} copyKey="script" copied={copied} onCopy={onCopy} />}
       {c.constructorParams && c.constructorParams.length > 0 && (
         <div className="space-y-1">
-          <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Constructor</div>
+          <div className="text-[12px] text-fg-muted uppercase tracking-wider font-semibold">Constructor</div>
           <div className="flex flex-wrap gap-1">
             {c.constructorParams.map((p) => (
-              <span key={p.name} className="px-1.5 py-0.5 rounded bg-bg border border-border text-[10px] font-mono">
+              <span key={p.name} className="px-1.5 py-0.5 rounded bg-bg border border-border text-[12px] font-mono">
                 {p.name}: <span className="text-accent">{p.kind}</span>
               </span>
             ))}
@@ -478,11 +478,11 @@ function CovenantInspector({ data, compiled, chain, copied, onCopy, onOpen }: { 
         </div>
       )}
       <div className="space-y-1">
-        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Entries</div>
+        <div className="text-[12px] text-fg-muted uppercase tracking-wider font-semibold">Entries</div>
         {c.entries.map((e) => (
-          <div key={e.name} className="flex items-center justify-between gap-2 text-[11px] font-mono">
+          <div key={e.name} className="flex items-center justify-between gap-2 text-[12px] font-mono">
             <span className="text-warn">{e.name}({e.params.map((p) => p.name).join(", ")})</span>
-            {e.dispatchTag && <span className="text-fg-muted text-[10px]">{e.dispatchTag}</span>}
+            {e.dispatchTag && <span className="text-fg-muted text-[12px]">{e.dispatchTag}</span>}
           </div>
         ))}
       </div>
@@ -496,16 +496,16 @@ function DeployInspector({ d, state, copied, onCopy, onOpen }: { d: DeployRecord
   return (
     <>
       <div className="p-2.5 rounded-lg border border-border bg-bg space-y-1">
-        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Locked in the covenant</div>
+        <div className="text-[12px] text-fg-muted uppercase tracking-wider font-semibold">Locked in the covenant</div>
         <div className="text-base font-mono font-semibold text-fg tabular-nums">{formatKas(d.valueSompi)}</div>
-        <div className="text-[10px] text-fg-muted">
+        <div className="text-[12px] text-fg-muted">
           {state}
           {d.feeSompi ? ` · fee ${formatKas(d.feeSompi)}` : ""}
           {d.networkId ? ` · ${d.networkId}` : ""}
           {d.createdAt ? ` · ${new Date(d.createdAt).toLocaleString()}` : ""}
         </div>
-        {state === "spent on chain" && <div className="text-[10px] text-warn leading-snug">The node no longer holds this output, but no spend record names it: it was spent outside the IDE, or the CLI stopped waiting before the spend confirmed.</div>}
-        {d.hardkasVersion && <div className="text-[10px] text-fg-muted">written by HardKas {d.hardkasVersion}</div>}
+        {state === "spent on chain" && <div className="text-[12px] text-warn leading-snug">The node no longer holds this output, but no spend record names it: it was spent outside the IDE, or the CLI stopped waiting before the spend confirmed.</div>}
+        {d.hardkasVersion && <div className="text-[12px] text-fg-muted">written by HardKas {d.hardkasVersion}</div>}
       </div>
       <Field label="Transaction" value={d.txId} copyKey="tx" copied={copied} onCopy={onCopy} />
       <Field label="Outpoint" value={`${d.outpoint?.transactionId ?? d.txId}:${d.outpoint?.index ?? 0}`} copyKey="outpoint" copied={copied} onCopy={onCopy} />
@@ -521,31 +521,31 @@ function EntryInspector({ data, spends, onOpen }: { data: EntryNodeData; spends:
   return (
     <>
       <div>
-        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Entry of {data.contractName}</div>
+        <div className="text-[12px] text-fg-muted uppercase tracking-wider font-semibold">Entry of {data.contractName}</div>
         <div className="font-semibold text-sm text-warn font-mono">{e.name}()</div>
-        {e.dispatchTag && <div className="text-[10px] text-fg-muted font-mono">dispatch tag {e.dispatchTag}</div>}
+        {e.dispatchTag && <div className="text-[12px] text-fg-muted font-mono">dispatch tag {e.dispatchTag}</div>}
       </div>
       <div className="space-y-1">
-        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Arguments</div>
+        <div className="text-[12px] text-fg-muted uppercase tracking-wider font-semibold">Arguments</div>
         {e.params.length === 0 ? (
-          <div className="text-[11px] text-fg-muted italic">none</div>
+          <div className="text-[12px] text-fg-muted italic">none</div>
         ) : (
           e.params.map((p) => (
-            <div key={p.name} className="flex items-center justify-between text-[11px] font-mono">
+            <div key={p.name} className="flex items-center justify-between text-[12px] font-mono">
               <span>{p.name}</span>
               <span className="text-warn">{p.kind}</span>
             </div>
           ))
         )}
       </div>
-      <p className="text-[10px] text-fg-muted leading-relaxed">The compile record carries the entry's name, dispatch tag and argument types; the opcodes it validates are only in the locking script of the covenant node.</p>
+      <p className="text-[12px] text-fg-muted leading-relaxed">The compile record carries the entry's name, dispatch tag and argument types; the opcodes it validates are only in the locking script of the covenant node.</p>
       <div className="space-y-1">
-        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Spends through this entry</div>
+        <div className="text-[12px] text-fg-muted uppercase tracking-wider font-semibold">Spends through this entry</div>
         {spends.length === 0 ? (
-          <div className="text-[11px] text-fg-muted italic">none recorded</div>
+          <div className="text-[12px] text-fg-muted italic">none recorded</div>
         ) : (
           spends.map((s) => (
-            <button key={s.recordPath} type="button" onClick={() => onOpen(s.recordPath)} className="w-full text-left text-[11px] font-mono flex items-center justify-between gap-2 hover:text-accent cursor-pointer" title={s.recordPath}>
+            <button key={s.recordPath} type="button" onClick={() => onOpen(s.recordPath)} className="w-full text-left text-[12px] font-mono flex items-center justify-between gap-2 hover:text-accent cursor-pointer" title={s.recordPath}>
               <span className="truncate">{short(s.txId)}</span>
               <span className="text-ok shrink-0">{formatKas(s.outputSompi)}</span>
             </button>
@@ -560,11 +560,11 @@ function SpendInspector({ s, copied, onCopy, onOpen }: { s: SpendRecord } & Copy
   return (
     <>
       <div className="p-2.5 rounded-lg border border-border bg-bg space-y-1">
-        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">
+        <div className="text-[12px] text-fg-muted uppercase tracking-wider font-semibold">
           {s.contract}.{s.entry}()
         </div>
         <div className="text-base font-mono font-semibold text-ok tabular-nums">{formatKas(s.outputSompi)}</div>
-        <div className="text-[10px] text-fg-muted">
+        <div className="text-[12px] text-fg-muted">
           {s.status}
           {s.feeSompi ? ` · fee ${formatKas(s.feeSompi)}` : ""}
           {s.createdAt ? ` · ${new Date(s.createdAt).toLocaleString()}` : ""}
@@ -582,17 +582,17 @@ function UnrecordedInspector({ data, copied, onCopy }: { data: UnrecordedNodeDat
   return (
     <>
       <div className="p-2.5 rounded-lg border border-warn/40 bg-warn/5 space-y-1">
-        <div className="text-[10px] text-warn uppercase tracking-wider font-semibold">Locked, unrecorded</div>
+        <div className="text-[12px] text-warn uppercase tracking-wider font-semibold">Locked, unrecorded</div>
         <div className="text-base font-mono font-semibold text-fg tabular-nums">{formatKas(sumSompi(data.utxos))}</div>
-        <p className="text-[10px] text-fg-muted leading-relaxed">
+        <p className="text-[12px] text-fg-muted leading-relaxed">
           These outputs sit at the covenant address on the node, but no silverDeploy record describes them. The usual cause: <code>hardkas silver deploy --wait</code> gave up before the block arrived and wrote nothing, although the transaction confirmed later. The IDE now waits up to ten minutes to avoid this. The coins are spendable through the entries, but Deploy &amp; Run needs a deploy record to build the spend.
         </p>
       </div>
       <Field label="Address" value={data.address} copyKey="uaddr" copied={copied} onCopy={onCopy} />
       <div className="space-y-1">
-        <div className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Outpoints on the node</div>
+        <div className="text-[12px] text-fg-muted uppercase tracking-wider font-semibold">Outpoints on the node</div>
         {data.utxos.map((u) => (
-          <div key={`${u.txId}:${u.index}`} className="flex items-center justify-between gap-2 text-[11px] font-mono">
+          <div key={`${u.txId}:${u.index}`} className="flex items-center justify-between gap-2 text-[12px] font-mono">
             <button type="button" onClick={() => onCopy(`u:${u.txId}:${u.index}`, `${u.txId}:${u.index}`)} className="truncate hover:text-accent cursor-pointer text-left" title={`${u.txId}:${u.index} · copy`}>
               {copied === `u:${u.txId}:${u.index}` ? "copied" : `${short(u.txId)}:${u.index}`}
             </button>

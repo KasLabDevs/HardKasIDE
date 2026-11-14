@@ -328,11 +328,10 @@ export function TitleBar({ onHome, mainRef }: Props) {
           item("Deploy & Run", reveal("deployRun", "Deploy & Run")),
           item("Servers (node)", reveal("environment", "Servers")),
           item("Accounts", reveal("accounts", "Accounts")),
-          item("Artifacts", reveal("artifacts", "Artifacts")),
           item("Assistant", reveal("assistant", "Assistant")),
           item("Tests", () => engine.call("tests", "open")),
           item("Run history", () => engine.call("runHistory", "open")),
-          item("Index (artifacts, events, SQL)", () => engine.call("queryIndex", "open")),
+          item("Index (artifacts, transactions, SQL)", () => engine.call("queryIndex", "open")),
           item("Lineage graph", () => engine.get<LineagePlugin>("lineage").open()),
           item("Covenant graph", () => engine.call("covenant", "open")),
           item("Plugin manager", reveal("pluginManager", "Plugin manager")),
@@ -609,7 +608,7 @@ export function TitleBar({ onHome, mainRef }: Props) {
             onClick={openPalette}
             title="Search files, commands (>), symbols (@), or line (:) · Ctrl+P"
             aria-label="Search commands and files"
-            className="w-full h-[1.35rem] flex items-center justify-center gap-1.5 rounded border border-border bg-bg/60 hover:bg-bg-hover text-[11px] text-fg-muted cursor-pointer transition-colors min-w-0 px-2.5"
+            className="w-full h-[1.35rem] flex items-center justify-center gap-1.5 rounded border border-border bg-bg/60 hover:bg-bg-hover text-[12px] text-fg-muted cursor-pointer transition-colors min-w-0 px-2.5"
           >
             <Search size={11} className="shrink-0" />
             <span className="truncate">{projectName}</span>
@@ -730,7 +729,7 @@ function MenuBar({ menus }: { menus: Menu[] }) {
                 if (entry.type === "sep") return <div key={k} role="separator" className="my-1 border-t border-border" />;
                 if (entry.type === "heading")
                   return (
-                    <div key={k} className="px-3 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wider text-fg-muted/80">
+                    <div key={k} className="px-3 pt-1.5 pb-0.5 text-[12px] uppercase tracking-wider text-fg-muted/80">
                       {entry.label}
                     </div>
                   );
@@ -746,7 +745,7 @@ function MenuBar({ menus }: { menus: Menu[] }) {
                       >
                         <span className="w-4 shrink-0 flex items-center justify-center">{entry.icon ?? null}</span>
                         <span className="flex-1 truncate">{entry.label}</span>
-                        {entry.keys && <kbd className="text-[10px] text-fg-muted ml-4 font-sans">{entry.keys}</kbd>}
+                        {entry.keys && <kbd className="text-[12px] text-fg-muted ml-4 font-sans">{entry.keys}</kbd>}
                         <ChevronRight size={12} className="text-fg-muted ml-1 shrink-0" />
                       </button>
                       <div
@@ -772,7 +771,7 @@ function MenuBar({ menus }: { menus: Menu[] }) {
                                 {sub.checked ? <Check size={12} className="text-accent" /> : (sub.icon ?? null)}
                               </span>
                               <span className="flex-1 truncate">{sub.label}</span>
-                              {sub.keys && <kbd className="text-[10px] text-fg-muted ml-4 font-sans">{sub.keys}</kbd>}
+                              {sub.keys && <kbd className="text-[12px] text-fg-muted ml-4 font-sans">{sub.keys}</kbd>}
                             </button>
                           );
                         })}
@@ -799,7 +798,7 @@ function MenuBar({ menus }: { menus: Menu[] }) {
                       {entry.checked ? <Check size={12} className="text-accent" /> : (entry.icon ?? null)}
                     </span>
                     <span className="flex-1 truncate">{entry.label}</span>
-                    {entry.keys && <kbd className="text-[10px] text-fg-muted ml-6 font-sans">{entry.keys}</kbd>}
+                    {entry.keys && <kbd className="text-[12px] text-fg-muted ml-6 font-sans">{entry.keys}</kbd>}
                   </button>
                 );
               })}
@@ -851,8 +850,8 @@ function PropertiesDialog({ onClose }: { onClose: () => void }) {
 
         <div className="p-4 space-y-3">
           <fieldset className="border border-border rounded p-3 space-y-1.5 bg-bg/60">
-            <legend className="px-1.5 font-semibold text-fg text-[11px]">Resource Information</legend>
-            <div className="grid grid-cols-3 gap-1 font-mono text-[11px]">
+            <legend className="px-1.5 font-semibold text-fg text-[12px]">Resource Information</legend>
+            <div className="grid grid-cols-3 gap-1 font-mono text-[12px]">
               <span className="text-fg-muted">Path:</span>
               <span className="col-span-2 text-fg break-all select-text">{currentOpen ? `/${currentOpen.path}` : "/"}</span>
               <span className="text-fg-muted">Type:</span>
@@ -877,8 +876,8 @@ function PropertiesDialog({ onClose }: { onClose: () => void }) {
           </fieldset>
 
           <fieldset className="border border-border rounded p-3 space-y-1.5 bg-bg/60">
-            <legend className="px-1.5 font-semibold text-fg text-[11px]">HardKas &amp; SilverScript Toolchain</legend>
-            <div className="grid grid-cols-3 gap-1 font-mono text-[11px]">
+            <legend className="px-1.5 font-semibold text-fg text-[12px]">HardKas &amp; SilverScript Toolchain</legend>
+            <div className="grid grid-cols-3 gap-1 font-mono text-[12px]">
               <span className="text-fg-muted">Active Target:</span>
               <span className="col-span-2 text-accent">{envOf(target).label}</span>
               <span className="text-fg-muted">HardKas CLI:</span>
@@ -936,7 +935,7 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
               useUpdates.getState().openPopover();
               void useUpdates.getState().check(true);
             }}
-            className="btn-ghost px-2.5 py-1 text-[11px]"
+            className="btn-ghost px-2.5 py-1 text-[12px]"
           >
             Check for Updates
           </button>

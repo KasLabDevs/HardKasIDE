@@ -61,7 +61,7 @@ export function PluginManagerPanel() {
 
   return (
     <div className="text-xs">
-      <div role="tablist" aria-label="Extensions tabs" className="flex border-b border-border text-[11px] uppercase tracking-wider">
+      <div role="tablist" aria-label="Extensions tabs" className="flex border-b border-border text-[12px] uppercase tracking-wider">
         {tabs.map((t) => (
           <button
             key={t}
@@ -71,7 +71,7 @@ export function PluginManagerPanel() {
             onClick={() => setTab(t)}
             className={clsx("flex-1 py-1.5 cursor-pointer tabular-nums transition-colors", tab === t ? "text-fg border-b-2 border-accent font-semibold" : "text-fg-muted hover:text-fg")}
           >
-            {t === "installed" ? `Installed · ${plugins.length}` : t === "vscode" ? "Search" : "Install"}
+            {t === "installed" ? `Installed · ${externals.length}` : t === "vscode" ? "Search" : "Install"}
           </button>
         ))}
       </div>
@@ -92,7 +92,7 @@ export function PluginManagerPanel() {
                   {thirdParty ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                 </button>
               </div>
-              <div className="text-[10px] text-fg-muted">
+              <div className="text-[12px] text-fg-muted">
                 {thirdParty
                   ? "On: Open VSX extensions and plugins from npm or a URL can be installed and run."
                   : "Off: Open VSX extensions and plugins from npm or a URL are not installed or run. The built-in views and the bundled example plugins work as usual."}
@@ -101,24 +101,25 @@ export function PluginManagerPanel() {
           )}
           <div>
             <div className="label tabular-nums">External · {externals.length}</div>
-            {externals.length === 0 && <div className="text-fg-muted px-1">None yet. Install one from the Install tab (try the bundled example).</div>}
+            {externals.length === 0 && <div className="text-fg-muted px-1">None. Plugins you install (from the Install tab) show up here.</div>}
             {externals.map((p) => (
               <PluginRow key={p.profile.name} plugin={p} manifest={installed.find((m) => m.name === p.profile.name)} onToggle={() => void run(`${p.profile.displayName} ${engine.isActive(p.profile.name) ? "deactivated" : "activated"}`, () => manager.toggle(p.profile.name))} onUninstall={async () => (await confirmDialog(`Uninstall ${p.profile.displayName}?`, { title: "Uninstall plugin", confirmLabel: "Uninstall", danger: true })) && void run("uninstalled", () => manager.uninstall(p.profile.name))} />
             ))}
           </div>
-          <div>
-            <div className="label tabular-nums">Built in · {builtins.length}</div>
+          {/* The IDE's own views: nobody installs them, so they stay folded away. They can still be switched off here. */}
+          <details>
+            <summary className="label tabular-nums cursor-pointer hover:text-fg">Built-in views · {builtins.length}</summary>
             {builtins.map((p) => (
               <PluginRow key={p.profile.name} plugin={p} onToggle={() => void run(`${p.profile.displayName} ${engine.isActive(p.profile.name) ? "deactivated" : "activated"}`, () => manager.toggle(p.profile.name))} />
             ))}
-          </div>
+          </details>
         </div>
       )}
 
       {tab === "vscode" && thirdParty && <VsxTab />}
       {tab === "install" && <InstallForms manager={manager} busy={busy} run={run} thirdParty={thirdParty === true} />}
 
-      {msg && <div role="status" aria-live="polite" className="px-3 py-2 text-[11px] text-accent border-t border-border">{msg}</div>}
+      {msg && <div role="status" aria-live="polite" className="px-3 py-2 text-[12px] text-accent border-t border-border">{msg}</div>}
     </div>
   );
 }
@@ -136,10 +137,10 @@ function PluginRow({ plugin, manifest, onToggle, onUninstall }: { plugin: Plugin
         <button type="button" aria-expanded={open} className="flex-1 min-w-0 text-left cursor-pointer" onClick={() => setOpen((o) => !o)}>
           <div className="flex items-center gap-1.5">
             <span className={clsx("font-semibold truncate", active ? "text-fg" : "text-fg-muted")}>{plugin.profile.displayName}</span>
-            {plugin.profile.version && <span className="text-[10px] text-fg-muted shrink-0">v{plugin.profile.version}</span>}
-            {plugin.profile.kind === "external" && plugin.profile.required && <span className="text-[10px] text-fg-muted shrink-0">· required</span>}
+            {plugin.profile.version && <span className="text-[12px] text-fg-muted shrink-0">v{plugin.profile.version}</span>}
+            {plugin.profile.kind === "external" && plugin.profile.required && <span className="text-[12px] text-fg-muted shrink-0">· required</span>}
           </div>
-          {plugin.profile.description && <div className="text-[10px] text-fg-muted truncate">{plugin.profile.description}</div>}
+          {plugin.profile.description && <div className="text-[12px] text-fg-muted truncate">{plugin.profile.description}</div>}
         </button>
         {onUninstall && (
           <button type="button" onClick={onUninstall} className="p-0.5 rounded text-fg-muted hover:text-error cursor-pointer" title="Uninstall" aria-label={`Uninstall ${plugin.profile.displayName}`}>
@@ -159,13 +160,13 @@ function PluginRow({ plugin, manifest, onToggle, onUninstall }: { plugin: Plugin
             {active ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
           </button>
         ) : (
-          <span className="text-[10px] text-fg-muted whitespace-nowrap" title="Built-in plugins are always active">
+          <span className="text-[12px] text-fg-muted whitespace-nowrap" title="Built-in plugins are always active">
             built in
           </span>
         )}
       </div>
       {open && (
-        <div className="px-2 pb-2 text-[10px] text-fg-muted space-y-1">
+        <div className="px-2 pb-2 text-[12px] text-fg-muted space-y-1">
           <div>
             name <span className="font-mono text-fg">{plugin.profile.name}</span> · location {plugin.profile.location ?? "none"}
             {plugin.profile.author && <> · by {plugin.profile.author}</>}
@@ -213,13 +214,13 @@ function InstallForms({ manager, busy, run, thirdParty }: { manager: PluginManag
           {examples.map((e) => (
             <button key={e.name} type="button" className="btn-ghost w-full justify-start mb-1" disabled={busy} onClick={() => void run(`installed example ${e.name}`, () => manager.installFromUrl(new URL(e.manifestUrl, location.origin).toString()))}>
               <Puzzle size={12} /> {e.name}
-              <span className="ml-auto text-[10px] text-fg-muted truncate">examples/plugins/{e.name}</span>
+              <span className="ml-auto text-[12px] text-fg-muted truncate">examples/plugins/{e.name}</span>
             </button>
           ))}
         </div>
       )}
 
-      {!thirdParty && <div className="text-[10px] text-fg-muted">Installing from a URL, npm or by hand needs third-party extensions turned on (Installed tab).</div>}
+      {!thirdParty && <div className="text-[12px] text-fg-muted">Installing from a URL, npm or by hand needs third-party extensions turned on (Installed tab).</div>}
       {thirdParty && (
       <>
       <div>
@@ -232,7 +233,7 @@ function InstallForms({ manager, busy, run, thirdParty }: { manager: PluginManag
             <Download size={12} />
           </button>
         </div>
-        <div className="text-[10px] text-fg-muted mt-1">A JSON with name, displayName, url (the plugin page), location, methods, events, permissions.</div>
+        <div className="text-[12px] text-fg-muted mt-1">A JSON with name, displayName, url (the plugin page), location, methods, events, permissions.</div>
       </div>
 
       <div>
@@ -245,7 +246,7 @@ function InstallForms({ manager, busy, run, thirdParty }: { manager: PluginManag
             <Download size={12} />
           </button>
         </div>
-        <div className="text-[10px] text-fg-muted mt-1">Installed under .hardkas/ide/plugins and served by ide-server. The package declares a "hardkasPlugin" object in package.json.</div>
+        <div className="text-[12px] text-fg-muted mt-1">Installed under .hardkas/ide/plugins and served by ide-server. The package declares a "hardkasPlugin" object in package.json.</div>
       </div>
 
       <div>

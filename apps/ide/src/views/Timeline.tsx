@@ -1,6 +1,8 @@
 import clsx from "clsx";
 import { useMemo } from "react";
+import { useEnv } from "@/store/env";
 import { shortSchema, type ArtifactRow } from "@/store/lineage";
+import { describeSummary } from "@/utils/artifactSummary";
 import { LANE_COLORS, SCHEMA_STYLE } from "./lineageStyle";
 
 /**
@@ -129,10 +131,12 @@ interface Props {
 
 export function Timeline({ artifacts, edges, fresh, replays, selected, filter, onSelect }: Props) {
   const { rows, lanes } = useMemo(() => buildTimeline(artifacts, edges), [artifacts, edges]);
+  const accounts = useEnv((s) => s.accounts);
   const width = PAD * 2 + Math.max(1, lanes) * LANE_W;
   const q = filter.trim().toLowerCase();
   // Matches what is on screen too: the kind chip ("submitted", "receipt"…), the id, tx and network.
-  const matches = (a: ArtifactRow) => !q || [a.artifactId, a.txId ?? "", a.schema, SCHEMA_STYLE[shortSchema(a.schema)]?.label ?? "", shortSchema(a.schema), a.networkId ?? "", a.mode ?? ""].some((s) => s.toLowerCase().includes(q));
+  const words = (a: ArtifactRow) => (a.summary ? describeSummary(a.summary, accounts) : null);
+  const matches = (a: ArtifactRow) => !q || [words(a)?.title ?? "", words(a)?.detail ?? "", a.artifactId, a.txId ?? "", a.schema, SCHEMA_STYLE[shortSchema(a.schema)]?.label ?? "", shortSchema(a.schema), a.networkId ?? "", a.mode ?? ""].some((s) => s.toLowerCase().includes(q));
 
   return (
     <div role="list" aria-label="Artifact history" className="min-w-[34rem]">
@@ -144,6 +148,7 @@ export function Timeline({ artifacts, edges, fresh, replays, selected, filter, o
         const replay = replays[g.row.artifactId]?.status;
         const bad = g.row.integrityStatus && !["OK", "ok", "verified"].includes(g.row.integrityStatus);
         const dim = !matches(g.row);
+        const text = words(g.row);
         return (
           <div
             key={g.row.artifactId}
@@ -179,16 +184,26 @@ export function Timeline({ artifacts, edges, fresh, replays, selected, filter, o
               {isSelected && <circle cx={x(g.lane)} cy={CY} r={DOT_R + 3.5} fill="none" stroke="var(--accent)" strokeWidth={1.5} />}
               <circle cx={x(g.lane)} cy={CY} r={DOT_R} fill={style.color} stroke="var(--bg)" strokeWidth={2} />
             </svg>
-            <div className="flex-1 min-w-0 flex items-center gap-2 pr-3 text-[11px]">
-              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold border" style={{ color: style.color, borderColor: `color-mix(in srgb, ${style.color} 45%, transparent)`, background: `color-mix(in srgb, ${style.color} 12%, transparent)` }}>
+            <div className="flex-1 min-w-0 flex items-center gap-2 pr-3 text-[12px]">
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-[12px] font-semibold border" style={{ color: style.color, borderColor: `color-mix(in srgb, ${style.color} 45%, transparent)`, background: `color-mix(in srgb, ${style.color} 12%, transparent)` }}>
                 {style.label}
               </span>
-              <span className="font-mono text-fg truncate">{g.row.artifactId.slice(0, 12)}</span>
-              {g.row.txId && <span className="font-mono text-fg-muted truncate hidden md:inline">tx {g.row.txId.slice(0, 12)}</span>}
+              {text ? (
+                <>
+                  <span className="text-fg font-medium truncate">{text.title}</span>
+                  {text.detail && <span className="text-fg-muted truncate">{text.detail}</span>}
+                  <span className="font-mono text-fg-muted/70 truncate hidden lg:inline" title={g.row.artifactId}>{g.row.artifactId.slice(0, 8)}</span>
+                </>
+              ) : (
+                <>
+                  <span className="font-mono text-fg truncate">{g.row.artifactId.slice(0, 12)}</span>
+                  {g.row.txId && <span className="font-mono text-fg-muted truncate hidden md:inline">tx {g.row.txId.slice(0, 12)}</span>}
+                </>
+              )}
               <span className="ml-auto flex items-center gap-2 shrink-0">
                 {g.row.networkId && <span className="text-fg-muted hidden sm:inline">{g.row.networkId}</span>}
-                {replay && <span className={clsx("rounded px-1 text-[10px]", replay === "passed" ? "text-ok bg-ok/10" : replay === "running" ? "text-info bg-info/10" : "text-warn bg-warn/10")}>replay {replay}</span>}
-                {bad && <span className="rounded px-1 text-[10px] text-warn bg-warn/10">{g.row.integrityStatus}</span>}
+                {replay && <span className={clsx("rounded px-1 text-[12px]", replay === "passed" ? "text-ok bg-ok/10" : replay === "running" ? "text-info bg-info/10" : "text-warn bg-warn/10")}>replay {replay}</span>}
+                {bad && <span className="rounded px-1 text-[12px] text-warn bg-warn/10">{g.row.integrityStatus}</span>}
                 <span className="text-fg-muted tabular-nums w-16 text-right">{g.row.createdAt ? new Date(g.row.createdAt).toLocaleTimeString(undefined, { hour12: false }) : ""}</span>
               </span>
             </div>

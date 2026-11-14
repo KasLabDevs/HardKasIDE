@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ArtifactSummary } from "@/utils/artifactSummary";
 
 /** The Index view: what HardKAS's SQLite query store holds (artifacts, events, lineage), read through ide-server. */
 
@@ -40,6 +41,8 @@ export interface ArtifactRow {
   created_at: string | null;
   file_path: string | null;
   indexed_at: string | null;
+  /** What it says in words, when the server could read it. */
+  summary?: ArtifactSummary;
 }
 
 export interface LineageRef {

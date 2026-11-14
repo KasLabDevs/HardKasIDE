@@ -6,7 +6,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { ConsolePlugin } from "@/plugins/console";
 import type { LineagePlugin } from "@/plugins/lineage";
+import { useEnv } from "@/store/env";
 import { shortSchema, useLineage, type ArtifactRow } from "@/store/lineage";
+import { describeSummary } from "@/utils/artifactSummary";
 import { Timeline } from "./Timeline";
 import { SCHEMA_STYLE } from "./lineageStyle";
 
@@ -70,14 +72,14 @@ export function LineageView() {
   return (
     <div className="h-full flex min-w-0">
       <div className="flex-1 min-w-0 flex flex-col">
-        <div className="shrink-0 flex items-center gap-2 px-3 h-9 border-b border-border bg-bg-panel text-[11px] tabular-nums">
+        <div className="shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1 min-h-9 border-b border-border bg-bg-panel text-[12px] tabular-nums">
           <span
-            className={clsx("flex items-center gap-1", live ? "text-ok" : artifacts.length > 0 ? "text-fg-muted" : "text-warn")}
-            title={live ? "Live dev-server stream connected" : "Showing workspace snapshot from .hardkas/store.db and artifacts (dev-server :7420 is offline)"}
+            className={clsx("flex items-center gap-1 whitespace-nowrap", live ? "text-ok" : artifacts.length > 0 ? "text-fg-muted" : "text-warn")}
+            title={live ? "Live: the dev-server streams new artifacts as they are written" : "Read from the files in .hardkas/ (the dev-server on :7420 is off, so nothing updates by itself; use Refresh)"}
           >
-            {live ? <Wifi size={12} /> : <WifiOff size={12} />} {live ? "live" : artifacts.length > 0 ? "snapshot" : "not streaming"}
+            {live ? <Wifi size={12} /> : <WifiOff size={12} />} {live ? "Live" : artifacts.length > 0 ? "From disk · dev-server off" : "Nothing yet · dev-server off"}
           </span>
-          <span className="text-fg-muted">{artifacts.length} artifacts · {edges.length} links</span>
+          <span className="text-fg-muted whitespace-nowrap" title="Each artifact is a JSON file HardKAS wrote in .hardkas/ (a plan, a receipt, a compile…). A link says one was made from the other.">{artifacts.length} artifacts · {edges.length} links</span>
           <button type="button" onClick={() => void plugin.refresh()} className="p-0.5 rounded text-fg-muted hover:text-fg cursor-pointer" title="Refresh" aria-label="Refresh lineage graph">
             <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
           </button>
@@ -85,14 +87,14 @@ export function LineageView() {
             <button
               type="button"
               onClick={startDevServer}
-              className="px-2 py-0.5 rounded border border-border text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer"
+              className="px-2 py-0.5 rounded border border-border text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer whitespace-nowrap"
               title="Start hardkas dev --headless in Console to enable live streaming and replay verification"
             >
               Start dev-server
             </button>
           )}
           {mode === "timeline" && (
-            <input aria-label="Filter artifacts" className="input !py-0.5 !w-44 ml-2" placeholder="filter by id, tx, kind…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+            <input aria-label="Filter artifacts" className="input !py-0.5 !w-44 ml-2" placeholder="filter: alice, deploy, a hash…" value={filter} onChange={(e) => setFilter(e.target.value)} />
           )}
           <div role="group" aria-label="Graph style" className="ml-auto flex rounded border border-border overflow-hidden">
             {(["timeline", "flow"] as const).map((m) => (
@@ -102,9 +104,14 @@ export function LineageView() {
             ))}
           </div>
         </div>
+        {mode === "timeline" && artifacts.length > 0 && (
+          <div className="shrink-0 px-3 py-1 border-b border-border text-[12px] text-fg-muted">
+            Each row is a file HardKAS wrote in <code>.hardkas/</code>. The lines on the left join the steps of one operation, read from the bottom up: <span className="text-fg">plan → signed → receipt</span>. Click a row for its details.
+          </div>
+        )}
         <div className="flex-1 min-h-0 relative">
           {error && (
-            <div role="alert" className="absolute z-10 top-2 left-2 right-2 flex items-center justify-between gap-2 text-[11px] text-warn bg-bg-elev/90 border border-border rounded px-2 py-1">
+            <div role="alert" className="absolute z-10 top-2 left-2 right-2 flex items-center justify-between gap-2 text-[12px] text-warn bg-bg-elev/90 border border-border rounded px-2 py-1">
               <span>
                 {error} — start the dev-server with <code>hardkas dev --headless</code> (Console) to feed this graph.
               </span>
@@ -117,7 +124,7 @@ export function LineageView() {
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 text-center pointer-events-none">
               <div className="rounded-lg border border-border bg-bg-elev/95 p-4 max-w-sm space-y-2 pointer-events-auto shadow-lg">
                 <div className="text-xs font-semibold text-fg">No lineage artifacts yet</div>
-                <p className="text-[11px] text-fg-muted">
+                <p className="text-[12px] text-fg-muted">
                   Execute a transaction flow (Plan → Sign → Send) or compile a SilverScript contract to visualize live provenance here.
                 </p>
               </div>
@@ -158,10 +165,12 @@ function ArtifactNodeView({ data }: NodeProps<ArtifactNode>) {
   const s = shortSchema(data.row.schema);
   const style = SCHEMA_STYLE[s] ?? { color: "var(--fg-muted)", label: s };
   const bad = data.row.integrityStatus && !["OK", "ok", "verified"].includes(data.row.integrityStatus);
+  const accounts = useEnv((s) => s.accounts);
+  const text = data.row.summary ? describeSummary(data.row.summary, accounts) : null;
   return (
     <div
       className={clsx(
-        "rounded-md border bg-bg-elev text-[11px] px-2.5 py-1.5 w-[220px] shadow transition-shadow",
+        "rounded-md border bg-bg-elev text-[12px] px-2.5 py-1.5 w-[220px] shadow transition-shadow",
         data.selected ? "border-accent shadow-[0_0_0_2px_var(--accent)]" : "border-border",
         data.fresh && "animate-pulse"
       )}
@@ -174,10 +183,17 @@ function ArtifactNodeView({ data }: NodeProps<ArtifactNode>) {
         </span>
         <span className="text-fg-muted">{data.row.networkId ?? ""}</span>
       </div>
-      <div className="font-mono text-[10px] text-fg-muted truncate" title={data.row.artifactId}>
-        {data.row.artifactId.slice(0, 16)}…
-      </div>
-      <div className="flex items-center justify-between text-[10px]">
+      {text ? (
+        <div className="text-[12px] text-fg truncate" title={`${text.title}${text.detail ? " · " + text.detail : ""}`}>
+          {text.title}
+          {text.detail && <span className="text-fg-muted"> · {text.detail}</span>}
+        </div>
+      ) : (
+        <div className="font-mono text-[12px] text-fg-muted truncate" title={data.row.artifactId}>
+          {data.row.artifactId.slice(0, 16)}…
+        </div>
+      )}
+      <div className="flex items-center justify-between text-[12px]">
         <span className={bad ? "text-warn" : "text-ok"}>{data.row.integrityStatus ?? ""}</span>
         {data.replay && <span className={data.replay === "passed" ? "text-ok" : data.replay === "running" ? "text-info" : "text-warn"}>replay: {data.replay}</span>}
         {data.row.createdAt && !data.replay && <span className="text-fg-muted">{new Date(data.row.createdAt).toLocaleTimeString(undefined, { hour12: false })}</span>}
@@ -190,10 +206,18 @@ function ArtifactNodeView({ data }: NodeProps<ArtifactNode>) {
 function Details({ row, plugin, replay, live }: { row: ArtifactRow; plugin: LineagePlugin; replay?: string; live: boolean }) {
   const s = shortSchema(row.schema);
   const canReplay = s === "txReceipt" || s === "txSubmission" || s === "txPlan" || s === "signedTx";
+  const accounts = useEnv((st) => st.accounts);
+  const text = row.summary ? describeSummary(row.summary, accounts) : null;
   return (
     <aside className="w-72 shrink-0 border-l border-border bg-bg-panel p-3 text-xs space-y-3 overflow-auto">
+      {text && (
+        <div>
+          <div className="text-sm font-semibold text-fg">{text.title}</div>
+          {text.detail && <div className="text-fg-muted">{text.detail}</div>}
+        </div>
+      )}
       <div>
-        <div className="label">Artifact</div>
+        <div className="label">File kind</div>
         <div className="font-semibold" style={{ color: SCHEMA_STYLE[s]?.color }}>
           {row.schema}
         </div>
@@ -233,7 +257,7 @@ function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex gap-2 min-w-0">
       <dt className="w-14 shrink-0 text-fg-muted">{k}</dt>
-      <dd className="font-mono text-[10px] break-all">{v}</dd>
+      <dd className="font-mono text-[12px] break-all">{v}</dd>
     </div>
   );
 }

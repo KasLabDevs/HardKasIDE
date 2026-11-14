@@ -47,6 +47,12 @@ export function OverviewTab() {
         <button type="button" className="btn-primary" disabled={!!busy} onClick={() => void plugin.rebuild()}>
           <DatabaseZap size={13} /> {busy === "Rebuild" ? "Building…" : "Build the index"}
         </button>
+        <p className="text-fg-muted leading-relaxed">
+          You do not need the index just to see what HardKAS wrote: <strong className="text-fg">Lineage</strong> reads the same files straight from disk, says what each one is, and opens its JSON.
+        </p>
+        <button type="button" className="btn-ghost" onClick={() => void engine.call("lineage", "open")}>
+          Open Lineage
+        </button>
         {message && <div className="text-fg-muted">{message}</div>}
       </div>
     );
@@ -115,7 +121,7 @@ export function OverviewTab() {
 
       <details className="rounded border border-border bg-bg-elev p-3">
         <summary className="cursor-pointer text-fg-muted">Schema and file</summary>
-        <div className="mt-2 space-y-1 font-mono text-[11px]">
+        <div className="mt-2 space-y-1 font-mono text-[12px]">
           <div className="break-all">{health.path}</div>
           {health.migrations?.map((m) => (
             <div key={m.version} className="text-fg-muted">
@@ -137,7 +143,7 @@ function KindLabel({ name }: { name: string }) {
   return (
     <span className="flex items-center gap-1.5 min-w-0">
       <KindChip schema={name} />
-      <span className="truncate text-fg-muted text-[10px]" title={name}>
+      <span className="truncate text-fg-muted text-[12px]" title={name}>
         {shortKind(name)}
       </span>
     </span>

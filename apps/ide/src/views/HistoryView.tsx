@@ -82,13 +82,13 @@ export function HistoryView() {
           <div className="rounded border border-border bg-bg-elev p-3 space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-fg text-sm">{current.deploy.contract}</span>
-              <span className={clsx("px-1.5 py-0.5 rounded text-[10px] font-medium", current.spent ? "bg-bg-hover text-fg-muted" : "bg-accent/15 text-accent")}>{current.spent ? "spent" : "locked"}</span>
+              <span className={clsx("px-1.5 py-0.5 rounded text-[12px] font-medium", current.spent ? "bg-bg-hover text-fg-muted" : "bg-accent/15 text-accent")}>{current.spent ? "spent" : "locked"}</span>
               <span className="text-fg-muted">on {current.deploy.networkId ?? "simnet"}</span>
               <button type="button" className="ml-auto flex items-center gap-1 text-fg-muted hover:text-accent cursor-pointer" onClick={() => void engine.call("fileManager", "open", current.deploy.recordPath)}>
                 <FileJson size={12} /> deploy record
               </button>
             </div>
-            <div className="font-mono text-[11px] text-fg-muted break-all">{current.deploy.address}</div>
+            <div className="font-mono text-[12px] text-fg-muted break-all">{current.deploy.address}</div>
           </div>
         )}
 
@@ -117,7 +117,7 @@ export function HistoryView() {
         ) : (
           <div className="rounded border border-border overflow-x-auto">
            <div className="min-w-[56rem]">
-            <div className="grid grid-cols-[7.5rem_minmax(8rem,1.2fr)_minmax(8rem,1.4fr)_7rem_6rem_7.5rem_6rem_3.5rem] gap-2 px-3 py-1.5 bg-bg-panel text-[10px] uppercase tracking-wider text-fg-muted">
+            <div className="grid grid-cols-[7.5rem_minmax(8rem,1.2fr)_minmax(8rem,1.4fr)_7rem_6rem_7.5rem_6rem_3.5rem] gap-2 px-3 py-1.5 bg-bg-panel text-[12px] uppercase tracking-wider text-fg-muted">
               <span>Time</span>
               <span>Call</span>
               <span>From → To</span>
@@ -161,7 +161,7 @@ function Row({ item: i, nameOf, onOpen, showGroup, onGroup, contractLabel }: { i
           <Icon size={12} className={clsx("shrink-0", i.kind === "transfer" ? "text-info" : i.kind === "deploy" ? "text-accent" : "text-warn")} /> <span className="truncate">{i.title}</span>
         </span>
         {showGroup && i.group !== "transfers" && (
-          <button type="button" onClick={onGroup} className="text-[10px] text-fg-muted hover:text-accent cursor-pointer truncate max-w-full">
+          <button type="button" onClick={onGroup} className="text-[12px] text-fg-muted hover:text-accent cursor-pointer truncate max-w-full">
             {contractLabel ?? "contract"}
           </button>
         )}
@@ -219,7 +219,7 @@ function TabButton({ active, onClick, label, count, icon }: { active: boolean; o
     >
       {icon}
       {label}
-      <span className="text-[10px] tabular-nums rounded bg-bg-hover px-1">{count}</span>
+      <span className="text-[12px] tabular-nums rounded bg-bg-hover px-1">{count}</span>
     </button>
   );
 }
@@ -227,7 +227,7 @@ function TabButton({ active, onClick, label, count, icon }: { active: boolean; o
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="rounded border border-border bg-bg-elev px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wider text-fg-muted">{label}</div>
+      <div className="text-[12px] uppercase tracking-wider text-fg-muted">{label}</div>
       <div className={clsx("text-sm font-semibold tabular-nums mt-0.5", accent ? "text-accent" : "text-fg")}>{value}</div>
     </div>
   );

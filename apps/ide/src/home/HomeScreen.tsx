@@ -52,7 +52,7 @@ export function HomeScreen({ onOpened }: Props) {
             <h1 className="text-3xl font-bold tracking-tight leading-none">
               <HardKasWordmark /> <span className="text-fg-muted font-normal text-xl">IDE</span>
             </h1>
-            <div className="text-[11px] uppercase tracking-[0.3em] text-fg-muted mt-1">Kaspa developer toolkit</div>
+            <div className="text-[12px] uppercase tracking-[0.3em] text-fg-muted mt-1">Kaspa developer toolkit</div>
             <p className="text-fg-muted text-sm mt-2">Plan, sign, simulate, inspect and replay Kaspa transaction workflows. Nothing touches a real network until you say so.</p>
           </div>
         </header>
@@ -80,12 +80,12 @@ export function HomeScreen({ onOpened }: Props) {
                   <button type="button" className="btn-ghost w-full justify-center" disabled={!openPath || busy} onClick={() => void open(openPath)}>
                     {busy ? "Opening…" : "Open"}
                   </button>
-                  <p className="text-fg-muted text-[11px]">A HardKas project is any folder with a hardkas.config.ts. Paste the absolute path.</p>
+                  <p className="text-fg-muted text-[12px]">A HardKas project is any folder with a hardkas.config.ts. Paste the absolute path.</p>
                 </div>
               </div>
             </div>
 
-            <div className="text-[11px] text-fg-muted space-y-1">
+            <div className="text-[12px] text-fg-muted space-y-1">
               <p>Workbench for Kaspa and SilverScript. Project flow shaped after Visual Studio.</p>
               <p>
                 Engine: HardKas CLI {cli === undefined ? "…" : cli?.version ?? `not found (tested with ${cli?.pinned ?? "0.13.0-rc.1"})`}
@@ -114,9 +114,9 @@ export function HomeScreen({ onOpened }: Props) {
                     >
                       <div className="min-w-0">
                         <div className="text-fg font-medium truncate">{r.name}</div>
-                        <div className="text-fg-muted font-mono text-[11px] truncate">{r.path}</div>
+                        <div className="text-fg-muted font-mono text-[12px] truncate">{r.path}</div>
                       </div>
-                      <div className="text-fg-muted text-[11px] shrink-0 tabular-nums">{new Date(r.openedAt).toLocaleDateString()}</div>
+                      <div className="text-fg-muted text-[12px] shrink-0 tabular-nums">{new Date(r.openedAt).toLocaleDateString()}</div>
                     </button>
                   </li>
                 ))}

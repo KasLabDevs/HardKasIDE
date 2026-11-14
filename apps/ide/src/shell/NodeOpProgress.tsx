@@ -23,7 +23,7 @@ export function OpSteps({ op, compact }: { op: NodeOp; compact?: boolean }) {
       <div className="h-1.5 rounded bg-bg-hover overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={op.steps.length} aria-valuenow={done} aria-label={op.title}>
         <div className={clsx("h-full transition-all duration-500", op.state === "error" ? "bg-error" : "bg-accent", op.state === "running" && "animate-pulse")} style={{ width: `${Math.max(6, (done / op.steps.length) * 100)}%` }} />
       </div>
-      <ol className={clsx("space-y-0.5", compact && "text-[11px]")}>
+      <ol className={clsx("space-y-0.5", compact && "text-[12px]")}>
         {op.steps.map((s, i) => (
           <li key={i} className={clsx("flex items-start gap-1.5", s.status === "pending" && "text-fg-muted/70", s.status === "running" && "text-fg", s.status === "done" && "text-fg-muted", s.status === "error" && "text-error")}>
             <span className="mt-0.5 shrink-0">
@@ -31,12 +31,12 @@ export function OpSteps({ op, compact }: { op: NodeOp; compact?: boolean }) {
             </span>
             <span className="min-w-0">
               {s.label}
-              {s.detail && <span className="ml-1.5 text-[10px] text-fg-muted break-words">{s.detail}</span>}
+              {s.detail && <span className="ml-1.5 text-[12px] text-fg-muted break-words">{s.detail}</span>}
             </span>
           </li>
         ))}
       </ol>
-      {op.state === "running" && <div className="text-[10px] text-fg-muted tabular-nums">{elapsed}s elapsed · step {Math.min(done + 1, op.steps.length)} of {op.steps.length}</div>}
+      {op.state === "running" && <div className="text-[12px] text-fg-muted tabular-nums">{elapsed}s elapsed · step {Math.min(done + 1, op.steps.length)} of {op.steps.length}</div>}
     </div>
   );
 }
@@ -79,7 +79,7 @@ export function NodeBusyCover({ label = "Waiting for the local node…" }: { lab
       <Loader2 size={22} className="animate-spin text-accent" />
       <div className="font-semibold text-fg">{label}</div>
       <div className="text-fg-muted">{op.title}</div>
-      {current && <div className="text-fg-muted text-[11px]">Step {done + 1} of {op.steps.length}: {current.label}</div>}
+      {current && <div className="text-fg-muted text-[12px]">Step {done + 1} of {op.steps.length}: {current.label}</div>}
     </div>
   );
 }

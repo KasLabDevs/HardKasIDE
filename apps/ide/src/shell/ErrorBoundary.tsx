@@ -38,7 +38,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <AlertTriangle size={14} />
           <span>{this.props.name ? `${this.props.name} crashed` : "Component error"}</span>
         </div>
-        <pre className="font-mono text-[11px] text-fg-muted whitespace-pre-wrap break-all max-h-40 overflow-auto">{error.message}</pre>
+        <pre className="font-mono text-[12px] text-fg-muted whitespace-pre-wrap break-all max-h-40 overflow-auto">{error.message}</pre>
         <button type="button" onClick={this.reset} className="btn-ghost">
           <RotateCcw size={12} /> Retry view
         </button>

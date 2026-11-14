@@ -56,7 +56,7 @@ export function CallStack() {
               title={f.file ? `${f.file}:${f.line}` : f.url}
             >
               <span className="font-mono truncate">{f.name}</span>
-              <span className="ml-auto font-mono text-[10px] shrink-0 tabular-nums">{f.file ? `${f.file.split("/").pop()}:${f.line}` : "external"}</span>
+              <span className="ml-auto font-mono text-[12px] shrink-0 tabular-nums">{f.file ? `${f.file.split("/").pop()}:${f.line}` : "external"}</span>
             </button>
           </li>
         ))}
@@ -185,7 +185,7 @@ export function Breakpoints({ plugin }: { plugin: DebugPlugin }) {
       count={total}
       actions={
         total > 0 ? (
-          <button type="button" className="text-[10px] text-fg-muted hover:text-error cursor-pointer" onClick={() => void plugin.clearBreakpoints()}>
+          <button type="button" className="text-[12px] text-fg-muted hover:text-error cursor-pointer" onClick={() => void plugin.clearBreakpoints()}>
             remove all
           </button>
         ) : undefined
@@ -194,7 +194,7 @@ export function Breakpoints({ plugin }: { plugin: DebugPlugin }) {
       {total === 0 && <div className="text-fg-muted">Click the gutter left of a line number in the editor (or press F9) to add one.</div>}
       {files.map((f) => (
         <div key={f} className="mb-1">
-          <div className="font-mono text-[10px] text-fg-muted truncate" title={f}>
+          <div className="font-mono text-[12px] text-fg-muted truncate" title={f}>
             {f}
           </div>
           {breakpoints[f].map((line) => {
@@ -206,7 +206,7 @@ export function Breakpoints({ plugin }: { plugin: DebugPlugin }) {
                   line {line}
                   {st?.verified && st.actual !== undefined && st.actual !== line ? ` → ${st.actual}` : ""}
                 </button>
-                {st && !st.verified && <span className="text-[10px] text-fg-muted">no code on this line</span>}
+                {st && !st.verified && <span className="text-[12px] text-fg-muted">no code on this line</span>}
                 <button type="button" aria-label={`Remove breakpoint ${f}:${line}`} className="ml-auto opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:opacity-100 text-fg-muted hover:text-error cursor-pointer" onClick={() => void plugin.toggleBreakpoint(f, line)}>
                   <X size={11} />
                 </button>
@@ -227,7 +227,7 @@ export function Output() {
   }, [output.length]);
   return (
     <Section title="Test output" count={output.length} defaultOpen={false}>
-      <pre ref={ref} className="max-h-56 overflow-auto rounded border border-border bg-bg p-2 text-[10px] leading-snug whitespace-pre-wrap break-words">
+      <pre ref={ref} className="max-h-56 overflow-auto rounded border border-border bg-bg p-2 text-[12px] leading-snug whitespace-pre-wrap break-words">
         {output.length === 0 && <span className="text-fg-muted">Nothing yet.</span>}
         {output.map((l, i) => (
           <span key={i} className={l.stream === "stderr" ? "text-warn" : l.stream === "debug" ? "text-info" : "text-fg"}>

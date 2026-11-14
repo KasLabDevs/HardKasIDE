@@ -1,8 +1,11 @@
 import clsx from "clsx";
-import { ChevronLeft, ChevronRight, FileJson, GitCompare, Receipt, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileJson, GitCompare, Receipt, Search, ShieldCheck, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { IndexPlugin } from "@/plugins/indexView";
+import type { LineagePlugin } from "@/plugins/lineage";
+import { useEnv } from "@/store/env";
+import { describeSummary } from "@/utils/artifactSummary";
 import { shortKind, useIndex, type ArtifactDetail, type ArtifactRow, type LineageRef } from "@/store/indexStore";
 import { diffJson, show } from "@/utils/jsonDiff";
 import { storeGet } from "@/utils/storeApi";
@@ -83,21 +86,21 @@ export function ArtifactsTab() {
         )}
 
         <div className="flex-1 min-h-0 overflow-auto">
-          <div className="min-w-[40rem]">
-            <div className="sticky top-0 z-10 grid grid-cols-[8.5rem_6.5rem_5.5rem_5.5rem_minmax(8rem,1fr)_minmax(8rem,1.2fr)] gap-2 px-3 py-1.5 bg-bg-panel text-[10px] uppercase tracking-wider text-fg-muted border-b border-border">
+          <div className="min-w-[56rem]">
+            <div className="sticky top-0 z-10 grid grid-cols-[8.5rem_6.5rem_5.5rem_5.5rem_minmax(16rem,2.2fr)_minmax(9rem,1fr)] gap-2 px-3 py-1.5 bg-bg-panel text-[12px] uppercase tracking-wider text-fg-muted border-b border-border">
               <span>Time</span>
               <span>Kind</span>
               <span>Mode</span>
               <span>Network</span>
-              <span>Transaction</span>
-              <span>Artifact</span>
+              <span>What it is</span>
+              <span>Transaction · id</span>
             </div>
             {rows.map((r) => (
               <button
                 key={r.artifact_id}
                 type="button"
                 onClick={() => select(selectedId === r.artifact_id ? null : r.artifact_id)}
-                className={clsx("w-full grid grid-cols-[8.5rem_6.5rem_5.5rem_5.5rem_minmax(8rem,1fr)_minmax(8rem,1.2fr)] gap-2 px-3 py-1.5 border-b border-border/40 text-left items-center cursor-pointer", selectedId === r.artifact_id ? "bg-accent/10" : "hover:bg-bg-hover/60")}
+                className={clsx("w-full grid grid-cols-[8.5rem_6.5rem_5.5rem_5.5rem_minmax(16rem,2.2fr)_minmax(9rem,1fr)] gap-2 px-3 py-1.5 border-b border-border/40 text-left items-center cursor-pointer", selectedId === r.artifact_id ? "bg-accent/10" : "hover:bg-bg-hover/60")}
               >
                 <span className="text-fg-muted tabular-nums">{when(r.created_at)}</span>
                 <span>
@@ -105,11 +108,9 @@ export function ArtifactsTab() {
                 </span>
                 <span className="text-fg-muted truncate">{r.mode ?? "—"}</span>
                 <span className="text-fg-muted truncate">{r.network_id ?? "—"}</span>
-                <span className="font-mono text-[11px] text-fg-muted truncate" title={r.tx_id ?? ""}>
-                  {shorten(r.tx_id, 18)}
-                </span>
-                <span className="font-mono text-[11px] truncate" title={r.artifact_id}>
-                  {shorten(r.artifact_id, 16)}
+                <WhatItIs row={r} />
+                <span className="font-mono text-[12px] text-fg-muted truncate" title={`${r.tx_id ?? "no transaction"}\n${r.artifact_id}`}>
+                  {r.tx_id ? `tx ${shorten(r.tx_id, 12)}` : shorten(r.artifact_id, 16)}
                 </span>
               </button>
             ))}
@@ -132,6 +133,18 @@ export function ArtifactsTab() {
 
       {selectedId && <Detail id={selectedId} onClose={() => select(null)} onNavigate={(id) => select(id)} />}
     </div>
+  );
+}
+
+function WhatItIs({ row }: { row: ArtifactRow }) {
+  const accounts = useEnv((s) => s.accounts);
+  if (!row.summary) return <span className="text-fg-muted truncate">—</span>;
+  const t = describeSummary(row.summary, accounts);
+  return (
+    <span className="truncate" title={`${t.title}${t.detail ? " · " + t.detail : ""}`}>
+      {t.title}
+      {t.detail && <span className="text-fg-muted"> · {t.detail}</span>}
+    </span>
   );
 }
 
@@ -177,7 +190,7 @@ function Detail({ id, onClose, onNavigate }: { id: string; onClose: () => void; 
     <aside className="w-[46%] min-w-[20rem] max-w-[40rem] shrink-0 border-l border-border bg-bg-panel flex flex-col min-h-0">
       <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-border">
         {a && <KindChip schema={a.schema} />}
-        <span className="font-mono text-[11px] truncate flex-1" title={id}>
+        <span className="font-mono text-[12px] truncate flex-1" title={id}>
           {shorten(id, 18, 6)}
         </span>
         <CopyBtn text={id} label="Copy artifact id" />
@@ -208,9 +221,19 @@ function Detail({ id, onClose, onNavigate }: { id: string; onClose: () => void; 
                   <Receipt size={12} /> Transaction
                 </button>
               )}
+              {/^hardkas\.(txPlan|signedTx|txReceipt|txSubmission)/.test(a.schema) && (
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  title="Re-derives this artifact from its lineage and compares the hashes (needs the dev-server; the result goes to the Console)"
+                  onClick={() => void engine.get<LineagePlugin>("lineage").replay(a.artifact_id)}
+                >
+                  <ShieldCheck size={12} /> Replay verify
+                </button>
+              )}
             </div>
           </div>
-          <div role="tablist" aria-label="Artifact details" className="shrink-0 flex border-b border-border text-[11px]">
+          <div role="tablist" aria-label="Artifact details" className="shrink-0 flex border-b border-border text-[12px]">
             {(["json", "lineage", "compare"] as const).map((t) => (
               <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={clsx("px-3 py-1.5 cursor-pointer capitalize", tab === t ? "text-fg border-b-2 border-b-accent" : "text-fg-muted hover:text-fg")}>
                 {t === "json" ? "JSON" : t === "lineage" ? `Lineage · ${detail!.ancestors.length + detail!.descendants.length}` : "Compare"}
@@ -218,7 +241,7 @@ function Detail({ id, onClose, onNavigate }: { id: string; onClose: () => void; 
             ))}
           </div>
           <div className="flex-1 min-h-0 overflow-auto p-3">
-            {tab === "json" && <pre className="font-mono text-[11px] whitespace-pre-wrap break-words">{JSON.stringify(detail!.json, null, 2)}</pre>}
+            {tab === "json" && <pre className="font-mono text-[12px] whitespace-pre-wrap break-words">{JSON.stringify(detail!.json, null, 2)}</pre>}
             {tab === "lineage" && <LineageList detail={detail!} onNavigate={onNavigate} />}
             {tab === "compare" && <Compare detail={detail!} />}
           </div>
@@ -236,8 +259,8 @@ function LineageList({ detail, onNavigate }: { detail: ArtifactDetail; onNavigat
       {refs.map((r) => (
         <button key={r.artifact_id} type="button" onClick={() => onNavigate(r.artifact_id)} className="w-full flex items-center gap-2 rounded px-1.5 py-1 hover:bg-bg-hover cursor-pointer text-left" style={{ paddingLeft: `${0.375 + (r.depth - 1) * 0.75}rem` }}>
           <KindChip schema={r.schema} />
-          <span className="font-mono text-[11px] truncate">{shorten(r.artifact_id, 16)}</span>
-          <span className="ml-auto text-[10px] text-fg-muted tabular-nums shrink-0">{r.schema ? when(r.created_at) : "not indexed"}</span>
+          <span className="font-mono text-[12px] truncate">{shorten(r.artifact_id, 16)}</span>
+          <span className="ml-auto text-[12px] text-fg-muted tabular-nums shrink-0">{r.schema ? when(r.created_at) : "not indexed"}</span>
         </button>
       ))}
     </div>
@@ -287,7 +310,7 @@ function Compare({ detail }: { detail: ArtifactDetail }) {
             <GitCompare size={13} /> {diffs.length === 0 ? "Identical." : `${diffs.length} difference${diffs.length === 1 ? "" : "s"} (left = this artifact, right = the other)`}
           </div>
           {diffs.slice(0, 200).map((d) => (
-            <div key={d.path} className="rounded border border-border bg-bg p-1.5 font-mono text-[11px] break-all">
+            <div key={d.path} className="rounded border border-border bg-bg p-1.5 font-mono text-[12px] break-all">
               <div className={d.kind === "added" ? "text-ok" : d.kind === "removed" ? "text-error" : "text-warn"}>
                 {d.kind === "added" ? "+" : d.kind === "removed" ? "−" : "~"} {d.path}
               </div>

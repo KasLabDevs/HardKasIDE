@@ -16,12 +16,12 @@ export function StatusBar({ borderless = false }: { borderless?: boolean } = {})
   const showCursor = isTextFile(activeFile) && cursorFile === activeFile;
 
   return (
-    <footer className={clsx("h-[1.45rem] shrink-0 bg-bg-panel flex items-center gap-2.5 px-2.5 text-[11px] text-fg-muted select-none overflow-hidden", !borderless && "border-t border-border")}>
+    <footer className={clsx("h-[1.45rem] shrink-0 bg-bg-panel flex items-center gap-2.5 px-2.5 text-[12px] text-fg-muted select-none overflow-hidden", !borderless && "border-t border-border")}>
       <span className="flex items-center gap-1.5 text-fg shrink-0 max-w-[180px] truncate" title={workspace?.root ?? ""}>
         <FolderOpen size={12} className="shrink-0" /> <span className="truncate">{workspace?.name ?? "no workspace"}</span>
       </span>
       {activeFile && (
-        <span className="truncate min-w-0 max-w-[260px] font-mono text-[10px]" title={activeFile}>
+        <span className="truncate min-w-0 max-w-[260px] font-mono text-[12px]" title={activeFile}>
           {activeFile}
         </span>
       )}
@@ -39,7 +39,7 @@ export function StatusBar({ borderless = false }: { borderless?: boolean } = {})
         </button>
       )}
       <span
-        className="shrink-0 hidden md:inline font-mono text-[10px] px-1.5 py-0.5 rounded bg-bg border border-border text-accent"
+        className="shrink-0 hidden md:inline font-mono text-[12px] px-1.5 py-0.5 rounded bg-bg border border-border text-accent"
         title="Active SilverScript compiler & language spec version. Pin 'pragma silverscript ^0.1.0;' in your .sil contracts because the SilverScript API evolves rapidly."
       >
         silverc v1.0.0 · SilverScript ^0.1.0

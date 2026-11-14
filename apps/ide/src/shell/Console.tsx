@@ -109,9 +109,9 @@ function Block({ block }: { block: JournalBlock }) {
         >
           {open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
           <span className="truncate">{block.text}</span>
-          <span className="ml-auto text-[10px] opacity-60 tabular-nums shrink-0">{time(block.at)}</span>
+          <span className="ml-auto text-[12px] opacity-60 tabular-nums shrink-0">{time(block.at)}</span>
         </button>
-        {open && <pre className="px-3 pb-2 overflow-auto max-h-80 text-[11px] leading-relaxed whitespace-pre">{JSON.stringify(block.data, null, 2)}</pre>}
+        {open && <pre className="px-3 pb-2 overflow-auto max-h-80 text-[12px] leading-relaxed whitespace-pre">{JSON.stringify(block.data, null, 2)}</pre>}
       </div>
     );
   }
@@ -128,7 +128,7 @@ function Block({ block }: { block: JournalBlock }) {
             const assistant = engine.get<AssistantPlugin>("assistant");
             void assistant.runAgent(`Fix this error:\n${block.text}`);
           }}
-          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded border border-error/40 bg-error/10 text-error hover:bg-error/20 text-[10px] cursor-pointer"
+          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded border border-error/40 bg-error/10 text-error hover:bg-error/20 text-[12px] cursor-pointer"
           title="Ask the agent to analyze and fix this error"
         >
           <Wand2 size={11} /> Fix with AI

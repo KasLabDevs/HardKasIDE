@@ -84,13 +84,28 @@ body {
   @apply w-full rounded border border-border bg-bg px-2 py-1 text-xs text-fg outline-none transition-colors focus:border-accent focus-visible:ring-1 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed;
 }
 .label {
-  @apply block text-[11px] font-semibold uppercase tracking-wide text-fg-muted mb-1;
+  @apply block text-[12px] font-semibold uppercase tracking-wide text-fg-muted mb-1;
 }
 .panel-title {
-  @apply px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border select-none;
+  @apply px-2.5 py-1 text-[12px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border select-none;
 }
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* Header strip of a view that draws its own title: title left, small status right, wraps instead of overlapping. */
+.panel-header {
+  @apply flex flex-wrap items-center justify-between gap-x-2 px-2.5 py-1 text-[12px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border select-none;
+}
+
+/* Click targets of at least 24px: icon-only buttons and tabs grow to it (the icon itself keeps its size). */
+button:has(> svg:only-child),
+[role="tab"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
 }
 
 /* Accessible keyboard focus ring for icon buttons and interactive controls */

@@ -105,7 +105,7 @@ export function TransactionsTab() {
           <div className="grid gap-1 max-w-3xl">
             {recent.map((r) => (
               <button key={r.txId} type="button" onClick={() => go(r.txId)} className="flex items-center gap-3 rounded border border-border bg-bg-elev px-2 py-1.5 text-left hover:bg-bg-hover cursor-pointer">
-                <span className="font-mono text-[11px] truncate flex-1" title={r.txId}>
+                <span className="font-mono text-[12px] truncate flex-1" title={r.txId}>
                   {shorten(r.txId, 26, 8)}
                 </span>
                 <span className="text-fg-muted tabular-nums shrink-0">{when(r.at)}</span>
@@ -122,7 +122,7 @@ export function TransactionsTab() {
         <div className="space-y-4 max-w-3xl">
           <div className="flex items-center gap-2 min-w-0">
             <span className="label mb-0">Transaction</span>
-            <span className="font-mono text-[11px] truncate" title={data.txId}>
+            <span className="font-mono text-[12px] truncate" title={data.txId}>
               {data.txId}
             </span>
             <CopyBtn text={data.txId} label="Copy transaction id" />
@@ -146,8 +146,8 @@ export function TransactionsTab() {
                     <KindChip schema={a.schema} />
                     <span className="text-fg-muted tabular-nums">{when(a.created_at)}</span>
                     <span className="text-fg-muted">{a.mode ?? ""}</span>
-                    {a.viaLineage && <span className="text-[10px] text-fg-muted border border-border rounded px-1" title="Found through the lineage: it is what this transaction was built from">via lineage</span>}
-                    <span className="font-mono text-[10px] text-fg-muted truncate ml-auto" title={a.artifact_id}>
+                    {a.viaLineage && <span className="text-[12px] text-fg-muted border border-border rounded px-1" title="Found through the lineage: it is what this transaction was built from">via lineage</span>}
+                    <span className="font-mono text-[12px] text-fg-muted truncate ml-auto" title={a.artifact_id}>
                       {shorten(a.artifact_id, 14)}
                     </span>
                     <button type="button" className="p-0.5 rounded text-fg-muted hover:text-accent hover:bg-bg-hover cursor-pointer" title="Inspect in the Artifacts tab" aria-label="Inspect artifact" onClick={() => plugin.showArtifact(a.artifact_id)}>
@@ -176,7 +176,7 @@ export function TransactionsTab() {
                     <span className="text-fg-muted">{e.domain}</span>
                     <span className="text-fg truncate">{e.kind}</span>
                     {e.artifact_id && (
-                      <button type="button" className="font-mono text-[10px] text-fg-muted hover:text-accent cursor-pointer" title={`${shortKind(e.kind)} → open artifact`} onClick={() => plugin.showArtifact(e.artifact_id!)}>
+                      <button type="button" className="font-mono text-[12px] text-fg-muted hover:text-accent cursor-pointer" title={`${shortKind(e.kind)} → open artifact`} onClick={() => plugin.showArtifact(e.artifact_id!)}>
                         {shorten(e.artifact_id, 10)}
                       </button>
                     )}
@@ -206,7 +206,7 @@ function Facts({ s }: { s: TxArtifact["summary"] }) {
       {rows.map(([k, v]) => (
         <div key={k} className="contents">
           <dt className="text-fg-muted">{k}</dt>
-          <dd className="font-mono text-[11px] break-all">{v}</dd>
+          <dd className="font-mono text-[12px] break-all">{v}</dd>
         </div>
       ))}
     </dl>

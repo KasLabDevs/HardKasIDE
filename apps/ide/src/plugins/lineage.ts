@@ -120,7 +120,13 @@ export class LineagePlugin extends Plugin {
             api.dev<{ artifacts: ArtifactRow[] }>("/artifacts"),
             api.dev<{ nodes: Array<{ id: string }>; edges: LineageEdge[] }>("/lineage")
           ]);
-          store.setGraph(artifacts.artifacts ?? [], lineage.edges ?? []);
+          // The dev-server lists artifacts without a reading of them; the IDE server has one for each.
+          const words = await api.store.lineage().catch(() => null);
+          const summaries = new Map((words?.artifacts ?? []).map((a) => [a.artifactId, a.summary]));
+          store.setGraph(
+            (artifacts.artifacts ?? []).map((a) => (a.summary || !summaries.get(a.artifactId) ? a : { ...a, summary: summaries.get(a.artifactId) })),
+            lineage.edges ?? []
+          );
           store.setError(null);
           this.emit("updated");
           return;

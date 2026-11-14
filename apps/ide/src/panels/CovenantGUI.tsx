@@ -117,7 +117,7 @@ export function CovenantChainSection({ alwaysShowHeader = false }: { alwaysShowH
         </span>
         <button
           type="button"
-          className="btn-ghost p-0.5 text-[10px]"
+          className="btn-ghost p-0.5 text-[12px]"
           onClick={() => void refresh()}
           disabled={refreshing || busy !== null}
           title="Refresh covenant chains from .hardkas/artifacts/silver"
@@ -126,7 +126,7 @@ export function CovenantChainSection({ alwaysShowHeader = false }: { alwaysShowH
         </button>
       </div>
       {chains.length === 0 ? (
-        <div className="rounded border border-border bg-bg-elev p-2 text-fg-muted text-[11px] leading-snug">
+        <div className="rounded border border-border bg-bg-elev p-2 text-fg-muted text-[12px] leading-snug">
           No active v1 chains yet. Compile a <code className="font-mono text-fg">#[covenant]</code> <code className="font-mono text-fg">.sil</code> contract and click <span className="text-fg font-medium">Genesis</span> in SilverScript contracts to create an anchor UTXO and execute state transitions.
         </div>
       ) : (
@@ -191,7 +191,7 @@ function CovenantChainCard({
         <span className="font-semibold text-fg truncate">{head.contract}</span>
         {currentStateEntries.length > 0 && (
           <span
-            className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-ok/15 text-ok border border-ok/30 truncate"
+            className="text-[12px] font-mono px-1.5 py-0.5 rounded bg-ok/15 text-ok border border-ok/30 truncate"
             title="Current decoded on-chain covenant state"
           >
             {currentStateEntries.map((s) => `${s.name}=${s.value ?? "?"}`).join(", ")}
@@ -202,7 +202,7 @@ function CovenantChainCard({
 
       {open && (
         <div className="px-2 pb-2.5 space-y-2 border-t border-border/50 pt-2">
-          <div className="flex items-center justify-between gap-2 text-[10px]">
+          <div className="flex items-center justify-between gap-2 text-[12px]">
             <div className="flex items-center gap-1 min-w-0 font-mono text-fg-muted" title={`Covenant ID: ${covenantId}`}>
               <span className="text-fg-muted shrink-0">covId:</span>
               <span className="truncate text-fg">{covenantId.slice(0, 16)}…</span>
@@ -225,13 +225,13 @@ function CovenantChainCard({
             </button>
           </div>
 
-          <div className="font-mono text-[10px] text-fg-muted break-all" title="Current head P2SH address">
+          <div className="font-mono text-[12px] text-fg-muted break-all" title="Current head P2SH address">
             {head.address}
           </div>
 
           {/* Lineage chain: genesis -> transitions */}
           <div className="rounded bg-bg/70 border border-border/70 p-1.5 space-y-1">
-            <div className="text-[10px] text-fg-muted font-semibold flex items-center justify-between">
+            <div className="text-[12px] text-fg-muted font-semibold flex items-center justify-between">
               <span>Lineage ({history.length} step{history.length === 1 ? "" : "s"})</span>
               <span className="font-mono">{head.status}</span>
             </div>
@@ -248,7 +248,7 @@ function CovenantChainCard({
                   <div
                     key={step.contentHash}
                     className={clsx(
-                      "flex items-center justify-between gap-1.5 text-[10px] font-mono rounded px-1.5 py-0.5",
+                      "flex items-center justify-between gap-1.5 text-[12px] font-mono rounded px-1.5 py-0.5",
                       isHead ? "bg-accent/10 text-fg border border-accent/30" : "text-fg-muted"
                     )}
                   >
@@ -272,7 +272,7 @@ function CovenantChainCard({
 
           {/* Transition Policies */}
           {policyNames.length === 0 ? (
-            <div className="text-[11px] text-warn">
+            <div className="text-[12px] text-warn">
               No covenant transition policy metadata found in compile record ({head.compileRecordPath ?? "unknown"}).
             </div>
           ) : (
@@ -408,17 +408,17 @@ function PolicyTransitionForm({
   return (
     <div className="rounded border border-border p-2 space-y-2 bg-bg/50">
       <div className="flex items-center justify-between gap-2 min-w-0">
-        <span className="font-mono text-[11px] text-fg font-semibold truncate" title={sigTitle}>
+        <span className="font-mono text-[12px] text-fg font-semibold truncate" title={sigTitle}>
           #[covenant] {sigTitle}
         </span>
-        {entry?.dispatchTag && <span className="text-[10px] text-fg-muted shrink-0 tabular-nums">#{entry.dispatchTag}</span>}
+        {entry?.dispatchTag && <span className="text-[12px] text-fg-muted shrink-0 tabular-nums">#{entry.dispatchTag}</span>}
       </div>
 
       {/* Policy entrypoint parameters (e.g. delta) */}
       {policyParams.map((p, i) => (
         <div key={p.name} className="flex items-center gap-2">
-          <span className="w-24 shrink-0 text-fg-muted truncate text-[11px]" title={`${p.kind} ${p.name}`}>
-            {p.name} <span className="text-[10px]">({p.kind})</span>
+          <span className="w-24 shrink-0 text-fg-muted truncate text-[12px]" title={`${p.kind} ${p.name}`}>
+            {p.name} <span className="text-[12px]">({p.kind})</span>
           </span>
           {p.kind === "sig" ? (
             <select
@@ -458,7 +458,7 @@ function PolicyTransitionForm({
       {/* Next State declaration inputs */}
       {stateFields.length > 0 && (
         <div className="space-y-1 pt-1 border-t border-border/50">
-          <div className="text-[10px] text-fg-muted font-semibold flex items-center justify-between">
+          <div className="text-[12px] text-fg-muted font-semibold flex items-center justify-between">
             <span>Next State (State)</span>
             {nextStateTouched && (
               <button
@@ -475,7 +475,7 @@ function PolicyTransitionForm({
           </div>
           {stateFields.map((f) => (
             <div key={f.name} className="flex items-center gap-2">
-              <span className="w-24 shrink-0 text-fg-muted truncate text-[11px]" title={`Next ${f.kind} ${f.name}`}>
+              <span className="w-24 shrink-0 text-fg-muted truncate text-[12px]" title={`Next ${f.kind} ${f.name}`}>
                 next.{f.name}
               </span>
               <input
@@ -497,18 +497,18 @@ function PolicyTransitionForm({
         <button
           type="button"
           onClick={() => setShowAdvanced((v) => !v)}
-          className="text-[10px] text-fg-muted hover:text-fg flex items-center gap-1 cursor-pointer"
+          className="text-[12px] text-fg-muted hover:text-fg flex items-center gap-1 cursor-pointer"
         >
           {showAdvanced ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
           Advanced (state map, constructor args, budget)
         </button>
         {showAdvanced && (
-          <div className="mt-1.5 space-y-1.5 rounded bg-bg p-2 border border-border/60 text-[10px]">
+          <div className="mt-1.5 space-y-1.5 rounded bg-bg p-2 border border-border/60 text-[12px]">
             <div>
               <div className="text-fg-muted mb-0.5">--state-map JSON</div>
               <input
                 aria-label="Covenant state map JSON"
-                className="input font-mono text-[11px]"
+                className="input font-mono text-[12px]"
                 value={stateMapJson}
                 onChange={(e) => setStateMapJson(e.target.value)}
               />
@@ -517,7 +517,7 @@ function PolicyTransitionForm({
               <div className="text-fg-muted mb-0.5">--constructor-args JSON</div>
               <input
                 aria-label="Current constructor args JSON"
-                className="input font-mono text-[11px]"
+                className="input font-mono text-[12px]"
                 placeholder='[{"kind":"int","value":8}]'
                 value={ctorArgsJson}
                 onChange={(e) => setCtorArgsJson(e.target.value)}
@@ -528,7 +528,7 @@ function PolicyTransitionForm({
                 <div className="text-fg-muted mb-0.5">--compute-budget</div>
                 <input
                   aria-label="Transition compute budget"
-                  className="input font-mono text-[11px]"
+                  className="input font-mono text-[12px]"
                   placeholder="auto/estimate"
                   value={computeBudget}
                   onChange={(e) => setComputeBudget(e.target.value)}
@@ -538,7 +538,7 @@ function PolicyTransitionForm({
                 <div className="text-fg-muted mb-0.5">--fee (sompi)</div>
                 <input
                   aria-label="Transition fee sompi"
-                  className="input font-mono text-[11px]"
+                  className="input font-mono text-[12px]"
                   placeholder="auto floor"
                   value={feeSompi}
                   onChange={(e) => setFeeSompi(e.target.value)}
@@ -570,12 +570,12 @@ function PolicyTransitionForm({
       </button>
 
       {okNotice && (
-        <div role="status" className="text-ok text-[11px] flex items-center gap-1 break-words">
+        <div role="status" className="text-ok text-[12px] flex items-center gap-1 break-words">
           <Check size={11} className="shrink-0" /> {okNotice}
         </div>
       )}
       {err && (
-        <div role="alert" className="text-error text-[11px] whitespace-pre-wrap break-words rounded bg-error/10 border border-error/30 p-1.5">
+        <div role="alert" className="text-error text-[12px] whitespace-pre-wrap break-words rounded bg-error/10 border border-error/30 p-1.5">
           {err}
         </div>
       )}

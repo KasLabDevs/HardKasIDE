@@ -138,7 +138,7 @@ function Section({ icon, title, hint, onClick, children }: { icon: React.ReactNo
         </button>
         {icon}
         <span className="font-semibold text-fg truncate">{title}</span>
-        {hint && <span className="ml-auto text-[10px] text-fg-muted whitespace-nowrap tabular-nums">{hint}</span>}
+        {hint && <span className="ml-auto text-[12px] text-fg-muted whitespace-nowrap tabular-nums">{hint}</span>}
       </div>
       {open && <div className="pb-1">{children}</div>}
     </div>
@@ -148,7 +148,7 @@ function Section({ icon, title, hint, onClick, children }: { icon: React.ReactNo
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mt-0.5">
-      <div className="pl-7 text-[10px] uppercase tracking-wider text-fg-muted select-none">{title}</div>
+      <div className="pl-7 text-[12px] uppercase tracking-wider text-fg-muted select-none">{title}</div>
       {children}
     </div>
   );
@@ -175,7 +175,7 @@ function Row({ icon, label, value, mono, onClick, title }: { icon: React.ReactNo
     >
       {icon}
       <span className="text-fg truncate tabular-nums">{label}</span>
-      {value && <span className={clsx("ml-auto text-[10px] text-fg-muted truncate max-w-[55%] tabular-nums", mono && "font-mono")}>{value}</span>}
+      {value && <span className={clsx("ml-auto text-[12px] text-fg-muted truncate max-w-[55%] tabular-nums", mono && "font-mono")}>{value}</span>}
     </div>
   );
 }

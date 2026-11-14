@@ -99,7 +99,7 @@ export function WalletCard() {
         <span className="label mb-0 flex items-center gap-2">
           <Wallet size={12} /> Wallet (KasWare)
         </span>
-        <span className={provider ? "text-ok text-[10px]" : "text-fg-muted text-[10px]"}>{provider ? "extension detected" : "not detected"}</span>
+        <span className={provider ? "text-ok text-[12px]" : "text-fg-muted text-[12px]"}>{provider ? "extension detected" : "not detected"}</span>
       </div>
       <div className="px-3 pb-3 space-y-2">
         <div className="rounded border border-border bg-bg-elev p-2 space-y-1">
@@ -107,7 +107,7 @@ export function WalletCard() {
           {rows.map((r) => (
             <div key={r.k} className="flex items-center gap-2 min-w-0">
               <span className="w-24 shrink-0 text-fg-muted">{r.k}</span>
-              <span className="font-mono text-[11px] truncate flex-1" title={r.v}>
+              <span className="font-mono text-[12px] truncate flex-1" title={r.v}>
                 {r.v}
               </span>
               <button
@@ -121,7 +121,7 @@ export function WalletCard() {
               </button>
             </div>
           ))}
-          <div className="text-[10px] text-fg-muted pt-1">
+          <div className="text-[12px] text-fg-muted pt-1">
             The node publishes its ports on 127.0.0.1 only, so the wallet must run on this machine. Fund a wallet address with <code>hardkas localnet fund &lt;account&gt;</code> after importing its key as an account, or send to it from alice in Deploy &amp; Run.
           </div>
         </div>
@@ -134,13 +134,13 @@ export function WalletCard() {
           </button>
         </div>
         {accounts.length > 0 && (
-          <div className="font-mono text-[10px] break-all text-fg">
+          <div className="font-mono text-[12px] break-all text-fg">
             {accounts[0]}
             {network && <span className="text-fg-muted"> · {network}</span>}
           </div>
         )}
-        {!provider && <div className="text-[10px] text-fg-muted">No <code>window.kasware</code> here. Open http://localhost:5173 in Chrome with KasWare installed; the IDE will detect it and let you authorise this site.</div>}
-        {msg && <div role="status" aria-live="polite" className="text-[10px] text-accent">{msg}</div>}
+        {!provider && <div className="text-[12px] text-fg-muted">No <code>window.kasware</code> here. Open http://localhost:5173 in Chrome with KasWare installed; the IDE will detect it and let you authorise this site.</div>}
+        {msg && <div role="status" aria-live="polite" className="text-[12px] text-accent">{msg}</div>}
       </div>
     </section>
   );

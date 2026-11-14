@@ -51,7 +51,7 @@ export function EclipseTypeBadge({ text, tone }: { text: string; tone: WizardTem
     <span
       className={clsx(
         "inline-flex items-center justify-center font-mono font-bold border leading-none shrink-0 select-none",
-        isSingleChar ? "w-4 h-4 rounded-full text-[9px]" : "h-4 px-1 rounded text-[8px]",
+        isSingleChar ? "w-4 h-4 rounded-full text-[12px]" : "h-4 px-1 rounded text-[12px]",
         toneClass[tone]
       )}
     >
@@ -445,7 +445,7 @@ export function NewArtifactDialog() {
               New — Select a Wizard
             </h2>
             {folderOverride !== null && folderOverride !== "" && (
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-bg border border-border text-accent">
+              <span className="text-[12px] font-mono px-2 py-0.5 rounded bg-bg border border-border text-accent">
                 in {folderOverride}/
               </span>
             )}
@@ -471,7 +471,7 @@ export function NewArtifactDialog() {
               const items = WIZARD_TEMPLATES.filter((t) => t.category === cat.id);
               return (
                 <div key={cat.id} className="space-y-1">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-fg-muted px-1">
+                  <div className="flex items-center gap-1.5 text-[12px] font-semibold text-fg-muted px-1">
                     {cat.icon}
                     <span>{cat.label}</span>
                   </div>
@@ -493,7 +493,7 @@ export function NewArtifactDialog() {
                           <EclipseTypeBadge text={tpl.badge} tone={tpl.badgeTone} />
                           <span className="font-medium truncate flex-1">{tpl.label}</span>
                         </div>
-                        <div className="text-[10px] text-fg-muted mt-0.5 pl-6 line-clamp-1">{tpl.description}</div>
+                        <div className="text-[12px] text-fg-muted mt-0.5 pl-6 line-clamp-1">{tpl.description}</div>
                       </button>
                     ))}
                   </div>
@@ -519,7 +519,7 @@ export function NewArtifactDialog() {
                   placeholder="e.g. PaymentSplitter"
                 />
                 {activeTemplate.category !== "general" && activeTemplate.id !== "sql-file" && (
-                  <div className="text-[10px] text-fg-muted mt-0.5">
+                  <div className="text-[12px] text-fg-muted mt-0.5">
                     Identifier: <code className="text-accent">{pascalClass}</code>
                   </div>
                 )}
@@ -539,7 +539,7 @@ export function NewArtifactDialog() {
                   }}
                   onKeyDown={(e) => e.key === "Enter" && void create()}
                 />
-                <div className="text-[10px] text-fg-muted mt-0.5">
+                <div className="text-[12px] text-fg-muted mt-0.5">
                   {folderOverride ? `Inside directory '${folderOverride}/'` : "Relative to project root"}
                 </div>
               </div>
@@ -549,7 +549,7 @@ export function NewArtifactDialog() {
               <div className="rounded border border-accent/30 bg-accent/5 p-2.5 flex items-center justify-between gap-3">
                 <div>
                   <div className="font-medium text-fg">Covenant 1:N Output Ratio</div>
-                  <div className="text-[10px] text-fg-muted">
+                  <div className="text-[12px] text-fg-muted">
                     Number of recipient outputs (<code>tx.outputs[0..N-1]</code>) enforced by the covenant.
                   </div>
                 </div>
@@ -579,9 +579,9 @@ export function NewArtifactDialog() {
                   <span className="flex items-center gap-1.5">
                     <Code2 size={12} className="text-accent" /> Generated Source Preview ({targetPath})
                   </span>
-                  <span className="text-[10px] font-mono text-fg-muted">{previewCode.split("\n").length} lines</span>
+                  <span className="text-[12px] font-mono text-fg-muted">{previewCode.split("\n").length} lines</span>
                 </div>
-                <pre className="rounded border border-border bg-bg p-3 flex-1 min-h-48 max-h-64 overflow-auto font-mono text-[11px] text-fg leading-relaxed">
+                <pre className="rounded border border-border bg-bg p-3 flex-1 min-h-48 max-h-64 overflow-auto font-mono text-[12px] text-fg leading-relaxed">
                   {previewCode || "// Empty file"}
                 </pre>
               </div>

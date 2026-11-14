@@ -149,16 +149,16 @@ export function RunPanel() {
 
       {busy === "fund" && target === "localnet" && (
         <div role="status" className="rounded bg-accent/10 border border-accent/30 p-2 space-y-1">
-          <div className="flex items-center gap-1.5 text-[11px] text-accent font-medium">
+          <div className="flex items-center gap-1.5 text-[12px] text-accent font-medium">
             <Pickaxe size={12} className="animate-spin" /> Funding on the local node…
           </div>
-          <div className="text-[10px] text-fg-muted">hardkas localnet fund --treasury: transfers exact KAS from the localnet Treasury (only mines coinbases if the Treasury needs reserve).</div>
+          <div className="text-[12px] text-fg-muted">hardkas localnet fund --treasury: transfers exact KAS from the localnet Treasury (only mines coinbases if the Treasury needs reserve).</div>
         </div>
       )}
 
       {/* Visual parity switcher: Transfers vs Toccata Covenants v1 */}
       <div
-        className="grid grid-cols-3 gap-0.5 rounded border border-border bg-bg-elev p-0.5 text-[11px]"
+        className="grid grid-cols-3 gap-0.5 rounded border border-border bg-bg-elev p-0.5 text-[12px]"
         role="tablist"
         aria-label="Deploy & Run view filter"
         data-testid="deploy-run-mode-bar"
@@ -190,7 +190,7 @@ export function RunPanel() {
           <GitBranch size={11} className="shrink-0" />
           <span className="truncate">Covenants</span>
           {covenantChains.length > 0 && (
-            <span className="px-1 rounded-full bg-accent/20 text-accent text-[9px] font-mono tabular-nums">
+            <span className="px-1 rounded-full bg-accent/20 text-accent text-[12px] font-mono tabular-nums">
               {covenantChains.length}
             </span>
           )}
@@ -226,7 +226,7 @@ export function RunPanel() {
               {transfersOpen ? <ChevronDown size={12} className="shrink-0 text-fg-muted" /> : <ChevronRight size={12} className="shrink-0 text-fg-muted" />}
               <ArrowRightLeft size={12} className="shrink-0 text-fg-muted" />
               <span className="label !mb-0 shrink-0">L1 Transfers</span>
-              <span className="ml-auto text-[10px] font-mono text-fg-muted truncate tabular-nums">
+              <span className="ml-auto text-[12px] font-mono text-fg-muted truncate tabular-nums">
                 {from} → {to} · {amount} KAS
               </span>
             </button>
@@ -300,7 +300,7 @@ export function RunPanel() {
                     {sent.receipt.submitPoint?.sinkBlueScore && <Row k="accepted@" v={`blue score ${sent.receipt.submitPoint.sinkBlueScore} · DAA ${sent.receipt.submitPoint.virtualDaaScore ?? "?"}`} />}
                     {/simul/i.test(`${sent.receipt.mode ?? ""} ${sent.receipt.networkId ?? ""}`) ? (
                       // A Simulator receipt is synthetic: no node ever saw this transaction, so there is nothing to ask.
-                      <div className="text-[10px] text-fg-muted pt-1">Simulator receipt: synthetic, no node to ask.</div>
+                      <div className="text-[12px] text-fg-muted pt-1">Simulator receipt: synthetic, no node to ask.</div>
                     ) : (
                       <button type="button" className="btn-ghost w-full justify-center mt-1" disabled={busy !== null} onClick={() => void doStatus()}>
                         <RadioTower size={12} /> {busy === "status" ? "Asking the node…" : "Check status on the node"}
@@ -312,7 +312,7 @@ export function RunPanel() {
                         {txStatus.confirmations && <Row k="confirm." v={`${txStatus.confirmations.blue ?? "?"} ${txStatus.confirmations.unit ?? ""} · DAA ${txStatus.confirmations.daa ?? "?"}`} />}
                       </div>
                     )}
-                    <div className="text-fg-muted pt-1">Artifact saved under .hardkas/artifacts and listed in the Artifacts panel.</div>
+                    <div className="text-fg-muted pt-1">Artifact saved under .hardkas/artifacts and listed in Lineage and Index.</div>
                   </Step>
                 )}
               </div>
@@ -359,7 +359,7 @@ function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex gap-2 min-w-0">
       <span className="w-14 shrink-0 text-fg-muted">{k}</span>
-      <span className="font-mono text-[11px] truncate tabular-nums" title={v}>
+      <span className="font-mono text-[12px] truncate tabular-nums" title={v}>
         {v}
       </span>
     </div>
