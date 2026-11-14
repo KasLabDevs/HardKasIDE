@@ -17,7 +17,7 @@ import { PluginManagerPlugin, REQUIRED_PLUGINS } from "@/plugins/pluginManager";
 import { SilverPlugin } from "@/plugins/silver";
 import { TestsPlugin } from "@/plugins/tests";
 import { VsxPlugin } from "@/plugins/vsx";
-import { AccountsPlugin, ArtifactsPlugin, FilesPlugin, RunPlugin, SettingsPlugin } from "@/plugins/sidePlugins";
+import { AccountsPlugin, FilesPlugin, RunPlugin, SettingsPlugin } from "@/plugins/sidePlugins";
 import { AssistantPlugin } from "@/plugins/assistant";
 import { ConsolePlugin } from "@/plugins/console";
 import { WithDesktopBar } from "@/shell/DesktopBar";
@@ -45,7 +45,6 @@ function createEngine(): Engine {
   engine.register(new CompilerPlugin());
   engine.register(new SilverPlugin());
   engine.register(new RunPlugin());
-  engine.register(new ArtifactsPlugin());
   engine.register(new HistoryPlugin());
   engine.register(new IndexPlugin());
   engine.register(new LineagePlugin());
@@ -63,7 +62,7 @@ function createEngine(): Engine {
   return engine;
 }
 
-const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "runHistory", "queryIndex", "environment", "explorer", "accounts", "assistant", "artifacts", "lineage", "covenant", "tests", "debug", "settings", "pluginManager", "vsx"];
+const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "runHistory", "queryIndex", "environment", "explorer", "accounts", "assistant", "lineage", "covenant", "tests", "debug", "settings", "pluginManager", "vsx"];
 
 export default function App() {
   const engine = useMemo(createEngine, []);

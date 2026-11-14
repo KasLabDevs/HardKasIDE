@@ -142,7 +142,7 @@ export function AssistantPanel() {
               aria-selected={mode === m}
               onClick={() => setMode(m)}
               className={clsx(
-                "flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors cursor-pointer",
+                "flex items-center gap-1 rounded px-2 py-0.5 text-[12px] font-medium transition-colors cursor-pointer",
                 mode === m ? "bg-bg-elev text-fg" : "text-fg-muted hover:text-fg"
               )}
             >
@@ -156,7 +156,7 @@ export function AssistantPanel() {
           type="button"
           onClick={() => setSettingsOpen(!settingsOpen)}
           className={clsx(
-            "inline-flex min-w-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors cursor-pointer",
+            "inline-flex min-h-[24px] min-w-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[12px] transition-colors cursor-pointer",
             settingsOpen ? "border-accent/60 text-accent" : "border-border text-fg-muted hover:text-fg hover:border-fg-muted/40"
           )}
           title={[config ? `${config.provider} · ${config.model || "no model"}` : "", docsInfo, "Assistant settings"].filter(Boolean).join("\n")}
@@ -206,7 +206,7 @@ export function AssistantPanel() {
                   </div>
                 </div>
                 {notReady && !needsConsent && (
-                  <button type="button" onClick={() => setSettingsOpen(true)} className="w-full flex items-center gap-2 rounded-md border border-warn/40 bg-warn/10 px-2.5 py-1.5 text-left text-[11px] text-warn hover:bg-warn/15 cursor-pointer transition-colors">
+                  <button type="button" onClick={() => setSettingsOpen(true)} className="w-full flex items-center gap-2 rounded-md border border-warn/40 bg-warn/10 px-2.5 py-1.5 text-left text-[12px] text-warn hover:bg-warn/15 cursor-pointer transition-colors">
                     <KeyRound size={12} className="shrink-0" />
                     <span className="flex-1">{notReady}</span>
                     <span className="underline underline-offset-2">Settings</span>
@@ -250,7 +250,7 @@ export function AssistantPanel() {
                 aria-pressed={includeFile}
                 title={sharedFile ? (includeFile ? `${activeFile} is shared as context. Click to stop sharing it.` : `Click to share ${activeFile} as context.`) : "Open a file to share it as context"}
                 className={clsx(
-                  "inline-flex min-w-0 max-w-[70%] items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors cursor-pointer",
+                  "inline-flex min-w-0 max-w-[70%] items-center gap-1 rounded-full border px-2 py-0.5 text-[12px] transition-colors cursor-pointer",
                   includeFile && sharedFile ? "border-accent/40 bg-accent/10 text-accent" : "border-border text-fg-muted hover:text-fg"
                 )}
               >
@@ -378,20 +378,20 @@ function AgentView({
       <div className="rounded-lg border border-border bg-bg-elev p-3 space-y-2">
         <div className="flex items-start justify-between gap-2">
           <div className="space-y-1 min-w-0 flex-1">
-            <div className="text-[10px] uppercase font-semibold text-fg-muted tracking-wider">Goal</div>
+            <div className="text-[12px] uppercase font-semibold text-fg-muted tracking-wider">Goal</div>
             <div className="font-medium text-fg text-xs break-words">{agentRun.goal}</div>
           </div>
           <div className="shrink-0">
             {agentRun.running ? (
-              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/10 border border-accent/30 text-accent text-[11px] font-medium">
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/10 border border-accent/30 text-accent text-[12px] font-medium">
                 <Loader2 size={11} className="animate-spin" /> Running
               </span>
             ) : agentRun.ok ? (
-              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-ok/10 border border-ok/30 text-ok text-[11px] font-medium">
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-ok/10 border border-ok/30 text-ok text-[12px] font-medium">
                 <CheckCircle2 size={11} /> Finished
               </span>
             ) : (
-              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-error/10 border border-error/30 text-error text-[11px] font-medium">
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-error/10 border border-error/30 text-error text-[12px] font-medium">
                 <XCircle size={11} /> Stopped
               </span>
             )}
@@ -406,8 +406,8 @@ function AgentView({
           <div className="flex items-center gap-2 text-warn font-semibold text-xs">
             <TerminalSquare size={14} /> Allow this action in the workspace?
           </div>
-          <pre className="font-mono text-[11px] text-fg bg-bg border border-border rounded p-2 whitespace-pre-wrap break-all max-h-32 overflow-auto">{agentRun.pendingConfirm.command}</pre>
-          <p className="text-[10px] text-fg-muted leading-relaxed">
+          <pre className="font-mono text-[12px] text-fg bg-bg border border-border rounded p-2 whitespace-pre-wrap break-all max-h-32 overflow-auto">{agentRun.pendingConfirm.command}</pre>
+          <p className="text-[12px] text-fg-muted leading-relaxed">
             The agent proposed it; it may come from a file or a page it read. It runs with your user and the workspace as the current folder.
           </p>
           <div className="flex flex-wrap gap-1.5">
@@ -426,8 +426,8 @@ function AgentView({
 
       {/* Live Agent Thoughts (if any) */}
       {agentRun.thoughts.length > 0 && (
-        <div className="rounded-lg border border-border/80 bg-bg p-2.5 space-y-1 text-fg-muted text-[11px] italic">
-          <div className="not-italic font-semibold text-[10px] uppercase tracking-wider text-accent flex items-center gap-1">
+        <div className="rounded-lg border border-border/80 bg-bg p-2.5 space-y-1 text-fg-muted text-[12px] italic">
+          <div className="not-italic font-semibold text-[12px] uppercase tracking-wider text-accent flex items-center gap-1">
             <span>💭</span> Reasoning
           </div>
           {agentRun.thoughts.slice(-2).map((thought, idx) => (
@@ -440,7 +440,7 @@ function AgentView({
 
       {/* Steps Timeline */}
       <div className="space-y-2">
-        <div className="text-[10px] uppercase font-semibold text-fg-muted tracking-wider px-1">
+        <div className="text-[12px] uppercase font-semibold text-fg-muted tracking-wider px-1">
           Steps ({agentRun.steps.length})
         </div>
 
@@ -488,7 +488,7 @@ function AgentView({
 
                   <span className="font-medium text-fg truncate flex-1">{step.title}</span>
 
-                  <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-bg border border-border text-fg-muted shrink-0">
+                  <span className="font-mono text-[12px] px-1.5 py-0.2 rounded bg-bg border border-border text-fg-muted shrink-0">
                     {step.tool}
                   </span>
 
@@ -507,23 +507,23 @@ function AgentView({
                   <div className="px-2.5 pb-2 pt-1 border-t border-border/50 space-y-1.5 bg-bg/60">
                     {filePath && (
                       <div className="flex items-center justify-between py-0.5">
-                        <span className="text-[10px] text-fg-muted font-mono">{filePath}</span>
+                        <span className="text-[12px] text-fg-muted font-mono">{filePath}</span>
                         <button
                           type="button"
                           onClick={() => openFile(filePath)}
-                          className="flex items-center gap-1 text-[10px] text-accent hover:underline cursor-pointer"
+                          className="flex items-center gap-1 text-[12px] text-accent hover:underline cursor-pointer"
                         >
                           <FileCode2 size={11} /> Open in editor
                         </button>
                       </div>
                     )}
                     {step.error && (
-                      <pre className="font-mono text-[10px] text-error bg-error/10 border border-error/20 p-2 rounded whitespace-pre-wrap break-all max-h-40 overflow-auto">
+                      <pre className="font-mono text-[12px] text-error bg-error/10 border border-error/20 p-2 rounded whitespace-pre-wrap break-all max-h-40 overflow-auto">
                         {step.error}
                       </pre>
                     )}
                     {step.output && !step.error && (
-                      <pre className="font-mono text-[10px] text-fg-muted bg-bg border border-border/60 p-2 rounded whitespace-pre-wrap break-all max-h-40 overflow-auto">
+                      <pre className="font-mono text-[12px] text-fg-muted bg-bg border border-border/60 p-2 rounded whitespace-pre-wrap break-all max-h-40 overflow-auto">
                         {step.output}
                       </pre>
                     )}
@@ -604,7 +604,7 @@ function Markdown({ text, streaming }: { text: string; streaming?: boolean }) {
 
 function renderInline(s: string) {
   return s.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/g).map((t, i) => {
-    if (t.startsWith("`") && t.endsWith("`") && t.length > 2) return <code key={i} className="rounded bg-bg-elev px-1 py-0.5 font-mono text-[11px] text-accent">{t.slice(1, -1)}</code>;
+    if (t.startsWith("`") && t.endsWith("`") && t.length > 2) return <code key={i} className="rounded bg-bg-elev px-1 py-0.5 font-mono text-[12px] text-accent">{t.slice(1, -1)}</code>;
     if (t.startsWith("**") && t.endsWith("**") && t.length > 4) return <strong key={i}>{t.slice(2, -2)}</strong>;
     return <Fragment key={i}>{t}</Fragment>;
   });
@@ -653,7 +653,7 @@ function CodeBlock({ lang, code, complete }: { lang: string; code: string; compl
 
   return (
     <div className="rounded border border-border bg-bg overflow-hidden">
-      <div className="flex items-center gap-1 px-2 py-1 border-b border-border bg-bg-elev text-[10px] text-fg-muted">
+      <div className="flex items-center gap-1 px-2 py-1 border-b border-border bg-bg-elev text-[12px] text-fg-muted">
         <span className="uppercase tracking-wide">{lang || "code"}</span>
         {note && <span className="text-accent ml-1">{note}</span>}
         <span className="ml-auto flex items-center gap-0.5">
@@ -672,7 +672,7 @@ function CodeBlock({ lang, code, complete }: { lang: string; code: string; compl
           )}
         </span>
       </div>
-      <pre className="overflow-auto px-2 py-1.5 font-mono text-[11px] leading-relaxed max-h-72">{code}</pre>
+      <pre className="overflow-auto px-2 py-1.5 font-mono text-[12px] leading-relaxed max-h-72">{code}</pre>
     </div>
   );
 }
@@ -757,7 +757,7 @@ function Settings({ onClose }: { onClose: () => void }) {
           </button>
         ))}
       </div>
-      <div className="text-[10px] text-fg-muted">
+      <div className="text-[12px] text-fg-muted">
         {provider === "opencode"
           ? "The OpenCode agent, hosted by the IDE over ACP with the HardKas tools. Free models, no key: your prompts and the files the agent reads go to OpenCode's hosted models. The first three suggested models keep nothing; big-pickle may use data to improve the model. Reads run without asking; edits, commands and HardKas actions that change something ask for your approval."
           : provider === "anthropic"
@@ -786,13 +786,13 @@ function Settings({ onClose }: { onClose: () => void }) {
           {keyState && <span className={clsx("normal-case tracking-normal", keyState.warn ? "text-warn" : "text-ok")}>{keyState.text}</span>}
         </div>
         {sameProvider && config?.keySource === "env" ? (
-          <div className="text-[11px] text-fg-muted">
+          <div className="text-[12px] text-fg-muted">
             The key comes from <code className="font-mono">{envName}</code>. Remove that variable to manage the key here.
           </div>
         ) : (
           <input className="input font-mono" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={sameProvider && config?.hasKey ? "leave empty to keep the saved key" : "paste your key"} />
         )}
-        <div className="text-[10px] text-fg-muted mt-1">
+        <div className="text-[12px] text-fg-muted mt-1">
           Saved in your system's credential store (Windows Credential Manager, macOS Keychain or the Linux Secret Service), never in a file, and never sent back to the browser. If <code className="font-mono">{envName}</code> is set, that key is used instead.
           {" "}A key is only ever sent to the host it was saved for{sameProvider && config?.keyBoundTo ? <>: <code className="font-mono">{config.keyBoundTo}</code></> : ""}. Changing the Base URL to another host needs the key pasted again.
         </div>
@@ -808,7 +808,7 @@ function Settings({ onClose }: { onClose: () => void }) {
           <option value="full">Full docs corpus (larger, costs more per question)</option>
           <option value="off">Off</option>
         </select>
-        <div className="text-[10px] text-fg-muted mt-1">{docsInfo}</div>
+        <div className="text-[12px] text-fg-muted mt-1">{docsInfo}</div>
       </div>
       )}
       <div className="flex gap-1">
@@ -834,7 +834,7 @@ function Settings({ onClose }: { onClose: () => void }) {
           Close
         </button>
       </div>
-      {msg && <div className="text-[11px] text-accent">{msg}</div>}
+      {msg && <div className="text-[12px] text-accent">{msg}</div>}
     </div>
   );
 }

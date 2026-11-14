@@ -80,7 +80,7 @@ export function AccountsPanel() {
         </span>
         <div className="flex items-center gap-1.5">
           {busy && (
-            <span className="inline-flex items-center gap-1 text-[10px] text-accent font-medium animate-pulse">
+            <span className="inline-flex items-center gap-1 text-[12px] text-accent font-medium animate-pulse">
               Loading balances…
             </span>
           )}
@@ -89,7 +89,7 @@ export function AccountsPanel() {
               type="button"
               onClick={() => void fundAll()}
               disabled={fundingAll || busy}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-accent border border-accent/25 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 cursor-pointer"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[12px] text-accent border border-accent/25 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 cursor-pointer"
               title="Seed all empty accounts with 100 KAS"
             >
               <Coins size={11} />
@@ -124,7 +124,7 @@ export function AccountsPanel() {
       ) : (
         <>
           {fundingAll && fundAllProgress && (
-            <div role="status" aria-live="polite" className="mx-3 mt-2.5 px-2.5 py-1.5 rounded border border-accent/30 bg-accent/10 text-[11px] text-accent flex items-center gap-1.5">
+            <div role="status" aria-live="polite" className="mx-3 mt-2.5 px-2.5 py-1.5 rounded border border-accent/30 bg-accent/10 text-[12px] text-accent flex items-center gap-1.5">
               <RefreshCw size={11} className="animate-spin shrink-0" />
               <span className="truncate">{fundAllProgress}</span>
             </div>
@@ -144,14 +144,14 @@ export function AccountsPanel() {
                 <Plus size={12} /> {creating ? "…" : "Create"}
               </button>
             </div>
-            <div className="text-fg-muted text-[11px]">Created accounts store a plaintext simnet key in .hardkas/accounts.real.json (dev only, never use on mainnet).</div>
+            <div className="text-fg-muted text-[12px]">Created accounts store a plaintext simnet key in .hardkas/accounts.real.json (dev only, never use on mainnet).</div>
           </div>
-          <div className="mx-3 mb-3 p-2 rounded bg-bg-elev border border-border/80 text-[11px] space-y-1">
+          <div className="mx-3 mb-3 p-2 rounded bg-bg-elev border border-border/80 text-[12px] space-y-1">
             <div className="font-medium text-fg flex items-center justify-between">
               <span>KasWare Wallet Import</span>
-              <span className="text-[9px] px-1 py-0.5 rounded bg-accent/15 text-accent font-mono">Simnet</span>
+              <span className="text-[12px] px-1 py-0.5 rounded bg-accent/15 text-accent font-mono">Simnet</span>
             </div>
-            <p className="text-fg-muted text-[10px] leading-relaxed">
+            <p className="text-fg-muted text-[12px] leading-relaxed">
               To use an account in KasWare: copy its private key (64 hex characters), open the KasWare extension on the <strong>Kaspa Simnet</strong> network (RPC settings in the Wallet card below) and choose <em>Import Account &rarr; Private Key</em>. These are dev keys protected by a public password: simnet only, never real funds.
             </p>
           </div>
@@ -160,7 +160,7 @@ export function AccountsPanel() {
       <div className="border-t border-border">
         <WalletCard />
       </div>
-      <div role="status" aria-live="polite" className={clsx("px-3 pb-3 text-[11px] min-h-4", notice?.isError ? "text-err" : "text-accent")}>
+      <div role="status" aria-live="polite" className={clsx("px-3 pb-3 text-[12px] min-h-4", notice?.isError ? "text-err" : "text-accent")}>
         {notice?.text}
       </div>
     </div>
@@ -170,9 +170,9 @@ export function AccountsPanel() {
 function CopyField({ label, value, mono = true, onCopy, copied }: { label: string; value: string; mono?: boolean; onCopy: () => void; copied: boolean }) {
   return (
     <div className="space-y-0.5">
-      <div className="text-[10px] uppercase tracking-wide text-fg-muted">{label}</div>
+      <div className="text-[12px] uppercase tracking-wide text-fg-muted">{label}</div>
       <div className="flex items-start gap-1 min-w-0">
-        <span className={clsx("flex-1 min-w-0 break-all text-[11px] rounded bg-bg border border-border px-1.5 py-0.5", mono && "font-mono")}>{value}</span>
+        <span className={clsx("flex-1 min-w-0 break-all text-[12px] rounded bg-bg border border-border px-1.5 py-0.5", mono && "font-mono")}>{value}</span>
         <button type="button" onClick={onCopy} className="p-1 rounded text-fg-muted hover:text-accent hover:bg-bg-hover cursor-pointer shrink-0" title={`Copy ${label.toLowerCase()}`} aria-label={`Copy ${label.toLowerCase()}`}>
           {copied ? <Check size={13} className="text-ok" /> : <Copy size={13} />}
         </button>
@@ -236,10 +236,10 @@ function AccountItem({ account, busy, env, say }: { account: AccountInfo; busy: 
         <div className="flex items-center gap-1.5 font-semibold text-fg min-w-0">
           <UserRound size={14} className="text-accent shrink-0" />
           <span className="truncate">{account.name}</span>
-          <span className="text-[10px] font-normal text-fg-muted shrink-0">{account.kind}</span>
+          <span className="text-[12px] font-normal text-fg-muted shrink-0">{account.kind}</span>
         </div>
         {account.balanceSompi === null ? (
-          <span role="status" className="inline-flex items-center gap-1.5 text-[11px] text-accent font-mono px-2 py-0.5 rounded bg-accent/10 border border-accent/25 shrink-0">
+          <span role="status" className="inline-flex items-center gap-1.5 text-[12px] text-accent font-mono px-2 py-0.5 rounded bg-accent/10 border border-accent/25 shrink-0">
             <RefreshCw size={11} className="animate-spin shrink-0" />
             <span>Loading balance…</span>
           </span>
@@ -258,20 +258,20 @@ function AccountItem({ account, busy, env, say }: { account: AccountInfo; busy: 
       <CopyField label="Public key (address)" value={account.address} onCopy={() => void copyPublic()} copied={copied === "pub"} />
 
       <div className="space-y-0.5">
-        <div className="text-[10px] uppercase tracking-wide text-fg-muted flex items-center justify-between">
+        <div className="text-[12px] uppercase tracking-wide text-fg-muted flex items-center justify-between">
           <span className="flex items-center gap-1">
             <KeyRound size={10} /> Private key
           </span>
           {account.keystore === "dev-keystore" && (
-            <span className="text-[9px] text-accent/80 font-mono">dev keystore (KasWare)</span>
+            <span className="text-[12px] text-accent/80 font-mono">dev keystore (KasWare)</span>
           )}
           {account.keystore === "plain" && (
-            <span className="text-[9px] text-ok/80 font-mono">dev plaintext (KasWare)</span>
+            <span className="text-[12px] text-ok/80 font-mono">dev plaintext (KasWare)</span>
           )}
         </div>
         {account.hasPlainKey ? (
           <div className="flex items-start gap-1 min-w-0">
-            <span className="flex-1 min-w-0 truncate font-mono text-[11px] text-fg-muted rounded bg-bg border border-border px-1.5 py-0.5 select-none" title="Hidden: it can be copied, never shown">
+            <span className="flex-1 min-w-0 truncate font-mono text-[12px] text-fg-muted rounded bg-bg border border-border px-1.5 py-0.5 select-none" title="Hidden: it can be copied, never shown">
               ••••••••••••••••••••••••••••••••
             </span>
             <button type="button" onClick={() => void copyPrivate()} className="p-1 rounded text-fg-muted hover:text-warn hover:bg-bg-hover cursor-pointer shrink-0" title="Copy private key for KasWare (it is never shown)" aria-label={`Copy private key of ${account.name}`}>
@@ -279,7 +279,7 @@ function AccountItem({ account, busy, env, say }: { account: AccountInfo; busy: 
             </button>
           </div>
         ) : (
-          <div className="text-[11px] text-fg-muted rounded border border-dashed border-border px-1.5 py-1">
+          <div className="text-[12px] text-fg-muted rounded border border-dashed border-border px-1.5 py-1">
             Not exportable: encrypted production keystore without dev credentials.
           </div>
         )}
@@ -287,14 +287,14 @@ function AccountItem({ account, busy, env, say }: { account: AccountInfo; busy: 
 
       {funding && target === "localnet" && (
         <div role="status" className="rounded bg-accent/10 border border-accent/30 p-2 space-y-1">
-          <div className="flex items-center gap-1.5 text-[11px] text-accent font-medium">
+          <div className="flex items-center gap-1.5 text-[12px] text-accent font-medium">
             <Pickaxe size={12} className="animate-spin" /> Funding on the local node…
           </div>
-          <div className="text-[10px] text-fg-muted">hardkas localnet fund --treasury: transfers exact KAS from the localnet Treasury (only mines coinbases if empty).</div>
+          <div className="text-[12px] text-fg-muted">hardkas localnet fund --treasury: transfers exact KAS from the localnet Treasury (only mines coinbases if empty).</div>
         </div>
       )}
 
-      <div className="flex items-center justify-between text-[10px] text-fg-muted tabular-nums">
+      <div className="flex items-center justify-between text-[12px] text-fg-muted tabular-nums">
         <span>
           {account.utxoCount !== null ? (
             `${account.utxoCount} utxo`

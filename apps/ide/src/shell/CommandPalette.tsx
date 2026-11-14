@@ -125,7 +125,7 @@ export function CommandPalette() {
       { id: "servers", kind: "command", title: "Open Servers (node & accounts)", run: () => ide().setActiveSidePlugin("environment") },
       { id: "accounts", kind: "command", title: "Open Accounts (keys & balances)", run: () => ide().setActiveSidePlugin("accounts") },
       { id: "assistant", kind: "command", title: "Open Assistant (chat about Kaspa & SilverScript)", hint: "grounded in docs.kaspa.org", run: () => ide().revealPlugin("assistant", "Assistant") },
-      { id: "artifacts", kind: "command", title: "Open Artifacts", run: () => ide().setActiveSidePlugin("artifacts") },
+      { id: "artifacts", kind: "command", title: "Open Index (artifacts, transactions, SQL)", hint: "the files HardKAS wrote in .hardkas/", run: () => void engine.call("queryIndex", "open") },
       { id: "files", kind: "command", title: "Open Explorer", run: () => ide().setActiveSidePlugin("files") },
       { id: "node:start", kind: "command", title: "Node: start localnet (rusty-kaspad)", hint: "hardkas localnet start --toccata", run: () => engine.get<EnvironmentPlugin>("environment").startNode() },
       { id: "node:stop", kind: "command", title: "Node: stop localnet", hint: "hardkas localnet stop", run: () => engine.get<EnvironmentPlugin>("environment").stopNode() },
@@ -440,10 +440,10 @@ export function CommandPalette() {
             }
             className="flex-1 bg-transparent py-2.5 text-sm outline-none text-fg placeholder:text-fg-muted/60 min-w-0"
           />
-          <kbd className="text-[10px] border border-border rounded px-1.5 py-0.5 text-fg-muted shrink-0">Esc</kbd>
+          <kbd className="text-[12px] border border-border rounded px-1.5 py-0.5 text-fg-muted shrink-0">Esc</kbd>
         </div>
 
-        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border/70 bg-bg-panel text-[11px] select-none">
+        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border/70 bg-bg-panel text-[12px] select-none">
           <ModePill active={parsed.mode === "files"} onClick={() => switchMode("files")} label="Files" />
           <ModePill active={parsed.mode === "commands"} onClick={() => switchMode("commands")} label="> Commands" />
           <ModePill
@@ -459,12 +459,12 @@ export function CommandPalette() {
             label=": Line"
           />
           {activeTextDoc && parsed.mode === "symbols" && (
-            <span className="ml-auto text-[10px] text-fg-muted truncate max-w-[180px]">{activeTextDoc.path}</span>
+            <span className="ml-auto text-[12px] text-fg-muted truncate max-w-[180px]">{activeTextDoc.path}</span>
           )}
         </div>
 
         {parsed.mode === "line" && lineTarget !== null && activeTextDoc && (
-          <div className="border-b border-border/70 bg-bg px-3 py-2 font-mono text-[11px] space-y-0.5">
+          <div className="border-b border-border/70 bg-bg px-3 py-2 font-mono text-[12px] space-y-0.5">
             {[-1, 0, 1].map((offset) => {
               const ln = lineTarget + offset;
               if (ln < 1 || ln > activeLines.length) return null;
@@ -503,7 +503,7 @@ export function CommandPalette() {
             return (
               <li key={c.id} data-palette-idx={i}>
                 {showGroupHeader && (
-                  <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-fg-muted border-t border-border/60 mt-1">
+                  <div className="px-3 pt-2 pb-1 text-[12px] uppercase tracking-wider text-fg-muted border-t border-border/60 mt-1">
                     {c.group}
                   </div>
                 )}
@@ -530,18 +530,18 @@ export function CommandPalette() {
                     {c.hint && <span className="ml-2 text-fg-muted">{c.hint}</span>}
                   </span>
                   {c.badge && (
-                    <span className="text-[10px] text-fg-muted tabular-nums px-1.5 py-0.5 rounded bg-bg border border-border/60 shrink-0">
+                    <span className="text-[12px] text-fg-muted tabular-nums px-1.5 py-0.5 rounded bg-bg border border-border/60 shrink-0">
                       {c.badge}
                     </span>
                   )}
-                  {c.keys && <kbd className="text-[10px] border border-border rounded px-1 text-fg-muted shrink-0">{c.keys}</kbd>}
+                  {c.keys && <kbd className="text-[12px] border border-border rounded px-1 text-fg-muted shrink-0">{c.keys}</kbd>}
                 </div>
               </li>
             );
           })}
         </ul>
 
-        <div className="px-3 py-1.5 border-t border-border/70 bg-bg-panel text-[10px] text-fg-muted flex flex-wrap items-center gap-x-3 gap-y-1 select-none">
+        <div className="px-3 py-1.5 border-t border-border/70 bg-bg-panel text-[12px] text-fg-muted flex flex-wrap items-center gap-x-3 gap-y-1 select-none">
           <span>↑↓ navigate</span>
           <span>Enter open</span>
           <span>&gt; commands</span>

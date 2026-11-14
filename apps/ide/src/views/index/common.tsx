@@ -10,7 +10,7 @@ export function KindChip({ schema }: { schema: string | null | undefined }) {
   const k = shortKind(schema);
   const style = SCHEMA_STYLE[k] ?? { color: "var(--fg-muted)", label: k };
   return (
-    <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold border whitespace-nowrap" style={{ color: style.color, borderColor: `color-mix(in srgb, ${style.color} 45%, transparent)`, background: `color-mix(in srgb, ${style.color} 12%, transparent)` }}>
+    <span className="shrink-0 rounded px-1.5 py-0.5 text-[12px] font-semibold border whitespace-nowrap" style={{ color: style.color, borderColor: `color-mix(in srgb, ${style.color} 45%, transparent)`, background: `color-mix(in srgb, ${style.color} 12%, transparent)` }}>
       {style.label === k ? k : style.label}
     </span>
   );
@@ -65,9 +65,9 @@ export function CopyBtn({ text, label = "Copy" }: { text: string; label?: string
 export function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "warn" | "ok" }) {
   return (
     <div className="rounded border border-border bg-bg-elev px-3 py-2 min-w-0">
-      <div className="text-[10px] uppercase tracking-wider text-fg-muted">{label}</div>
+      <div className="text-[12px] uppercase tracking-wider text-fg-muted">{label}</div>
       <div className={clsx("text-base font-semibold tabular-nums mt-0.5 truncate", tone === "warn" ? "text-warn" : tone === "ok" ? "text-ok" : "text-fg")}>{value}</div>
-      {sub && <div className="text-[10px] text-fg-muted truncate">{sub}</div>}
+      {sub && <div className="text-[12px] text-fg-muted truncate">{sub}</div>}
     </div>
   );
 }
@@ -77,7 +77,7 @@ export function Bars({ title, items, onPick, label }: { title: string; items: Ar
   const max = Math.max(1, ...items.map((i) => i.count));
   return (
     <div className="rounded border border-border bg-bg-elev p-3 space-y-1.5 min-w-0">
-      <div className="text-[10px] uppercase tracking-wider text-fg-muted">{title}</div>
+      <div className="text-[12px] uppercase tracking-wider text-fg-muted">{title}</div>
       {items.length === 0 && <div className="text-fg-muted">Nothing indexed yet.</div>}
       {items.map((i) => (
         <button

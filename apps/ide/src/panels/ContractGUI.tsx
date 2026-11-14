@@ -110,7 +110,7 @@ export function ContractGUI({ includeCovenants = true }: { includeCovenants?: bo
           <button
             type="button"
             onClick={() => setTarget("localnet")}
-            className="px-2 py-0.5 rounded bg-warn/20 hover:bg-warn/30 text-warn font-semibold text-[10px] cursor-pointer shrink-0"
+            className="px-2 py-0.5 rounded bg-warn/20 hover:bg-warn/30 text-warn font-semibold text-[12px] cursor-pointer shrink-0"
           >
             Switch to Local Node
           </button>
@@ -120,7 +120,7 @@ export function ContractGUI({ includeCovenants = true }: { includeCovenants?: bo
       {/* Deploys and spends only confirm while blocks are mined; say so before the user sends one. */}
       {target === "localnet" && (!node?.miner?.running || busy !== null) && <MinerNotice compact />}
       {recordProblems.length > 0 && (
-        <div role="status" className="rounded border border-warn/40 bg-warn/10 p-2 text-[11px] text-warn break-words">
+        <div role="status" className="rounded border border-warn/40 bg-warn/10 p-2 text-[12px] text-warn break-words">
           {recordProblems.length} record{recordProblems.length === 1 ? "" : "s"} under .hardkas/artifacts/silver could not be read as expected (see the Console). A newer HardKas CLI may have changed their format; the IDE was tested with {cli?.pinned ?? "0.13.0-rc.1"}.
         </div>
       )}
@@ -145,7 +145,7 @@ export function ContractGUI({ includeCovenants = true }: { includeCovenants?: bo
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="font-semibold text-fg truncate">{c.name}</span>
                     {hasPolicies && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-accent/15 text-accent border border-accent/30 shrink-0">
+                      <span className="text-[12px] font-mono px-1.5 py-0.5 rounded bg-accent/15 text-accent border border-accent/30 shrink-0">
                         Covenant v1
                       </span>
                     )}
@@ -157,7 +157,7 @@ export function ContractGUI({ includeCovenants = true }: { includeCovenants?: bo
                   </span>
                 </div>
                 {c.stateFields && c.stateFields.length > 0 && (
-                  <div className="flex flex-wrap gap-1 text-[10px] font-mono">
+                  <div className="flex flex-wrap gap-1 text-[12px] font-mono">
                     {c.stateFields.map((sf) => (
                       <span key={sf.name} className="px-1.5 py-0.5 rounded bg-bg border border-border/80 text-fg-muted">
                         State {sf.kind} <span className="text-fg">{sf.name}</span>
@@ -167,7 +167,7 @@ export function ContractGUI({ includeCovenants = true }: { includeCovenants?: bo
                   </div>
                 )}
                 {c.address && (
-                  <div className="font-mono text-[10px] text-fg-muted break-all" title="P2SH address of this contract (locking script hash)">
+                  <div className="font-mono text-[12px] text-fg-muted break-all" title="P2SH address of this contract (locking script hash)">
                     {c.address}
                   </div>
                 )}
@@ -175,16 +175,16 @@ export function ContractGUI({ includeCovenants = true }: { includeCovenants?: bo
                 {/* Constructor Arguments Selector (Auto Schnorr Keys) */}
                 {c.constructorParams && c.constructorParams.length > 0 && (
                   <div className="space-y-1.5 p-2 rounded bg-bg border border-border/80">
-                    <div className="text-[11px] font-semibold text-fg flex items-center justify-between">
+                    <div className="text-[12px] font-semibold text-fg flex items-center justify-between">
                       <span>Constructor Arguments</span>
-                      <span className="text-[10px] text-accent font-mono flex items-center gap-1">
+                      <span className="text-[12px] text-accent font-mono flex items-center gap-1">
                         <Sparkles size={11} /> Auto Schnorr Keys
                       </span>
                     </div>
                     {c.constructorParams.map((p, idx) => (
                       <div key={p.name} className="flex items-center gap-2">
-                        <span className="w-24 shrink-0 text-fg-muted truncate text-[11px]" title={`${p.kind} ${p.name}`}>
-                          {p.name} <span className="text-[10px]">({p.kind})</span>
+                        <span className="w-24 shrink-0 text-fg-muted truncate text-[12px]" title={`${p.kind} ${p.name}`}>
+                          {p.name} <span className="text-[12px]">({p.kind})</span>
                         </span>
                         {p.kind === "pubkey" ? (
                           <select
@@ -290,7 +290,7 @@ export function ContractGUI({ includeCovenants = true }: { includeCovenants?: bo
                 </div>
 
                 {sdkNotice && (
-                  <div role="status" className="text-ok text-[11px] flex items-center gap-1">
+                  <div role="status" className="text-ok text-[12px] flex items-center gap-1">
                     <Check size={11} /> {sdkNotice}
                   </div>
                 )}
@@ -352,10 +352,10 @@ function Instance({ deploy }: { deploy: DeployRecord }) {
       </button>
       {open && (
         <div className="px-2 pb-2 space-y-2">
-          <div className="font-mono text-[10px] text-fg-muted break-all" title="Contract P2SH address">
+          <div className="font-mono text-[12px] text-fg-muted break-all" title="Contract P2SH address">
             {deploy.address}
           </div>
-          <div className="flex items-center justify-between gap-2 text-[10px] text-fg-muted">
+          <div className="flex items-center justify-between gap-2 text-[12px] text-fg-muted">
             <span className="font-mono truncate" title={deploy.txId}>
               deploy tx {deploy.txId.slice(0, 16)}… · {deploy.status}
             </span>
@@ -369,7 +369,7 @@ function Instance({ deploy }: { deploy: DeployRecord }) {
             <div className="space-y-1">
               <div className="text-fg-muted">Spends</div>
               {mySpends.map((s) => (
-                <div key={s.txId} className="rounded border border-border p-1.5 text-[10px] space-y-0.5">
+                <div key={s.txId} className="rounded border border-border p-1.5 text-[12px] space-y-0.5">
                   <div className="flex justify-between gap-2">
                     <span className="text-ok truncate">
                       {s.contract}.{s.entry} · {s.status}
@@ -435,12 +435,12 @@ function EntryCall({ deploy, entry, disabled, onCall }: { deploy: DeployRecord; 
         <span className="font-mono text-fg truncate" title={sigText}>
           {sigText}
         </span>
-        {entry.dispatchTag && <span className="text-[10px] text-fg-muted shrink-0 tabular-nums">#{entry.dispatchTag}</span>}
+        {entry.dispatchTag && <span className="text-[12px] text-fg-muted shrink-0 tabular-nums">#{entry.dispatchTag}</span>}
       </div>
       {entry.params.map((p, i) => (
         <div key={p.name} className="flex items-center gap-2">
           <span className="w-24 shrink-0 text-fg-muted truncate" title={`${p.kind} ${p.name}`}>
-            {p.name} <span className="text-[10px]">({p.kind})</span>
+            {p.name} <span className="text-[12px]">({p.kind})</span>
           </span>
           {p.kind === "sig" ? (
             <select aria-label={`${p.name} signature account`} className="input" value={values[i]} onChange={(e) => setValues((v) => v.map((x, j) => (j === i ? e.target.value : x)))}>

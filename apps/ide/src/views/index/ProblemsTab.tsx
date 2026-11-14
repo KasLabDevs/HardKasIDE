@@ -156,22 +156,22 @@ function CheckCard({ check, rel, onTx, onArtifact, onFile }: { check: Check; rel
           {check.items.map((i) => (
             <div key={i.key} className="px-3 py-1.5 border-b border-border/40 last:border-0 space-y-0.5">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="font-mono text-[11px] truncate" title={i.label}>
+                <span className="font-mono text-[12px] truncate" title={i.label}>
                   {i.label}
                 </span>
                 <span className="ml-auto flex gap-2 shrink-0">
                   {i.txId && (
-                    <button type="button" className="text-[10px] text-accent hover:underline cursor-pointer" onClick={() => onTx(i.txId!)}>
+                    <button type="button" className="text-[12px] text-accent hover:underline cursor-pointer" onClick={() => onTx(i.txId!)}>
                       {shorten(i.txId, 12)} → transaction
                     </button>
                   )}
                   {i.artifactId && (
-                    <button type="button" className="text-[10px] text-accent hover:underline cursor-pointer" onClick={() => onArtifact(i.artifactId!)}>
+                    <button type="button" className="text-[12px] text-accent hover:underline cursor-pointer" onClick={() => onArtifact(i.artifactId!)}>
                       artifact
                     </button>
                   )}
                   {i.file && rel(i.file) && (
-                    <button type="button" className="text-[10px] text-accent hover:underline cursor-pointer" onClick={() => onFile(rel(i.file)!)}>
+                    <button type="button" className="text-[12px] text-accent hover:underline cursor-pointer" onClick={() => onFile(rel(i.file)!)}>
                       open file
                     </button>
                   )}

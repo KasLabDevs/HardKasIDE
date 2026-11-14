@@ -341,6 +341,7 @@ export const api = {
           createdAt?: string;
           path?: string;
           integrityStatus?: string;
+          summary?: import("@/utils/artifactSummary").ArtifactSummary;
           parentArtifactId?: string;
           flowId?: string;
         }>;

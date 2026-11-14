@@ -141,7 +141,7 @@ export function MainArea() {
           })}
           {viewName && activeView && (
             <div className="ml-auto self-stretch flex items-center gap-1.5 px-2.5 border-l border-border bg-bg-panel shrink-0 select-none">
-              <span className="text-[10px] text-fg-muted uppercase tracking-wider">Position:</span>
+              <span className="text-[12px] text-fg-muted uppercase tracking-wider">Position:</span>
               <DockControls pluginName={viewName} displayName={activeView.profile.displayName} />
             </div>
           )}
@@ -191,12 +191,12 @@ export function MainArea() {
                 <FlaskConical size={13} /> Tests
               </button>
             </div>
-            <div className="mt-4 text-[11px] text-fg-muted flex items-center gap-4">
+            <div className="mt-4 text-[12px] text-fg-muted flex items-center gap-4">
               <span>
-                Command Palette <kbd className="border border-border rounded px-1.5 py-0.5 text-[10px] bg-bg-elev">Ctrl+K</kbd>
+                Command Palette <kbd className="border border-border rounded px-1.5 py-0.5 text-[12px] bg-bg-elev">Ctrl+K</kbd>
               </span>
               <span>
-                Compile .sil <kbd className="border border-border rounded px-1.5 py-0.5 text-[10px] bg-bg-elev">Ctrl+Enter</kbd>
+                Compile .sil <kbd className="border border-border rounded px-1.5 py-0.5 text-[12px] bg-bg-elev">Ctrl+Enter</kbd>
               </span>
             </div>
           </div>

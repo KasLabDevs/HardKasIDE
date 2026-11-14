@@ -39,7 +39,7 @@ function EnvTargetPicker({ target, onChange }: { target: ExecutionTarget; onChan
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         title={current.description}
-        className="inline-flex items-center gap-1 px-1.5 py-[2px] rounded border border-border/80 bg-bg/60 hover:bg-bg-hover text-accent font-medium text-[11px] leading-none cursor-pointer transition-colors"
+        className="inline-flex items-center gap-1 min-h-[24px] px-1.5 py-[2px] rounded border border-border/80 bg-bg/60 hover:bg-bg-hover text-accent font-medium text-[12px] leading-none cursor-pointer transition-colors"
       >
         <span>{current.label}</span>
         <ChevronDown size={11} className={clsx("text-fg-muted transition-transform", open && "rotate-180")} />
@@ -67,8 +67,8 @@ function EnvTargetPicker({ target, onChange }: { target: ExecutionTarget; onChan
                 >
                   <span className="mt-0.5 w-3.5 shrink-0 text-accent">{selected ? <Check size={12} /> : null}</span>
                   <span className="min-w-0 flex-1 whitespace-normal">
-                    <span className={clsx("block text-[11px] font-medium", selected ? "text-accent" : "text-fg")}>{e.label}</span>
-                    <span className="block text-[10px] text-fg-muted leading-snug mt-0.5 line-clamp-2">{e.description}</span>
+                    <span className={clsx("block text-[12px] font-medium", selected ? "text-accent" : "text-fg")}>{e.label}</span>
+                    <span className="block text-[12px] text-fg-muted leading-snug mt-0.5 line-clamp-2">{e.description}</span>
                   </span>
                 </button>
               </li>
@@ -118,12 +118,12 @@ export function EnvBar() {
   }
 
   return (
-    <div className="h-[25px] shrink-0 flex items-center gap-2 px-2 mb-[3px] rounded-[6px] border border-border bg-bg-panel text-[11px] text-fg-muted select-none overflow-visible relative z-20">
+    <div className="h-[25px] shrink-0 flex items-center gap-2 px-2 mb-[3px] rounded-[6px] border border-border bg-bg-panel text-[12px] text-fg-muted select-none overflow-visible relative z-20">
       <EnvTargetPicker target={target} onChange={setTarget} />
       <button
         type="button"
         onClick={() => setActiveSidePlugin("environment")}
-        className="flex items-center gap-1 hover:text-fg whitespace-nowrap min-w-0 shrink overflow-hidden cursor-pointer rounded px-1 py-[2px] leading-none hover:bg-bg-hover transition-colors"
+        className="flex items-center gap-1 min-h-[24px] hover:text-fg whitespace-nowrap min-w-0 shrink overflow-hidden cursor-pointer rounded px-1 py-[2px] leading-none hover:bg-bg-hover transition-colors"
         title={`${nodeText}${current.needsNode && node?.virtualDaaScore ? ` · DAA ${node.virtualDaaScore}` : ""} (Open Servers view)`}
       >
         <Server size={12} className="shrink-0" />
@@ -136,7 +136,7 @@ export function EnvBar() {
           type="button"
           disabled={nodeBusy !== null}
           onClick={() => void env.startNode()}
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 text-[10px] font-medium cursor-pointer shrink-0"
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 text-[12px] font-medium cursor-pointer shrink-0"
           title="Start the local rusty-kaspad node"
         >
           <Play size={10} /> Start
@@ -144,7 +144,7 @@ export function EnvBar() {
       )}
       <span
         className={clsx(
-          "hidden 2xl:inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-mono shrink-0",
+          "hidden 2xl:inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[12px] font-mono shrink-0",
           target === "simulator"
             ? "border-warn/40 bg-warn/10 text-warn"
             : "border-ok/30 bg-ok/10 text-ok"
@@ -159,7 +159,7 @@ export function EnvBar() {
       </span>
       <div className="ml-auto shrink-0 flex items-center">
         {current.needsNode && (!node?.running || !node?.rpcReady) ? (
-          <span className="flex items-center gap-1.5 text-fg-muted/60 text-[10px] select-none" title="Start the local node to load the accounts and their balances">
+          <span className="flex items-center gap-1.5 text-fg-muted/60 text-[12px] select-none" title="Start the local node to load the accounts and their balances">
             <Users size={11} className="opacity-50" />
             <span>accounts unavailable</span>
           </span>

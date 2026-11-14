@@ -1,6 +1,7 @@
 import { promises as fs, existsSync } from "node:fs";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
+import { summarizeArtifact, type ArtifactSummary } from "./artifactSummary.js";
 import { getRoot } from "./workspace.js";
 
 /**
@@ -145,7 +146,20 @@ export async function artifacts(query: ArtifactQuery) {
   const offset = Math.max(0, query.offset ?? 0);
   return withDb((db) => ({
     total: num(db.prepare(`select count(*) c from artifacts ${clause}`).get(...params)?.c),
-    rows: db.prepare(`select ${ARTIFACT_COLS} from artifacts ${clause} order by created_at desc, artifact_id limit ? offset ?`).all(...params, limit, offset),
+    // Each row also carries what it says in words (read from its JSON); the raw JSON itself stays out of the list.
+    rows: db
+      .prepare(`select ${ARTIFACT_COLS}, raw_json from artifacts ${clause} order by created_at desc, artifact_id limit ? offset ?`)
+      .all(...params, limit, offset)
+      .map(({ raw_json, ...meta }) => {
+        let json: unknown = null;
+        try {
+          json = JSON.parse(String(raw_json));
+        } catch {
+          json = null;
+        }
+        const summary = summarizeArtifact(String(meta.schema ?? ""), json);
+        return summary ? { ...meta, summary } : meta;
+      }),
     limit,
     offset
   }));
@@ -361,6 +375,8 @@ export interface StoreLineageArtifact {
   integrityStatus?: string;
   parentArtifactId?: string;
   flowId?: string;
+  /** What it says in words ("Deploy VaultGuard · 5 KAS"), read from the artifact's own JSON. */
+  summary?: ArtifactSummary;
 }
 
 export interface StoreLineageEdge {
@@ -413,8 +429,10 @@ function parseArtifactRecord(json: Record<string, unknown>, filePath?: string): 
     parentArtifactId ??
     artifactId;
 
+  const summary = summarizeArtifact(schema, json);
   return {
     artifactId,
+    ...(summary ? { summary } : {}),
     ...(contentHash ? { contentHash } : {}),
     schema,
     kind: str(json.kind) ?? schema,
@@ -498,6 +516,7 @@ export async function lineage(workspaceRoot?: string): Promise<StoreLineageResul
           const kind = str(r.kind) ?? parsed?.kind ?? schema;
           byId.set(artifactId, {
             artifactId,
+            ...(parsed?.summary ? { summary: parsed.summary } : {}),
             ...(str(r.content_hash) ?? parsed?.contentHash ? { contentHash: str(r.content_hash) ?? parsed?.contentHash } : {}),
             schema,
             kind,
@@ -554,6 +573,7 @@ export async function lineage(workspaceRoot?: string): Promise<StoreLineageResul
         if (!existing.txId && diskRow.txId) existing.txId = diskRow.txId;
         if (!existing.parentArtifactId && diskRow.parentArtifactId) existing.parentArtifactId = diskRow.parentArtifactId;
         if (!existing.flowId && diskRow.flowId) existing.flowId = diskRow.flowId;
+        if (!existing.summary && diskRow.summary) existing.summary = diskRow.summary;
       }
     }
   }

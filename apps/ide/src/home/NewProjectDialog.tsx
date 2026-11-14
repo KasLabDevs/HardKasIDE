@@ -242,7 +242,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
         {/* Classic Desktop Window Title Bar */}
         <div className="flex items-center justify-between px-3 py-1.5 bg-bg-panel border-b border-border text-xs">
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center justify-center w-4 h-4 rounded-sm bg-accent/20 border border-accent/50 text-accent font-mono text-[9px] font-bold">
+            <span className="inline-flex items-center justify-center w-4 h-4 rounded-sm bg-accent/20 border border-accent/50 text-accent font-mono text-[12px] font-bold">
               S
             </span>
             <span className="font-medium text-fg">
@@ -274,7 +274,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
                     ? "Project Creation Failed"
                     : "Installing Dependencies & Building Workspace"}
             </h2>
-            <p className="text-[11px] text-fg-muted">
+            <p className="text-[12px] text-fg-muted">
               {phase === "form"
                 ? !name.trim()
                   ? "Enter a project name."
@@ -290,7 +290,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
           </div>
           <div className="relative w-12 h-12 rounded-lg bg-accent/10 border border-accent/30 flex items-center justify-center shrink-0">
             <FolderPlus size={24} className="text-accent" />
-            <span className="absolute -bottom-1 -right-1 px-1 py-0.2 rounded bg-accent text-bg font-mono text-[9px] font-bold shadow">
+            <span className="absolute -bottom-1 -right-1 px-1 py-0.2 rounded bg-accent text-bg font-mono text-[12px] font-bold shadow">
               .sil
             </span>
           </div>
@@ -343,7 +343,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
                       type="button"
                       disabled={useDefaultLocation}
                       onClick={() => setParent(defaultParent)}
-                      className="btn-ghost border border-border px-2.5 py-1 text-[11px] disabled:opacity-40"
+                      className="btn-ghost border border-border px-2.5 py-1 text-[12px] disabled:opacity-40"
                     >
                       Reset
                     </button>
@@ -352,19 +352,19 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
 
                 {/* Fieldset 1: the compiler. HardKas pins one silverc; there is nothing to choose here. */}
                 <fieldset className="border border-border rounded px-3.5 py-2.5 space-y-1 bg-bg-panel/40">
-                  <legend className="px-1.5 text-[11px] font-semibold text-fg">SilverScript compiler</legend>
+                  <legend className="px-1.5 text-[12px] font-semibold text-fg">SilverScript compiler</legend>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-fg">silverc pinned by HardKas</span>
-                    <span className="text-[10px] font-mono text-accent bg-accent/10 border border-accent/30 px-1.5 py-0.5 rounded">
+                    <span className="text-[12px] font-mono text-accent bg-accent/10 border border-accent/30 px-1.5 py-0.5 rounded">
                       silverc v1.0.0 · pragma ^0.1.0
                     </span>
                   </div>
-                  <div className="text-[10px] text-fg-muted">If it is not installed yet, it is installed (and its digest checked) when the project is created.</div>
+                  <div className="text-[12px] text-fg-muted">If it is not installed yet, it is installed (and its digest checked) when the project is created.</div>
                 </fieldset>
 
                 {/* Fieldset 2: Project layout (Standard vs Full-Stack Frontend dApp) */}
                 <fieldset className="border border-border rounded px-3.5 py-2.5 space-y-2 bg-bg-panel/40">
-                  <legend className="px-1.5 text-[11px] font-semibold text-fg">Project layout</legend>
+                  <legend className="px-1.5 text-[12px] font-semibold text-fg">Project layout</legend>
 
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -394,7 +394,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
                     <div className="flex items-center gap-3 pl-5">
                       <label
                         htmlFor="eclipse-frontend-select"
-                        className={clsx("w-36 shrink-0 text-[11px]", layoutMode === "fullstack" ? "text-fg" : "text-fg-muted/60")}
+                        className={clsx("w-36 shrink-0 text-[12px]", layoutMode === "fullstack" ? "text-fg" : "text-fg-muted/60")}
                       >
                         Frontend stack / language:
                       </label>
@@ -403,7 +403,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
                         disabled={layoutMode !== "fullstack"}
                         value={frontend}
                         onChange={(e) => setFrontend(e.target.value)}
-                        className="input py-1 text-[11px] flex-1 disabled:opacity-50"
+                        className="input py-1 text-[12px] flex-1 disabled:opacity-50"
                       >
                         {frontendOptions.map((f) => (
                           <option key={f.id} value={f.id}>
@@ -417,7 +417,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
 
                 {/* Fieldset 3: Dependencies & Build Automation (like Eclipse Working sets group) */}
                 <fieldset className="border border-border rounded px-3.5 py-2.5 space-y-1.5 bg-bg-panel/40">
-                  <legend className="px-1.5 text-[11px] font-semibold text-fg">Dependencies & Build Path</legend>
+                  <legend className="px-1.5 text-[12px] font-semibold text-fg">Dependencies & Build Path</legend>
                   <label className="flex items-center justify-between gap-2 cursor-pointer">
                     <span className="flex items-center gap-2 text-fg">
                       <input type="checkbox" checked={install} onChange={(e) => setInstall(e.target.checked)} />
@@ -426,13 +426,13 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
                         {layoutMode === "fullstack" && frontend !== "vanilla-js" ? ` + dapp/ packages` : ""})
                       </span>
                     </span>
-                    <span className="text-[10px] font-mono text-fg-muted">npm install</span>
+                    <span className="text-[12px] font-mono text-fg-muted">npm install</span>
                   </label>
                 </fieldset>
 
                 {/* Fieldset 4: Contract Module (like Eclipse Module group) */}
                 <fieldset className="border border-border rounded px-3.5 py-2.5 space-y-2 bg-bg-panel/40">
-                  <legend className="px-1.5 text-[11px] font-semibold text-fg">SilverScript / Covenant Module</legend>
+                  <legend className="px-1.5 text-[12px] font-semibold text-fg">SilverScript / Covenant Module</legend>
 
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={createModule} onChange={(e) => setCreateModule(e.target.checked)} />
@@ -454,7 +454,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
                           const found = STARTER_CONTRACTS.find((c) => c.id === next);
                           if (found?.defaultClass) setClassName(found.defaultClass);
                         }}
-                        className="input py-1 text-[11px] flex-1"
+                        className="input py-1 text-[12px] flex-1"
                       >
                         {STARTER_CONTRACTS.map((c) => (
                           <option key={c.id} value={c.id}>
@@ -465,12 +465,12 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
 
                       {selectedStarter.supportsFanout && (
                         <div className="flex items-center gap-1 shrink-0" title="Number of enforced outputs in Covenant 1:N">
-                          <span className="text-[11px] text-fg-muted">Ratio:</span>
+                          <span className="text-[12px] text-fg-muted">Ratio:</span>
                           <select
                             aria-label="Covenant 1:N output ratio"
                             value={fanout}
                             onChange={(e) => setFanout(Number(e.target.value))}
-                            className="input py-1 px-1.5 w-16 font-mono text-[11px]"
+                            className="input py-1 px-1.5 w-16 font-mono text-[12px]"
                           >
                             {[2, 3, 4, 5].map((n) => (
                               <option key={n} value={n}>
@@ -494,7 +494,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
                         onChange={(e) => setClassName(e.target.value)}
                         placeholder="PaymentSplitter"
                       />
-                      <span className="text-[10px] font-mono text-accent shrink-0">
+                      <span className="text-[12px] font-mono text-accent shrink-0">
                         contracts/{(className.trim() || selectedStarter.defaultClass).replace(/\.sil$/, "")}.sil
                       </span>
                     </div>
@@ -512,7 +512,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
                 </fieldset>
 
                 {showHelp && (
-                  <div className="rounded border border-accent/30 bg-accent/5 p-2.5 text-[11px] text-fg-muted space-y-1">
+                  <div className="rounded border border-accent/30 bg-accent/5 p-2.5 text-[12px] text-fg-muted space-y-1">
                     <div className="font-semibold text-fg flex items-center gap-1.5">
                       <Sparkles size={12} className="text-accent" /> HardKas Project Wizard Help
                     </div>
@@ -531,7 +531,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
               /* Wizard Page 2 (Next >): Source folders & Build summary preview before Finish */
               <div className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
                 <div className="text-fg font-semibold">Project Build Path &amp; Generated Structure Preview</div>
-                <div className="rounded border border-border bg-bg p-3 font-mono text-[11px] space-y-1">
+                <div className="rounded border border-border bg-bg p-3 font-mono text-[12px] space-y-1">
                   <div className="text-accent font-semibold">📁 {name.trim() || "my-hardkas-app"}/</div>
                   <div className="pl-4 text-fg">├── 📁 contracts/</div>
                   {createModule && (
@@ -551,7 +551,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
                   <div className="pl-4 text-fg-muted">└── 📦 package.json</div>
                 </div>
 
-                <div className="rounded border border-border bg-bg-panel p-3 space-y-1.5 text-[11px]">
+                <div className="rounded border border-border bg-bg-panel p-3 space-y-1.5 text-[12px]">
                   <div className="font-semibold text-fg">Actions executed when clicking Finish:</div>
                   {steps.map((s) => (
                     <div key={s.id} className="flex items-center gap-2 text-fg-muted">
@@ -649,7 +649,7 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
                   <li
                     key={s.id}
                     className={clsx(
-                      "flex items-center gap-2.5 px-3 py-2 rounded border text-[11px]",
+                      "flex items-center gap-2.5 px-3 py-2 rounded border text-[12px]",
                       isDone
                         ? "border-ok/30 bg-ok/5 text-fg"
                         : isActive
@@ -673,11 +673,11 @@ export function NewProjectDialog({ defaultParent, onClose, onCreated }: Props) {
             <div>
               <div className="label mb-1 flex items-center justify-between">
                 <span>Live Installation Console (npm install / hardkas init)</span>
-                <span className="font-mono text-[10px] text-fg-muted">{fullLocation}</span>
+                <span className="font-mono text-[12px] text-fg-muted">{fullLocation}</span>
               </div>
               <pre
                 ref={logRef}
-                className="rounded border border-border bg-bg p-3 h-52 overflow-auto font-mono text-[11px] whitespace-pre-wrap select-text"
+                className="rounded border border-border bg-bg p-3 h-52 overflow-auto font-mono text-[12px] whitespace-pre-wrap select-text"
               >
                 {log.join("\n")}
               </pre>

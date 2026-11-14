@@ -96,7 +96,7 @@ export function Breadcrumbs({ file }: { file: OpenFile }) {
     <div
       ref={wrapRef}
       aria-label="Breadcrumbs"
-      className="relative h-[22px] shrink-0 flex items-center gap-1 px-2 border-b border-border/70 bg-bg text-[11px] leading-none text-fg-muted select-none"
+      className="relative h-[22px] shrink-0 flex items-center gap-1 px-2 border-b border-border/70 bg-bg text-[12px] leading-none text-fg-muted select-none"
     >
       <div className="flex items-center gap-0.5 min-w-0 flex-1 overflow-x-auto [scrollbar-width:none]">
         {folders.map((seg) => {
@@ -152,7 +152,7 @@ export function Breadcrumbs({ file }: { file: OpenFile }) {
               <SymbolIcon kind={sym.kind} />
               <span>{sym.name}</span>
               {sym.kind === "entry" && sym.detail && (
-                <span className="text-[10px] text-fg-muted hidden lg:inline">{sym.detail.split(" · ")[0]}</span>
+                <span className="text-[12px] text-fg-muted hidden lg:inline">{sym.detail.split(" · ")[0]}</span>
               )}
             </button>
           </span>
@@ -204,7 +204,7 @@ export function Breadcrumbs({ file }: { file: OpenFile }) {
         >
           {menu.kind === "tree" ? (
             <>
-              <div className="px-2.5 py-1 text-[10px] uppercase tracking-wider text-fg-muted border-b border-border/60">
+              <div className="px-2.5 py-1 text-[12px] uppercase tracking-wider text-fg-muted border-b border-border/60">
                 {menu.title}
               </div>
               {menu.nodes.length === 0 && (
@@ -230,14 +230,14 @@ export function Breadcrumbs({ file }: { file: OpenFile }) {
                   >
                     {node.type === "dir" ? <Folder size={12} className="shrink-0" /> : <FileIcon name={node.path} size={13} />}
                     <span className="truncate flex-1">{node.name}</span>
-                    {isCurrent && <span className="text-[10px] text-accent shrink-0">active</span>}
+                    {isCurrent && <span className="text-[12px] text-accent shrink-0">active</span>}
                   </button>
                 );
               })}
             </>
           ) : (
             <>
-              <div className="px-2.5 py-1 text-[10px] uppercase tracking-wider text-fg-muted border-b border-border/60">
+              <div className="px-2.5 py-1 text-[12px] uppercase tracking-wider text-fg-muted border-b border-border/60">
                 Symbols in {fileName}
               </div>
               {symbols.length === 0 && <div className="px-3 py-2 text-fg-muted">No symbols in this file.</div>}
@@ -257,8 +257,8 @@ export function Breadcrumbs({ file }: { file: OpenFile }) {
                   >
                     <SymbolIcon kind={sym.kind} />
                     <span className="truncate font-medium text-fg">{sym.name}</span>
-                    {sym.detail && <span className="truncate text-[11px] text-fg-muted flex-1">{sym.detail}</span>}
-                    <span className="ml-auto text-[10px] text-fg-muted tabular-nums shrink-0">Ln {sym.line}</span>
+                    {sym.detail && <span className="truncate text-[12px] text-fg-muted flex-1">{sym.detail}</span>}
+                    <span className="ml-auto text-[12px] text-fg-muted tabular-nums shrink-0">Ln {sym.line}</span>
                   </button>
                 );
               })}

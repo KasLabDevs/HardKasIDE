@@ -8,7 +8,7 @@ this.on("silverCompiler", "compilationFinished", (result) => { … });
 this.emit("myEvent", payload);
 ```
 
-Built-in plugins live in `apps/ide/src/plugins`. **External plugins** are web pages loaded in a sandboxed iframe and use the same vocabulary over `postMessage`. The Plugins view (puzzle icon) lists, activates, deactivates, installs and uninstalls them.
+Built-in plugins live in `apps/ide/src/plugins`. **External plugins** are web pages loaded in a sandboxed iframe and use the same vocabulary over `postMessage`. The Plugins view (puzzle icon) lists, activates, deactivates, installs and uninstalls them. The IDE's own views are listed under *Built-in views*, folded by default.
 
 ## Third-party extensions are off by default
 

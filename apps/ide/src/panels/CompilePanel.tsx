@@ -2,7 +2,6 @@ import clsx from "clsx";
 import {
   AlertTriangle,
   CheckCircle2,
-  Cpu,
   Download,
   ExternalLink,
   FileCode2,
@@ -10,7 +9,6 @@ import {
   Layers,
   Play,
   ShieldAlert,
-  ShieldCheck,
   Sparkles,
   Stethoscope,
   XCircle
@@ -39,7 +37,6 @@ export function CompilePanel() {
   const tree = useIde((s) => s.tree);
   const activeFile = useIde((s) => s.activeFile);
   const openFiles = useIde((s) => s.openFiles);
-  const target = useIde((s) => s.target);
 
   const silFiles = useMemo(() => {
     const out: string[] = [];
@@ -246,49 +243,34 @@ export function CompilePanel() {
 
   return (
     <div className="flex flex-col h-full text-xs">
-      <div className="panel-header">
-        <span>SilverScript Compiler</span>
-        <span className="font-mono text-[10px] text-accent" title="The silverc version HardKas pins">silverc v{SILVER_TOOLCHAIN.silvercVersion}</span>
+      {/* The side panel already titles this view ("SilverScript compiler"); only the pinned version is shown here. */}
+      <div className="panel-header justify-end">
+        <span className="font-mono normal-case tracking-normal text-accent" title="The silverc version HardKas pins">
+          silverc v{SILVER_TOOLCHAIN.silvercVersion}
+        </span>
       </div>
 
       <div className="p-3 space-y-3 overflow-auto flex-1">
-        {/* Requirement 5: silverc & SilverScript Pragma Version Guard */}
-        <div
-          className={clsx(
-            "rounded border p-2.5 space-y-1",
-            versionCheck.status === "ok"
-              ? "border-border bg-bg-panel"
-              : "border-warn/50 bg-warn/10"
-          )}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="font-semibold text-fg flex items-center gap-1.5 text-[11px]">
-              {versionCheck.status === "ok" ? (
-                <ShieldCheck size={13} className="text-ok shrink-0" />
-              ) : (
+        {/* Only when something is wrong: a pragma that is missing or does not match the pinned silverc. Otherwise the version is in the header above. */}
+        {currentSil && activeFileContent.trim().length > 0 && versionCheck.status !== "ok" && (
+          <div role="alert" className="rounded border border-warn/50 bg-warn/10 p-2.5 space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-fg flex items-center gap-1.5 text-[12px]">
                 <AlertTriangle size={13} className="text-warn shrink-0" />
-              )}
-              Toolchain &amp; API Version Guard
-            </span>
-            {currentSil && (
+                SilverScript version
+              </span>
               <button
                 type="button"
                 onClick={() => void jumpToLine(currentSil, versionCheck.pragmaLine, 1)}
-                className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-bg border border-border text-accent hover:bg-bg-hover cursor-pointer"
-                title="Jump to pragma declaration in editor"
+                className="font-mono text-[12px] px-1.5 py-0.5 rounded bg-bg border border-border text-accent hover:bg-bg-hover cursor-pointer"
+                title="Jump to the pragma in the editor"
               >
                 pragma {versionCheck.pragmaRaw ?? "missing"} · :{versionCheck.pragmaLine}
               </button>
-            )}
+            </div>
+            <div className="text-[12px] text-warn leading-snug">{versionCheck.message}</div>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-fg-muted">
-            <span className="px-1.5 py-0.5 rounded bg-bg border border-border">silverc v{SILVER_TOOLCHAIN.silvercVersion}</span>
-            <span className="px-1.5 py-0.5 rounded bg-bg border border-border">SilverScript {SILVER_TOOLCHAIN.languageVersion}</span>
-          </div>
-          {versionCheck.status !== "ok" && (
-            <div className="text-[11px] text-warn leading-snug pt-0.5">{versionCheck.message}</div>
-          )}
-        </div>
+        )}
 
         {/* Contract selector & Compile action */}
         <div>
@@ -316,7 +298,7 @@ export function CompilePanel() {
           </label>
           <textarea
             id="compile-constructor-args"
-            className="input font-mono text-[11px] h-14 resize-y"
+            className="input font-mono text-[12px] h-14 resize-y"
             placeholder='[{"kind":"int","value":7}] — leave empty if no constructor params'
             value={argsJson}
             onChange={(e) => setArgsJson(e.target.value)}
@@ -338,7 +320,7 @@ export function CompilePanel() {
           <div className="grid grid-cols-2 gap-1.5">
             <button
               type="button"
-              className="btn-ghost border border-border justify-start text-[11px] py-1 px-2"
+              className="btn-ghost border border-border justify-start text-[12px] py-1 px-2"
               disabled={!currentSil || toolBusy !== null}
               onClick={() => void runTool("audit")}
               title="Run static security & covenant safety checks (hardkas silver audit)"
@@ -348,7 +330,7 @@ export function CompilePanel() {
             </button>
             <button
               type="button"
-              className="btn-ghost border border-border justify-start text-[11px] py-1 px-2"
+              className="btn-ghost border border-border justify-start text-[12px] py-1 px-2"
               disabled={!currentSil || toolBusy !== null}
               onClick={() => void runTool("preflight")}
               title="Verify readiness before deployment (hardkas silver preflight)"
@@ -358,7 +340,7 @@ export function CompilePanel() {
             </button>
             <button
               type="button"
-              className="btn-ghost border border-border justify-start text-[11px] py-1 px-2"
+              className="btn-ghost border border-border justify-start text-[12px] py-1 px-2"
               disabled={!currentSil || toolBusy !== null}
               onClick={() => void runTool("fuzz")}
               title="Property-based fuzzing on contract inputs (hardkas silver fuzz)"
@@ -368,7 +350,7 @@ export function CompilePanel() {
             </button>
             <button
               type="button"
-              className="btn-ghost border border-border justify-start text-[11px] py-1 px-2"
+              className="btn-ghost border border-border justify-start text-[12px] py-1 px-2"
               disabled={toolBusy !== null}
               onClick={() => void runTool("doctor")}
               title="Diagnose silverc compiler & toolchain environment (hardkas silver doctor)"
@@ -383,7 +365,7 @@ export function CompilePanel() {
         {(diagnostics.length > 0 || compileSummary) && (
           <div className="rounded border border-border bg-bg-panel p-2.5 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-fg flex items-center gap-1.5 text-[11px]">
+              <span className="font-semibold text-fg flex items-center gap-1.5 text-[12px]">
                 {diagnostics.some((d) => d.severity === "error") || (compileSummary && !compileSummary.ok) ? (
                   <>
                     <XCircle size={13} className="text-error shrink-0" />
@@ -397,7 +379,7 @@ export function CompilePanel() {
                 )}
               </span>
               {currentSil && (
-                <span className="font-mono text-[10px] text-fg-muted truncate max-w-[140px]">
+                <span className="font-mono text-[12px] text-fg-muted truncate max-w-[140px]">
                   {currentSil.split("/").pop()}
                 </span>
               )}
@@ -421,20 +403,20 @@ export function CompilePanel() {
                     <div className="flex items-center justify-between gap-2">
                       <span
                         className={clsx(
-                          "font-mono text-[10px] font-bold px-1.5 py-0.5 rounded",
+                          "font-mono text-[12px] font-bold px-1.5 py-0.5 rounded",
                           d.severity === "error" ? "bg-error/20 text-error" : "bg-warn/20 text-warn"
                         )}
                       >
                         {d.code}
                       </span>
-                      <span className="font-mono text-[10px] text-accent group-hover:underline flex items-center gap-1">
+                      <span className="font-mono text-[12px] text-accent group-hover:underline flex items-center gap-1">
                         <FileCode2 size={11} />
                         {d.file.split("/").pop()}:{d.line}:{d.column}
                         <ExternalLink size={10} />
                       </span>
                     </div>
-                    <div className="text-[11px] text-fg mt-1 leading-snug break-words">{d.message}</div>
-                    {d.hint && <div className="text-[10px] text-fg-muted mt-0.5">{d.hint}</div>}
+                    <div className="text-[12px] text-fg mt-1 leading-snug break-words">{d.message}</div>
+                    {d.hint && <div className="text-[12px] text-fg-muted mt-0.5">{d.hint}</div>}
                   </button>
                 ))}
               </div>
@@ -444,8 +426,8 @@ export function CompilePanel() {
 
         {silvercMissing && (
           <div role="alert" className="rounded border border-warn/50 bg-warn/10 p-2.5 space-y-1.5">
-            <div className="font-semibold text-warn text-[11px]">The SilverScript compiler (silverc) is not installed</div>
-            <div className="text-fg-muted text-[11px]">HardKas downloads the pinned silverc and checks its digest before using it.</div>
+            <div className="font-semibold text-warn text-[12px]">The SilverScript compiler (silverc) is not installed</div>
+            <div className="text-fg-muted text-[12px]">HardKas downloads the pinned silverc and checks its digest before using it.</div>
             <button type="button" className="btn-primary w-full" disabled={toolBusy !== null} onClick={() => void installSilverc()} title="hardkas toolchain install silverc">
               <Download size={13} /> {toolBusy === "install" ? "Installing silverc…" : "Install silverc"}
             </button>
@@ -456,29 +438,29 @@ export function CompilePanel() {
         {currentSil && activeFileContent.trim().length > 0 && (
           <div className="rounded border border-border bg-bg-panel p-2.5 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-fg flex items-center gap-1.5 text-[11px]">
+              <span className="font-semibold text-fg flex items-center gap-1.5 text-[12px]">
                 <Layers size={13} className="text-accent shrink-0" />
                 Contract summary
               </span>
-              <span className="text-[10px] text-fg-muted">read from the source</span>
+              <span className="text-[12px] text-fg-muted">read from the source</span>
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5 text-[10px] font-mono">
+            <div className="grid grid-cols-3 gap-1.5 text-[12px] font-mono">
               <div className="rounded bg-bg px-1.5 py-1 border border-border">
-                <div className="text-fg-muted text-[9px]">Entrypoints</div>
+                <div className="text-fg-muted text-[12px]">Entrypoints</div>
                 <div className="text-fg font-semibold">{summary.entrypoints.length}</div>
               </div>
               <div className="rounded bg-bg px-1.5 py-1 border border-border">
-                <div className="text-fg-muted text-[9px]">require(…)</div>
+                <div className="text-fg-muted text-[12px]">require(…)</div>
                 <div className="text-fg font-semibold">{summary.requireCount}</div>
               </div>
               <div className="rounded bg-bg px-1.5 py-1 border border-border">
-                <div className="text-fg-muted text-[9px]">Signature checks</div>
+                <div className="text-fg-muted text-[12px]">Signature checks</div>
                 <div className="text-fg font-semibold">{summary.sigChecks}</div>
               </div>
             </div>
 
-            <div className="rounded border border-border bg-bg p-2 space-y-1 text-[10px]">
+            <div className="rounded border border-border bg-bg p-2 space-y-1 text-[12px]">
               <div className="flex items-center justify-between">
                 <span className="text-fg-muted uppercase font-semibold">Compiled locking script</span>
                 {summary.compiledScriptHex && (
@@ -498,9 +480,9 @@ export function CompilePanel() {
             </div>
 
             <div className="space-y-1">
-              <div className="text-[10px] font-semibold uppercase text-fg-muted">Output constraints ({summary.outputRefs.length})</div>
+              <div className="text-[12px] font-semibold uppercase text-fg-muted">Output constraints ({summary.outputRefs.length})</div>
               {summary.outputRefs.length === 0 ? (
-                <div className="text-[11px] text-fg-muted bg-bg border border-border rounded p-2">
+                <div className="text-[12px] text-fg-muted bg-bg border border-border rounded p-2">
                   The source puts no condition on <code>tx.outputs[i]</code>.
                 </div>
               ) : (
@@ -509,7 +491,7 @@ export function CompilePanel() {
                     key={`${o.line}-${o.outputIndex}-${o.field}-${i}`}
                     type="button"
                     onClick={() => void jumpToLine(currentSil, o.line, 1)}
-                    className="w-full text-left rounded border border-border bg-bg p-1.5 text-[10px] font-mono hover:bg-bg-hover cursor-pointer"
+                    className="w-full text-left rounded border border-border bg-bg p-1.5 text-[12px] font-mono hover:bg-bg-hover cursor-pointer"
                     title="Jump to this line"
                   >
                     <span className="text-accent">{o.entrypoint}()</span> · tx.outputs[{o.outputIndex}].{o.field} <span className="text-fg">{o.constraint}</span>
@@ -524,50 +506,22 @@ export function CompilePanel() {
         {currentSil && activeFileContent.trim().length > 0 && (
           <SilverDebugger file={currentSil} source={activeFileContent} argsJson={argsJson} jumpToLine={jumpToLine} />
         )}
-        {/* Requirement 4: Simulator vs. Real Node (rusty-kaspad) Differences Matrix */}
-        <div className="rounded border border-border bg-bg-panel p-2.5 space-y-1.5 text-[10px]">
-          <div className="flex items-center justify-between">
-            <span className="font-semibold text-fg flex items-center gap-1.5 text-[11px]">
-              <Cpu size={13} className="text-accent shrink-0" />
-              Simulator vs. Real Node Differences
-            </span>
-            <span className="font-mono px-1.5 py-0.5 rounded bg-bg border border-border text-accent">
-              active: {target}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-            <div className={clsx("rounded border p-2 space-y-1", target === "simulator" ? "border-accent bg-accent/5" : "border-border bg-bg")}>
-              <div className="font-semibold text-fg">Simulator (In-Memory)</div>
-              <div className="text-fg-muted leading-snug">
-                • HardKAS's in-memory model, not consensus code.
-                <br />• Its results are synthetic: useful to iterate, never proof that the node accepts a spend.
-              </div>
-            </div>
-            <div className={clsx("rounded border p-2 space-y-1", target === "localnet" ? "border-accent bg-accent/5" : "border-border bg-bg")}>
-              <div className="font-semibold text-fg">Local Node (rusty-kaspad)</div>
-              <div className="text-fg-muted leading-snug">
-                • A real rusty-kaspad (Toccata) runs the script and the consensus rules.
-                <br />• Accepted or rejected here is what the node really decided.
-              </div>
-            </div>
-          </div>
-        </div>
 
         {toolOutput && (
           <div className="rounded border border-border bg-bg-panel p-2.5 space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className={clsx("font-semibold text-[11px]", toolOutput.ok ? "text-ok" : "text-warn")}>
+              <span className={clsx("font-semibold text-[12px]", toolOutput.ok ? "text-ok" : "text-warn")}>
                 {toolOutput.title}
               </span>
               <button
                 type="button"
                 onClick={() => setToolOutput(null)}
-                className="text-[10px] text-fg-muted hover:text-fg cursor-pointer"
+                className="text-[12px] text-fg-muted hover:text-fg cursor-pointer"
               >
                 Clear
               </button>
             </div>
-            <pre className="text-[10px] font-mono bg-bg p-2 rounded border border-border max-h-48 overflow-auto whitespace-pre-wrap">
+            <pre className="text-[12px] font-mono bg-bg p-2 rounded border border-border max-h-48 overflow-auto whitespace-pre-wrap">
               {typeof toolOutput.data === "string" ? toolOutput.data : JSON.stringify(toolOutput.data, null, 2)}
             </pre>
           </div>

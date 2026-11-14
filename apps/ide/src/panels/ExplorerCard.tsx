@@ -71,7 +71,7 @@ export function ExplorerCard() {
               role="tab"
               aria-selected={tab === id}
               onClick={() => setTab(id)}
-              className={clsx("flex-1 min-w-[4.5rem] rounded px-1.5 py-1 text-[11px] cursor-pointer whitespace-nowrap transition-colors", tab === id ? "bg-bg-hover text-fg" : "text-fg-muted hover:text-fg")}
+              className={clsx("flex-1 min-w-[4.5rem] rounded px-1.5 py-1 text-[12px] cursor-pointer whitespace-nowrap transition-colors", tab === id ? "bg-bg-hover text-fg" : "text-fg-muted hover:text-fg")}
             >
               {label}
             </button>
@@ -87,7 +87,7 @@ export function ExplorerCard() {
         {tab === "utxos" && <UtxosTab explorer={explorer} ready={ready} />}
 
         {updatedAt && (
-          <div className="text-[10px] text-fg-muted tabular-nums">
+          <div className="text-[12px] text-fg-muted tabular-nums">
             updated {new Date(updatedAt).toLocaleTimeString(undefined, { hour12: false })}
             {!ready && " · node stopped, showing the last reading"}
           </div>
@@ -110,7 +110,7 @@ function Hash({ value, label }: { value: string; label?: string }) {
   return (
     <span className="flex items-center gap-1 min-w-0">
       {label && <span className="text-fg-muted w-14 shrink-0">{label}</span>}
-      <span className="font-mono text-[10px] truncate flex-1" title={value}>
+      <span className="font-mono text-[12px] truncate flex-1" title={value}>
         {value.slice(0, 14)}…{value.slice(-8)}
       </span>
       <button
@@ -147,10 +147,10 @@ function ChainTab() {
       <div className="rounded border border-border bg-bg-elev p-2 space-y-1">
         <div className="flex items-end justify-between gap-2">
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-fg-muted">Virtual DAA score</div>
+            <div className="text-[12px] uppercase tracking-wider text-fg-muted">Virtual DAA score</div>
             <div className="text-lg font-semibold tabular-nums text-fg leading-tight">{dag.virtualDaaScore.toLocaleString()}</div>
           </div>
-          <div className="text-right text-[10px] text-fg-muted tabular-nums">{rate !== null ? <span className={rate > 0 ? "text-ok" : ""}>{rate > 0 ? `+${rate.toFixed(1)}/s` : "idle"}</span> : "…"}</div>
+          <div className="text-right text-[12px] text-fg-muted tabular-nums">{rate !== null ? <span className={rate > 0 ? "text-ok" : ""}>{rate > 0 ? `+${rate.toFixed(1)}/s` : "idle"}</span> : "…"}</div>
         </div>
         <Spark samples={samples} />
       </div>
@@ -202,15 +202,15 @@ function BlocksTab() {
         <span className="text-fg-muted tabular-nums">{miner.perSecond > 0 ? `${miner.perSecond} blocks/s` : "—"}</span>
       </div>
       {miner.routeFull > 0 && (
-        <div role="status" className="rounded border border-warn/40 bg-warn/10 p-1.5 text-[10px] text-warn leading-snug">
+        <div role="status" className="rounded border border-warn/40 bg-warn/10 p-1.5 text-[12px] text-warn leading-snug">
           The node refused {miner.routeFull} block{miner.routeFull === 1 ? "" : "s"} in this log window ("route is full"): the miner is faster than the node can accept, and transactions confirm slowly while that lasts. Stop the miner and mine in bursts (Local node card above).
         </div>
       )}
-      <div className="text-[10px] text-fg-muted">The last {miner.blocks.length} of the {miner.windowBlocks} blocks in the miner log, newest first.</div>
+      <div className="text-[12px] text-fg-muted">The last {miner.blocks.length} of the {miner.windowBlocks} blocks in the miner log, newest first.</div>
       <ul className="space-y-0.5">
         {miner.blocks.map((b) => (
           <li key={b.hash} className="flex items-center gap-2">
-            <span className="text-[10px] text-fg-muted tabular-nums w-14 shrink-0">{new Date(b.at).toLocaleTimeString(undefined, { hour12: false })}</span>
+            <span className="text-[12px] text-fg-muted tabular-nums w-14 shrink-0">{new Date(b.at).toLocaleTimeString(undefined, { hour12: false })}</span>
             <Hash value={b.hash} />
           </li>
         ))}
@@ -270,14 +270,14 @@ function UtxosTab({ explorer, ready }: { explorer: ExplorerPlugin; ready: boolea
             <Stat k="UTXOs" v={view.count.toLocaleString()} />
             <Stat k="total" v={formatKas(view.totalSompi)} />
           </div>
-          <div className="text-[10px] text-fg-muted">{view.count === 0 ? "This address holds no UTXOs on the node." : view.count > view.rows.length ? `Biggest ${view.rows.length} of ${view.count.toLocaleString()}.` : `All ${view.count} UTXOs.`}</div>
+          <div className="text-[12px] text-fg-muted">{view.count === 0 ? "This address holds no UTXOs on the node." : view.count > view.rows.length ? `Biggest ${view.rows.length} of ${view.count.toLocaleString()}.` : `All ${view.count} UTXOs.`}</div>
           <ul className="space-y-0.5">
             {view.rows.map((u) => (
               <li key={`${u.txId}:${u.index}`} className="flex flex-wrap items-center gap-x-2 gap-y-0 tabular-nums border-b border-border/40 pb-0.5">
                 <span className="min-w-24 text-fg">{formatKas(u.amountSompi)}</span>
-                <span className="text-[10px] text-fg-muted shrink-0">DAA {u.daa}</span>
-                {u.coinbase && <span className="text-[9px] px-1 rounded bg-accent/15 text-accent shrink-0">coinbase</span>}
-                <span className="font-mono text-[10px] text-fg-muted truncate" title={`${u.txId}:${u.index}`}>
+                <span className="text-[12px] text-fg-muted shrink-0">DAA {u.daa}</span>
+                {u.coinbase && <span className="text-[12px] px-1 rounded bg-accent/15 text-accent shrink-0">coinbase</span>}
+                <span className="font-mono text-[12px] text-fg-muted truncate" title={`${u.txId}:${u.index}`}>
                   {u.txId.slice(0, 10)}…:{u.index}
                 </span>
               </li>
@@ -293,7 +293,7 @@ function Stat({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex gap-2 min-w-0">
       <span className="w-14 shrink-0 text-fg-muted">{k}</span>
-      <span className="font-mono text-[11px] truncate tabular-nums" title={v}>
+      <span className="font-mono text-[12px] truncate tabular-nums" title={v}>
         {v}
       </span>
     </div>

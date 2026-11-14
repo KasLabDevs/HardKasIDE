@@ -141,7 +141,7 @@ export function EnvAccountsTrigger() {
           setOpen(next);
         }}
         className={clsx(
-          "flex items-center gap-2 min-w-0 tabular-nums whitespace-nowrap cursor-pointer rounded px-1.5 py-0.5 transition-colors",
+          "flex items-center gap-2 min-h-[24px] min-w-0 tabular-nums whitespace-nowrap cursor-pointer rounded px-1.5 py-0.5 transition-colors",
           open ? "bg-bg-hover text-fg" : "hover:bg-bg-hover hover:text-fg"
         )}
         title="Show account balances (click to pin, or open Accounts)"
@@ -149,7 +149,7 @@ export function EnvAccountsTrigger() {
         <Users size={11} className="opacity-70 shrink-0" />
 
         {/* Compact summary for medium viewports (~1280px) so balances never get clipped */}
-        <span className="flex 2xl:hidden items-center gap-1.5 text-[11px]">
+        <span className="flex 2xl:hidden items-center gap-1.5 text-[12px]">
           {accounts.length === 0 ? (
             <span className="text-fg-muted">{accountsBusy ? "loading accounts…" : "accounts"}</span>
           ) : (
@@ -183,14 +183,14 @@ export function EnvAccountsTrigger() {
           data-testid="envbar-accounts-popover"
           role="dialog"
           aria-label="Account balances"
-          className="absolute right-0 top-full mt-1 w-80 z-50 rounded-md border border-border bg-bg-panel shadow-xl p-2.5 text-[11px] space-y-2"
+          className="absolute right-0 top-full mt-1 w-80 z-50 rounded-md border border-border bg-bg-panel shadow-xl p-2.5 text-[12px] space-y-2"
         >
           <div className="flex items-center justify-between border-b border-border/70 pb-1.5">
             <div className="flex items-center gap-1.5">
               <Users size={12} className="text-accent" />
               <span className="font-semibold text-fg">Accounts ({accounts.length})</span>
               {accounts.length > 0 && (
-                <span className="text-[10px] text-fg-muted tabular-nums">
+                <span className="text-[12px] text-fg-muted tabular-nums">
                   · Total {formatCompactKas(summary.totalSompi)}
                 </span>
               )}
@@ -200,7 +200,7 @@ export function EnvAccountsTrigger() {
                 type="button"
                 onClick={refreshBalances}
                 disabled={accountsBusy}
-                className="btn-ghost p-1 text-[10px]"
+                className="btn-ghost p-1 text-[12px]"
                 title="Refresh balances"
               >
                 <RefreshCw size={11} className={accountsBusy ? "animate-spin" : ""} />
@@ -212,7 +212,7 @@ export function EnvAccountsTrigger() {
                   setPinned(false);
                   setActiveSidePlugin("accounts");
                 }}
-                className="btn-ghost px-1.5 py-0.5 text-[10px] text-accent"
+                className="btn-ghost px-1.5 py-0.5 text-[12px] text-accent"
               >
                 Open View
               </button>
@@ -233,14 +233,14 @@ export function EnvAccountsTrigger() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="font-medium text-fg">{a.name}</span>
-                      <span className="text-[9px] uppercase tracking-wide px-1 rounded bg-bg-panel text-fg-muted border border-border/60">
+                      <span className="text-[12px] uppercase tracking-wide px-1 rounded bg-bg-panel text-fg-muted border border-border/60">
                         {a.keystore === "dev-keystore" ? "dev" : a.keystore}
                       </span>
                       {a.utxoCount !== null && (
-                        <span className="text-[10px] text-fg-muted tabular-nums">{a.utxoCount} UTXO</span>
+                        <span className="text-[12px] text-fg-muted tabular-nums">{a.utxoCount} UTXO</span>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 text-[10px] font-mono text-fg-muted">
+                    <div className="flex items-center gap-1 text-[12px] font-mono text-fg-muted">
                       <span className="truncate">{shortAddr(a.address)}</span>
                       {a.address && (
                         <button

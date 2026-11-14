@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ArtifactSummary } from "@/utils/artifactSummary";
 
 export interface ArtifactRow {
   artifactId: string;
@@ -13,6 +14,8 @@ export interface ArtifactRow {
   integrityStatus?: string;
   parentArtifactId?: string | null;
   flowId?: string;
+  /** What it says in words ("Deploy VaultGuard · 5 KAS"); from the IDE server, absent for a kind it does not know. */
+  summary?: ArtifactSummary;
 }
 
 export interface LineageEdge {

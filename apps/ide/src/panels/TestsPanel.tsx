@@ -90,7 +90,7 @@ export function TestsPanel() {
       ) : (
         selectedTest.failureMessages.map((m, i) => (
           <div key={i} className="space-y-1.5">
-            <pre className="rounded border border-error/40 bg-bg p-2 text-[11px] text-error whitespace-pre-wrap break-words">
+            <pre className="rounded border border-error/40 bg-bg p-2 text-[12px] text-error whitespace-pre-wrap break-words">
               {m}
             </pre>
             <button
@@ -282,12 +282,12 @@ function FileNode({
           <RowButton label={`Debug ${file.file}`} onClick={onDebugFile} disabled={busy}>
             <Bug size={12} />
           </RowButton>
-          <span className="text-[10px] text-fg-muted whitespace-nowrap tabular-nums pl-1">
+          <span className="text-[12px] text-fg-muted whitespace-nowrap tabular-nums pl-1">
             {passed}/{file.tests.length}
           </span>
         </span>
       </div>
-      {file.message && file.tests.length === 0 && <pre className="mx-3 my-1 rounded border border-error/40 bg-bg p-2 text-[11px] text-error whitespace-pre-wrap">{file.message}</pre>}
+      {file.message && file.tests.length === 0 && <pre className="mx-3 my-1 rounded border border-error/40 bg-bg p-2 text-[12px] text-error whitespace-pre-wrap">{file.message}</pre>}
       {open &&
         file.tests.map((t) => (
           <div
@@ -314,7 +314,7 @@ function FileNode({
               <RowButton label={`Debug test ${t.title}`} onClick={() => onDebugTest(t)} disabled={busy}>
                 <Bug size={12} />
               </RowButton>
-              {t.durationMs !== null && <span className="text-[10px] text-fg-muted tabular-nums pl-1">{t.durationMs} ms</span>}
+              {t.durationMs !== null && <span className="text-[12px] text-fg-muted tabular-nums pl-1">{t.durationMs} ms</span>}
             </span>
           </div>
         ))}

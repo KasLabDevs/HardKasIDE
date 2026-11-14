@@ -2,6 +2,8 @@
 
 HardKAS keeps a SQLite index of everything it produces in `.hardkas/store.db`: every artifact (plans, signed transactions, receipts, traces, SilverScript records, snapshots), the event log, the lineage links between artifacts and the workflow traces. The **Index** view makes it visible. Open it from *View → Index*, the rail, the Welcome page or the command palette ("Show Index").
 
+There is no separate Artifacts view: the Artifacts tab here lists the same files. Each row says what it is in words ("Deploy VaultGuard · 5 KAS", "Spend VaultGuard.spend · to bob"), read from the artifact's JSON, with the transaction and id beside it. Opening an artifact offers *Open file*, *Transaction* and, for plans, signed transactions and receipts, *Replay verify* (it needs the dev-server). The **Lineage** view shows the same files read straight from disk when no index has been built yet.
+
 The IDE only **reads** the database (directly, read-only). Anything that changes it (sync, rebuild) goes through the HardKAS CLI, so the index is never edited by hand.
 
 ## Tabs

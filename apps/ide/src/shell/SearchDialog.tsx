@@ -217,7 +217,7 @@ export function SearchDialog() {
             <div className="flex items-center gap-2">
               <Search size={13} className="text-accent" />
               <span className="font-semibold text-fg">Quick Search</span>
-              <span className="text-[10px] font-mono text-fg-muted">Ctrl+Alt+Shift+L</span>
+              <span className="text-[12px] font-mono text-fg-muted">Ctrl+Alt+Shift+L</span>
             </div>
             <button type="button" onClick={closeDialog} className="text-fg-muted hover:text-fg p-0.5 rounded hover:bg-bg-hover cursor-pointer">
               <X size={14} />
@@ -250,11 +250,11 @@ export function SearchDialog() {
                 />
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-fg-muted text-[11px]">In:</span>
+                <span className="text-fg-muted text-[12px]">In:</span>
                 <input
                   value={filePatterns}
                   onChange={(e) => setOptions({ filePatterns: e.target.value })}
-                  className="input py-1.5 w-36 font-mono text-[11px]"
+                  className="input py-1.5 w-36 font-mono text-[12px]"
                   placeholder="*.sil, *.ts"
                   title="Comma-separated file patterns (e.g. *.sil, *.ts)"
                 />
@@ -263,7 +263,7 @@ export function SearchDialog() {
                 type="button"
                 onClick={() => setOptions({ caseSensitive: !caseSensitive })}
                 className={clsx(
-                  "px-2 py-1 rounded border font-mono text-[11px] cursor-pointer",
+                  "px-2 py-1 rounded border font-mono text-[12px] cursor-pointer",
                   caseSensitive ? "border-accent bg-accent/15 text-accent font-bold" : "border-border bg-bg-panel text-fg-muted"
                 )}
                 title="Case Sensitive"
@@ -294,7 +294,7 @@ export function SearchDialog() {
                         onClick={() => setQuickSelectedIdx(idx)}
                         onDoubleClick={() => void openMatchAndClose(m)}
                         className={clsx(
-                          "px-3 py-1.5 flex items-center justify-between gap-3 cursor-pointer font-mono text-[11px]",
+                          "px-3 py-1.5 flex items-center justify-between gap-3 cursor-pointer font-mono text-[12px]",
                           isSelected ? "bg-accent/15 text-fg" : "hover:bg-bg-hover text-fg-muted"
                         )}
                       >
@@ -304,7 +304,7 @@ export function SearchDialog() {
                           <span className="text-fg-muted shrink-0">:{m.line} </span>
                           <span className="text-fg truncate">{m.lineText.trim()}</span>
                         </span>
-                        <span className="text-[10px] text-fg-muted shrink-0 truncate max-w-[180px]">{m.path}</span>
+                        <span className="text-[12px] text-fg-muted shrink-0 truncate max-w-[180px]">{m.path}</span>
                       </li>
                     );
                   })}
@@ -314,11 +314,11 @@ export function SearchDialog() {
 
             {/* Source Code Context Preview Pane */}
             <div className="h-40 bg-bg-panel p-2.5 flex flex-col">
-              <div className="flex items-center justify-between text-[10px] text-fg-muted mb-1 font-mono">
+              <div className="flex items-center justify-between text-[12px] text-fg-muted mb-1 font-mono">
                 <span>{previewLines ? `${previewLines.path} (line ${previewLines.line})` : "Code preview"}</span>
                 <span>Double-click or press Enter to open</span>
               </div>
-              <div className="flex-1 overflow-auto rounded border border-border bg-bg p-2 font-mono text-[11px] space-y-0.5 select-text">
+              <div className="flex-1 overflow-auto rounded border border-border bg-bg p-2 font-mono text-[12px] space-y-0.5 select-text">
                 {previewLines ? (
                   previewLines.lines.map((l) => (
                     <div
@@ -333,7 +333,7 @@ export function SearchDialog() {
                     </div>
                   ))
                 ) : (
-                  <div className="text-fg-muted text-[11px] p-1">Select a match above to preview surrounding lines.</div>
+                  <div className="text-fg-muted text-[12px] p-1">Select a match above to preview surrounding lines.</div>
                 )}
               </div>
             </div>
@@ -341,7 +341,7 @@ export function SearchDialog() {
 
           {/* Footer */}
           <footer className="flex items-center justify-between px-4 py-2.5 bg-bg-panel border-t border-border">
-            <span className="text-[11px] text-fg-muted font-mono">
+            <span className="text-[12px] text-fg-muted font-mono">
               {flatQuickMatches.length} match{flatQuickMatches.length === 1 ? "" : "es"} in {quickFiles.length} file{quickFiles.length === 1 ? "" : "s"}
             </span>
             <div className="flex items-center gap-2">
@@ -449,7 +449,7 @@ export function SearchDialog() {
           {/* Quick Construct Pills for SilverScript or Symbol tabs */}
           {dialogTab === "silver" && (
             <div className="rounded border border-accent/30 bg-accent/5 p-2.5 space-y-1.5">
-              <div className="text-[11px] font-semibold text-fg flex items-center gap-1.5">
+              <div className="text-[12px] font-semibold text-fg flex items-center gap-1.5">
                 <Sparkles size={12} className="text-accent" /> Quick SilverScript &amp; TX v1 Constructs
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -461,7 +461,7 @@ export function SearchDialog() {
                       setQuery(tok.query);
                       setOptions({ filePatterns: tok.pattern });
                     }}
-                    className="px-2 py-0.5 rounded border border-border bg-bg hover:bg-bg-hover font-mono text-[11px] text-accent cursor-pointer"
+                    className="px-2 py-0.5 rounded border border-border bg-bg hover:bg-bg-hover font-mono text-[12px] text-accent cursor-pointer"
                   >
                     {tok.label}
                   </button>
@@ -472,7 +472,7 @@ export function SearchDialog() {
 
           {dialogTab === "symbol" && (
             <div className="rounded border border-border bg-bg-panel/60 p-2.5 space-y-1.5">
-              <div className="text-[11px] font-semibold text-fg flex items-center gap-1.5">
+              <div className="text-[12px] font-semibold text-fg flex items-center gap-1.5">
                 <FileCode2 size={12} className="text-accent" /> Quick TypeScript / Test Declarations
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -484,7 +484,7 @@ export function SearchDialog() {
                       setQuery(tok.query);
                       setOptions({ filePatterns: tok.pattern });
                     }}
-                    className="px-2 py-0.5 rounded border border-border bg-bg hover:bg-bg-hover font-mono text-[11px] text-accent cursor-pointer"
+                    className="px-2 py-0.5 rounded border border-border bg-bg hover:bg-bg-hover font-mono text-[12px] text-accent cursor-pointer"
                   >
                     {tok.label}
                   </button>
@@ -519,7 +519,7 @@ export function SearchDialog() {
                   <option key={h} value={h} />
                 ))}
               </datalist>
-              <div className="text-[10px] text-fg-muted">(* = any string, ? = any character, \ = escape for literals)</div>
+              <div className="text-[12px] text-fg-muted">(* = any string, ? = any character, \ = escape for literals)</div>
 
               {showReplace && (
                 <div className="pt-2 space-y-1">
@@ -582,7 +582,7 @@ export function SearchDialog() {
                 aria-label="Choose file pattern preset"
                 value={FILE_PATTERN_PRESETS.some((p) => p.value === filePatterns) ? filePatterns : ""}
                 onChange={(e) => e.target.value && setOptions({ filePatterns: e.target.value })}
-                className="input py-1 w-48 text-[11px]"
+                className="input py-1 w-48 text-[12px]"
               >
                 <option value="" disabled>
                   Choose preset…
@@ -594,12 +594,12 @@ export function SearchDialog() {
                 ))}
               </select>
             </div>
-            <div className="text-[10px] text-fg-muted">Patterns are separated by a comma (,) — e.g. *.sil, *.ts, *.json</div>
+            <div className="text-[12px] text-fg-muted">Patterns are separated by a comma (,) — e.g. *.sil, *.ts, *.json</div>
           </div>
 
           {/* Scope Fieldset (Eclipse style) */}
           <fieldset className="border border-border rounded px-3.5 py-2.5 bg-bg-panel/40 space-y-2">
-            <legend className="px-1.5 text-[11px] font-semibold text-fg">Scope</legend>
+            <legend className="px-1.5 text-[12px] font-semibold text-fg">Scope</legend>
             <div className="grid grid-cols-2 gap-2">
               <label className="flex items-center gap-2 cursor-pointer text-fg">
                 <input
@@ -644,7 +644,7 @@ export function SearchDialog() {
                   disabled={scope !== "directory"}
                   onChange={(e) => setOptions({ scopeDir: e.target.value })}
                   placeholder="contracts"
-                  className="input py-0.5 px-2 font-mono text-[11px] flex-1 disabled:opacity-50"
+                  className="input py-0.5 px-2 font-mono text-[12px] flex-1 disabled:opacity-50"
                 />
               </div>
             </div>
@@ -656,7 +656,7 @@ export function SearchDialog() {
           <button
             type="button"
             onClick={() => useSearch.getState().openSearchDialog({ mode: "quick-search" })}
-            className="text-[11px] text-accent hover:underline flex items-center gap-1 cursor-pointer"
+            className="text-[12px] text-accent hover:underline flex items-center gap-1 cursor-pointer"
           >
             <FolderSearch size={13} /> Switch to Live Quick Search…
           </button>

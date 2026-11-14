@@ -78,7 +78,7 @@ export function DetachedWorkbench({ target }: Props) {
           )}
           <span className="font-semibold text-fg truncate">{label}</span>
           {target.kind === "file" && target.path.includes("/") && (
-            <span className="text-[11px] font-mono text-fg-muted truncate hidden sm:inline" title={target.path}>
+            <span className="text-[12px] font-mono text-fg-muted truncate hidden sm:inline" title={target.path}>
               — {target.path}
             </span>
           )}
@@ -86,7 +86,7 @@ export function DetachedWorkbench({ target }: Props) {
         </span>
 
         {workspace?.name && (
-          <span className="text-[11px] text-fg-muted px-2 py-0.5 rounded bg-bg border border-border/60 shrink-0 hidden md:inline">
+          <span className="text-[12px] text-fg-muted px-2 py-0.5 rounded bg-bg border border-border/60 shrink-0 hidden md:inline">
             {workspace.name}
           </span>
         )}
@@ -96,7 +96,7 @@ export function DetachedWorkbench({ target }: Props) {
             <button
               type="button"
               onClick={() => void engine.call("fileManager", "saveCurrentFile")}
-              className="btn-ghost py-1 px-2 text-[11px]"
+              className="btn-ghost py-1 px-2 text-[12px]"
               title="Save file (Ctrl+S)"
             >
               <Save size={12} /> Save
@@ -105,7 +105,7 @@ export function DetachedWorkbench({ target }: Props) {
           <button
             type="button"
             onClick={dockBack}
-            className="btn-ghost py-1 px-2 text-[11px]"
+            className="btn-ghost py-1 px-2 text-[12px]"
             title="Return tab to the main IDE window"
           >
             <CornerDownLeft size={12} /> Dock back

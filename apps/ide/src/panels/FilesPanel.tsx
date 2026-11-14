@@ -251,7 +251,7 @@ function Node({
           <FileIcon name={node.name} size={15} />
         )}
         <span className="truncate flex-1">{node.name}</span>
-        {internal && depth === 0 && isDir && <span className="text-[10px] text-fg-muted shrink-0">state</span>}
+        {internal && depth === 0 && isDir && <span className="text-[12px] text-fg-muted shrink-0">state</span>}
       </div>
       {isDir && open && (
         <div role="group" className="relative">
@@ -594,7 +594,7 @@ function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }
       onClick={(e) => e.stopPropagation()}
     >
       {n.path && (
-        <li role="presentation" className="px-2.5 py-[3px] text-[10px] font-mono text-fg-muted border-b border-border/60 mb-0.5 truncate">
+        <li role="presentation" className="px-2.5 py-[3px] text-[12px] font-mono text-fg-muted border-b border-border/60 mb-0.5 truncate">
           {n.type === "dir" ? `📁 ${n.path}/` : n.path}
         </li>
       )}
@@ -631,7 +631,7 @@ function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }
                 {it.icon}
                 <span className="truncate">{it.label}</span>
               </span>
-              <span className="flex items-center gap-1 shrink-0 text-[10px] text-fg-muted">
+              <span className="flex items-center gap-1 shrink-0 text-[12px] text-fg-muted">
                 {it.shortcut && <span>{it.shortcut}</span>}
                 {it.children && <ChevronRight size={12} />}
               </span>
@@ -662,7 +662,7 @@ function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }
                           {sub.icon}
                           <span className="truncate">{sub.label}</span>
                         </span>
-                        {sub.shortcut && <span className="text-[10px] text-fg-muted shrink-0">{sub.shortcut}</span>}
+                        {sub.shortcut && <span className="text-[12px] text-fg-muted shrink-0">{sub.shortcut}</span>}
                       </button>
                     </li>
                   )
