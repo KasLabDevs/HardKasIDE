@@ -5,6 +5,7 @@ import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { client, ndJsonStream } from "@agentclientprotocol/sdk";
+import { isAgentForbidden } from "./secretPaths.js";
 
 /**
  * The assistant's "OpenCode" provider: instead of the IDE's own model client and agent loop, the IDE hosts an
@@ -46,7 +47,6 @@ export interface AcpTurnOptions {
   signal: AbortSignal;
 }
 
-const SENSITIVE = /(accounts\.real\.json|dev-server-token|\.hardkas[\\/]+dev-accounts|\.hardkas-ide([\\/]|$)|\.env($|\.)|id_rsa|\.pem$|keystore)/i;
 
 const POLICY = `{
   "$schema": "https://opencode.ai/config.json",
@@ -76,6 +76,10 @@ const POLICY = `{
     { "action": "*", "resource": "*.env", "effect": "deny" },
     { "action": "*", "resource": "*.env.*", "effect": "deny" },
     { "action": "*", "resource": "*keystore*", "effect": "deny" },
+    { "action": "*", "resource": "*backups*", "effect": "deny" },
+    { "action": "*", "resource": "*id_rsa*", "effect": "deny" },
+    { "action": "*", "resource": "*id_ed25519*", "effect": "deny" },
+    { "action": "*", "resource": "*.pem", "effect": "deny" },
     // The IDE's own settings folder (assistant settings, the agent's config home): never for the agent.
     { "action": "*", "resource": "*.hardkas-ide*", "effect": "deny" }
   ]
@@ -129,8 +133,54 @@ function insideRoot(root: string, p: string): string {
   const abs = path.resolve(root, p);
   const rel = path.relative(root, abs);
   if (rel.startsWith("..") || path.isAbsolute(rel)) throw new Error(`outside the workspace: ${p}`);
-  if (SENSITIVE.test(abs)) throw new Error(`refused: ${path.basename(abs)} holds secrets`);
+  if (isAgentForbidden(rel.replace(/\\/g, "/"))) throw new Error(`refused: ${path.basename(abs)} holds secrets`);
   return abs;
+}
+
+/** System variables a Windows / Unix program needs to run and reach the network; nothing else is passed on. */
+const ENV_KEEP = new Set(
+  [
+    "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "SYSTEMDRIVE", "TEMP", "TMP", "TMPDIR",
+    "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432", "COMMONPROGRAMFILES", "COMMONPROGRAMFILES(X86)",
+    "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "PROCESSOR_IDENTIFIER", "OS", "USERNAME", "USERDOMAIN", "COMPUTERNAME",
+    "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "TERM", "TZ", "SHELL", "USER", "LOGNAME",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR"
+  ].map((k) => k.toUpperCase())
+);
+
+/**
+ * The agent's environment, built from an allow-list rather than the IDE's own environment:
+ *   - no API keys, tokens or other secrets the user keeps in their environment (the agent's shell tool and any
+ *     plugin would see them);
+ *   - no OPENCODE_* variable of the user (OPENCODE_CONFIG would be merged after the IDE's policy);
+ *   - a home of its own, so the user's own OpenCode / Claude Code settings do not apply;
+ *   - project configuration off: a project's opencode.json(c), its .opencode/ folder (config and plugin code) and
+ *     its Claude Code settings are not loaded, so a project can neither loosen the IDE's permission policy nor run
+ *     code inside the agent. Verified on OpenCode 2.3.0 with a project carrying an allow-all opencode.json and a
+ *     plugin: without these flags both load, with them neither does.
+ */
+export function agentEnv(home: string, source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(source)) {
+    if (v !== undefined && ENV_KEEP.has(k.toUpperCase())) env[k] = v;
+  }
+  return {
+    ...env,
+    USERPROFILE: home,
+    HOME: home,
+    XDG_CONFIG_HOME: path.join(home, ".config"),
+    XDG_DATA_HOME: path.join(home, ".local", "share"),
+    XDG_STATE_HOME: path.join(home, ".local", "state"),
+    XDG_CACHE_HOME: path.join(home, ".cache"),
+    APPDATA: path.join(home, "AppData", "Roaming"),
+    LOCALAPPDATA: path.join(home, "AppData", "Local"),
+    OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+    OPENCODE_CONFIG_PROJECT_DISABLE: "1",
+    OPENCODE_DISABLE_CLAUDE_CODE: "1",
+    OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: "1",
+    OPENCODE_DISABLE_AUTOUPDATE: "1",
+    NO_COLOR: "1"
+  };
 }
 
 /** What the approval dialog shows: the HardKas tool call when the agent runs one, otherwise the agent's title. */
@@ -185,18 +235,7 @@ export async function* runAcpTurn(o: AcpTurnOptions): AsyncGenerator<AcpEvent> {
   const port = Number(process.env.HARDKAS_IDE_PORT ?? 7421);
   const mcp = mcpServer(port);
   const home = await agentHome();
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    USERPROFILE: home,
-    HOME: home,
-    XDG_CONFIG_HOME: path.join(home, ".config"),
-    XDG_DATA_HOME: path.join(home, ".local", "share"),
-    XDG_STATE_HOME: path.join(home, ".local", "state"),
-    XDG_CACHE_HOME: path.join(home, ".cache"),
-    APPDATA: path.join(home, "AppData", "Roaming"),
-    LOCALAPPDATA: path.join(home, "AppData", "Local"),
-    NO_COLOR: "1"
-  };
+  const env = agentEnv(home);
 
   const events = new EventQueue<AcpEvent>();
   const child = spawn(exe, ["acp"], { cwd: o.cwd, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });

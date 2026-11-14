@@ -36,6 +36,9 @@ const file = path.join(home, ".hardkas-ide", "assistant.json");
 const readFile = () => JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
 const FAKE_ANT = "sk-ant-fake-0000000000000000000000000000abcd";
 const FAKE_OAI = "sk-fake-1111111111111111111111111111wxyz";
+/** The key inside a stored entry (`{"key":…,"origin":…}`). */
+const storedKey = (acct: string) => (JSON.parse(memory.get(acct) ?? "null") as { key?: string } | null)?.key;
+const storedOrigin = (acct: string) => (JSON.parse(memory.get(acct) ?? "null") as { origin?: string } | null)?.origin;
 
 beforeEach(() => {
   memory.clear();
@@ -54,7 +57,7 @@ after(() => {
 
 test("a key typed in the settings goes to the credential store, never into the file", async () => {
   await a.saveConfig({ provider: "anthropic", apiKey: `  ${FAKE_ANT}  ` });
-  assert.equal(memory.get("anthropic-api-key"), FAKE_ANT);
+  assert.equal(storedKey("anthropic-api-key"), FAKE_ANT);
   const onDisk = readFileSync(file, "utf8");
   assert.equal(onDisk.includes("sk-ant"), false);
   assert.equal("apiKey" in readFile(), false);
@@ -73,8 +76,8 @@ test("a key typed in the settings goes to the credential store, never into the f
 test("each provider keeps its own key", async () => {
   await a.saveConfig({ provider: "anthropic", apiKey: FAKE_ANT });
   await a.saveConfig({ provider: "openai", baseUrl: "https://api.openai.com/v1", model: "gpt-x", apiKey: FAKE_OAI });
-  assert.equal(memory.get("anthropic-api-key"), FAKE_ANT);
-  assert.equal(memory.get("openai-api-key"), FAKE_OAI);
+  assert.equal(storedKey("anthropic-api-key"), FAKE_ANT);
+  assert.equal(storedKey("openai-api-key"), FAKE_OAI);
   assert.equal((await a.loadConfig()).apiKey, FAKE_OAI);
   await a.saveConfig({ provider: "anthropic" });
   assert.equal((await a.loadConfig()).apiKey, FAKE_ANT);
@@ -94,7 +97,7 @@ test("a key left in assistant.json by an earlier version moves to the store and 
   const cfg = await a.loadConfig();
   assert.equal(cfg.keySource, "keychain");
   assert.equal(cfg.apiKey, FAKE_ANT);
-  assert.equal(memory.get("anthropic-api-key"), FAKE_ANT);
+  assert.equal(storedKey("anthropic-api-key"), FAKE_ANT);
   assert.equal("apiKey" in readFile(), false);
   assert.equal(readFile().model, "claude-sonnet-5-5");
 });
@@ -103,7 +106,7 @@ test("an old key saved while OpenCode was selected goes to the provider its pref
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify({ provider: "opencode", apiKey: FAKE_OAI }), "utf8");
   await a.loadConfig();
-  assert.equal(memory.get("openai-api-key"), FAKE_OAI);
+  assert.equal(storedKey("openai-api-key"), FAKE_OAI);
   assert.equal("apiKey" in readFile(), false);
 });
 
@@ -163,4 +166,55 @@ test("OpenCode needs no key and never reads the store", async () => {
       memory.delete(k);
     }
   });
+});
+
+test("a saved key is bound to the host it was saved for and is not sent to another one", async () => {
+  await a.saveConfig({ provider: "openai", baseUrl: "https://api.openai.com/v1", model: "gpt-x", apiKey: FAKE_OAI });
+  assert.equal(storedOrigin("openai-api-key"), "https://api.openai.com");
+  // Same host, other path: still the key.
+  await a.saveConfig({ baseUrl: "https://api.openai.com/v2" });
+  assert.equal((await a.loadConfig()).apiKey, FAKE_OAI);
+  // Another host: no key, and the config says which host the key belongs to.
+  await a.saveConfig({ baseUrl: "https://evil.example/v1" });
+  const cfg = await a.loadConfig();
+  assert.equal(cfg.apiKey, "");
+  assert.equal(cfg.keyBoundTo, "https://api.openai.com");
+  assert.equal(a.publicConfig(cfg).hasKey, false);
+  // The stored key itself is untouched.
+  assert.equal(storedKey("openai-api-key"), FAKE_OAI);
+});
+
+test("a key pasted with a new host is bound to that host", async () => {
+  await a.saveConfig({ provider: "openai", baseUrl: "http://localhost:1234/v1", model: "local", apiKey: FAKE_OAI });
+  assert.equal(storedOrigin("openai-api-key"), "http://localhost:1234");
+  assert.equal((await a.loadConfig()).apiKey, FAKE_OAI);
+});
+
+test("a bare key stored by an earlier version is bound to the official host", async () => {
+  memory.set("anthropic-api-key", FAKE_ANT);
+  await a.saveConfig({ provider: "anthropic" });
+  assert.equal((await a.loadConfig()).apiKey, FAKE_ANT);
+  await a.saveConfig({ baseUrl: "https://proxy.example" });
+  assert.equal((await a.loadConfig()).apiKey, "");
+});
+
+test("an environment key goes only to the official host, or to the *_BASE_URL it names", async () => {
+  await a.saveConfig({ provider: "anthropic" });
+  process.env.ANTHROPIC_API_KEY = "sk-ant-from-env-9999";
+  assert.equal((await a.loadConfig()).apiKey, "sk-ant-from-env-9999");
+  await a.saveConfig({ baseUrl: "https://proxy.example" });
+  assert.equal((await a.loadConfig()).apiKey, "");
+  process.env.ANTHROPIC_BASE_URL = "https://proxy.example";
+  try {
+    assert.equal((await a.loadConfig()).apiKey, "sk-ant-from-env-9999");
+  } finally {
+    delete process.env.ANTHROPIC_BASE_URL;
+  }
+});
+
+test("moving a key out of assistant.json never overwrites a key already in the store", async () => {
+  await a.saveConfig({ provider: "anthropic", apiKey: FAKE_ANT });
+  writeFileSync(file, JSON.stringify({ ...readFile(), apiKey: "sk-ant-planted-key-0000000000000000000000" }), "utf8");
+  await a.loadConfig();
+  assert.equal(storedKey("anthropic-api-key"), FAKE_ANT);
 });

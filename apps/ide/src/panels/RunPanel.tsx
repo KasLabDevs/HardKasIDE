@@ -298,9 +298,14 @@ export function RunPanel() {
                     <Row k="fee" v={`${sent.receipt.feeSompi ?? "?"} sompi${sent.receipt.mass ? ` · mass ${sent.receipt.mass}` : ""}`} />
                     <Row k="network" v={`${sent.receipt.networkId ?? ""} (${sent.receipt.mode ?? ""})`} />
                     {sent.receipt.submitPoint?.sinkBlueScore && <Row k="accepted@" v={`blue score ${sent.receipt.submitPoint.sinkBlueScore} · DAA ${sent.receipt.submitPoint.virtualDaaScore ?? "?"}`} />}
-                    <button type="button" className="btn-ghost w-full justify-center mt-1" disabled={busy !== null} onClick={() => void doStatus()}>
-                      <RadioTower size={12} /> {busy === "status" ? "Asking the node…" : "Check status on the node"}
-                    </button>
+                    {/simul/i.test(`${sent.receipt.mode ?? ""} ${sent.receipt.networkId ?? ""}`) ? (
+                      // A Simulator receipt is synthetic: no node ever saw this transaction, so there is nothing to ask.
+                      <div className="text-[10px] text-fg-muted pt-1">Simulator receipt: synthetic, no node to ask.</div>
+                    ) : (
+                      <button type="button" className="btn-ghost w-full justify-center mt-1" disabled={busy !== null} onClick={() => void doStatus()}>
+                        <RadioTower size={12} /> {busy === "status" ? "Asking the node…" : "Check status on the node"}
+                      </button>
+                    )}
                     {txStatus && (
                       <div className="pt-1 space-y-0.5">
                         <Row k="state" v={txStatus.state + (txStatus.isFinal ? " (final)" : "")} />

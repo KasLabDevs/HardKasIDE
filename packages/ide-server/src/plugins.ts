@@ -1,8 +1,10 @@
+import { lookup } from "node:dns/promises";
 import { promises as fs } from "node:fs";
+import { isIP } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { startJob, subscribe } from "./runner.js";
-import { exists, getRoot } from "./workspace.js";
+import { exists, getRoot, WorkspaceError } from "./workspace.js";
 
 /**
  * External plugin support for the IDE:
@@ -39,39 +41,74 @@ export function examplesDir(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "examples", "plugins");
 }
 
-export async function fetchText(url: string): Promise<string> {
-  const u = new URL(url);
-  if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("Only http(s) URLs");
-  const host = u.hostname.toLowerCase();
-  const isLoopback = host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1" || host === "0.0.0.0";
-  if (host === "169.254.169.254" || (isLoopback && !u.pathname.startsWith("/api/plugins/examples/"))) {
-    throw new Error("Refusing to fetch internal/loopback URL");
+/** True for addresses that are this machine or a private / link-local network (never fetched on a page's behalf). */
+export function isInternalAddress(address: string): boolean {
+  let a = address.toLowerCase().replace(/^\[|\]$/g, "");
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(a);
+  if (mapped) a = mapped[1];
+  if (isIP(a) === 4) {
+    const [p, q] = a.split(".").map(Number);
+    return p === 0 || p === 10 || p === 127 || (p === 169 && q === 254) || (p === 172 && q >= 16 && q <= 31) || (p === 192 && q === 168) || (p === 100 && q >= 64 && q <= 127) || p >= 224;
   }
-  const res = await fetch(u, {
-    headers: { accept: "application/json, text/plain, */*" },
-    redirect: "follow",
-    signal: AbortSignal.timeout(10_000)
-  });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText} from ${u.host}`);
-  const text = await res.text();
-  if (text.length > 512 * 1024) throw new Error("Manifest too large");
-  return text;
+  if (isIP(a) === 6) {
+    return a === "::" || a === "::1" || a.startsWith("fc") || a.startsWith("fd") || a.startsWith("fe8") || a.startsWith("fe9") || a.startsWith("fea") || a.startsWith("feb") || a.startsWith("::ffff:");
+  }
+  return false;
+}
+
+/** Refuses a URL whose host is, or resolves to, this machine or a private network. */
+async function assertPublicUrl(u: URL): Promise<void> {
+  if (u.protocol !== "http:" && u.protocol !== "https:") throw new WorkspaceError(400, "BLOCKED_URL", "Only http(s) URLs");
+  const host = u.hostname.toLowerCase().replace(/\.$/, "").replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost") || isInternalAddress(host)) throw new WorkspaceError(400, "BLOCKED_URL", "Refusing to fetch an internal or loopback URL");
+  if (isIP(host)) return;
+  const addresses = await lookup(host, { all: true }).catch(() => []);
+  if (addresses.length === 0) throw new WorkspaceError(400, "CANNOT_RESOLVE", `Cannot resolve ${host}`);
+  if (addresses.some((r) => isInternalAddress(r.address))) throw new WorkspaceError(400, "BLOCKED_URL", `Refusing to fetch ${host}: it resolves to an internal address`);
+}
+
+/**
+ * Fetches a plugin manifest for the IDE page (the browser would hit CORS). Only public hosts: every redirect hop is
+ * checked again, and a name that resolves to this machine or a private network is refused. The bundled example
+ * manifests are read from disk, not fetched.
+ */
+export async function fetchText(url: string): Promise<string> {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    throw new WorkspaceError(400, "BAD_URL", "Not a valid URL");
+  }
+  for (let hop = 0; hop < 5; hop++) {
+    await assertPublicUrl(u);
+    const res = await fetch(u, { headers: { accept: "application/json, text/plain, */*" }, redirect: "manual", signal: AbortSignal.timeout(10_000) });
+    if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
+      u = new URL(res.headers.get("location")!, u);
+      continue;
+    }
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText} from ${u.host}`);
+    const text = await res.text();
+    if (text.length > 512 * 1024) throw new Error("Manifest too large");
+    return text;
+  }
+  throw new Error("Too many redirects");
 }
 
 export function pluginsRoot(): string {
   const root = getRoot();
-  if (!root) throw new Error("No workspace is open");
+  if (!root) throw new WorkspaceError(409, "NO_WORKSPACE", "No workspace is open");
   return path.join(root, PLUGINS_DIR);
 }
 
 /** Installs an npm package for plugins and returns its manifest. Streams output through a job. */
 export async function installNpmPlugin(pkg: string): Promise<{ manifest: Record<string, unknown>; package: string; version: string; jobId: string }> {
-  if (!/^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*(@[\w.^~<>=|-]+)?$/.test(pkg)) throw new Error("Invalid npm package name");
+  if (!/^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*(@[\w.^~<>=|-]+)?$/.test(pkg)) throw new WorkspaceError(400, "BAD_PACKAGE", "Invalid npm package name");
   const dir = pluginsRoot();
   await fs.mkdir(dir, { recursive: true });
   const pkgJson = path.join(dir, "package.json");
   if (!(await exists(pkgJson))) await fs.writeFile(pkgJson, JSON.stringify({ name: "hardkas-ide-plugins", private: true }, null, 2));
-  const job = await startJob({ command: "npm", args: ["install", pkg, "--no-audit", "--no-fund", "--loglevel=error"], cwd: dir });
+  // A plugin is a static web page: its install scripts never need to run on the user's machine.
+  const job = await startJob({ command: "npm", args: ["install", pkg, "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error"], cwd: dir });
   await new Promise<void>((resolve) => subscribe(job.id, () => undefined, resolve));
   if (job.status !== "succeeded") throw new Error(`npm install failed (exit ${job.exitCode}): ${job.stderr.trim().split("\n").slice(-3).join(" ")}`);
 

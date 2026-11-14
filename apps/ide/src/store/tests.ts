@@ -102,7 +102,7 @@ export function parseVitestJson(text: string, workspaceRoot: string): TestRun {
         fullName: t.fullName || t.title,
         ancestors: t.ancestorTitles ?? [],
         status,
-        durationMs: typeof t.duration === "number" ? t.duration : null,
+        durationMs: typeof t.duration === "number" ? Math.round(t.duration) : null,
         failureMessages: t.failureMessages ?? [],
         location: loc
       };
@@ -111,7 +111,7 @@ export function parseVitestJson(text: string, workspaceRoot: string): TestRun {
     return {
       file,
       status: anyFailed ? "failed" : tests.length === 0 ? normalise(f.status) : "passed",
-      durationMs: f.startTime && f.endTime ? f.endTime - f.startTime : null,
+      durationMs: f.startTime && f.endTime ? Math.round(f.endTime - f.startTime) : null,
       message: f.message || undefined,
       tests
     };

@@ -10,6 +10,29 @@ export interface WorkspaceInfo {
   configFile: string | null;
   hasHardkasDir: boolean;
   hasDevServerToken: boolean;
+  /** False until the user trusts the folder: an untrusted folder runs no CLI, npm, tests, debugger or agent. */
+  trusted?: boolean;
+}
+
+export interface SilverRunnerInfo {
+  available: boolean;
+  path: string | null;
+  sha256: string | null;
+  trust: "UNVERIFIED";
+  approved: boolean;
+  message: string;
+}
+
+export interface SilverDebugView {
+  state: "idle" | "paused" | "finished" | "failed" | "stopped";
+  file: string | null;
+  entry: string | null;
+  line: number | null;
+  variables: Array<{ section: string; name: string; type: string; value: string }>;
+  stack: string[];
+  error: { message: string; line: number | null; column: number | null } | null;
+  output: string;
+  runner: { path: string; sha256: string; trust: "UNVERIFIED" } | null;
 }
 
 export interface RecentEntry {
@@ -100,6 +123,8 @@ export interface AssistantConfigView {
   keyHint: string;
   /** Where the key in use comes from: an environment variable, the system credential store, or (no store available) the settings file. */
   keySource?: "env" | "keychain" | "file" | null;
+  /** The host the saved key may be sent to (it was saved for that Base URL); null when there is no key. */
+  keyBoundTo?: string | null;
   /** The user agreed that prompts and the files the agent reads go to OpenCode's hosted models. */
   opencodeConsent?: boolean;
 }
@@ -230,7 +255,9 @@ export const api = {
     recents: () => request<{ recents: RecentEntry[]; home: string }>("/api/workspace/recents"),
     open: (path: string) =>
       request<{ workspace: WorkspaceInfo }>("/api/workspace/open", { method: "POST", body: JSON.stringify({ path }) }).then((r) => r.workspace),
-    close: () => request<{ ok: true }>("/api/workspace/close", { method: "POST" })
+    close: () => request<{ ok: true }>("/api/workspace/close", { method: "POST" }),
+    /** Trusts the open folder: from now on it may run the CLI, npm scripts, tests, the debugger and the agent. */
+    trust: () => request<{ workspace: WorkspaceInfo }>("/api/workspace/trust", { method: "POST" }).then((r) => r.workspace)
   },
   fs: {
     tree: () => request<{ root: string; tree: TreeNode[] }>("/api/fs/tree"),
@@ -320,6 +347,23 @@ export const api = {
         edges: Array<{ id: string; source: string; target: string }>;
         source: "store" | "disk";
       }>("/api/store/lineage")
+  },
+  /** SilverScript step debugger: one session of the local cli-debugger build (see packages/ide-server/src/silverDebug.ts). */
+  silverDebug: {
+    runner: () => request<{ runner: SilverRunnerInfo }>("/api/silver-debug/runner").then((r) => r.runner),
+    approve: (sha256: string) => request<{ runner: SilverRunnerInfo }>("/api/silver-debug/approve", { method: "POST", body: JSON.stringify({ sha256 }) }).then((r) => r.runner),
+    get: () => request<{ session: SilverDebugView }>("/api/silver-debug").then((r) => r.session),
+    start: (body: { file: string; entry: string; constructorArgs: unknown[]; args: unknown[]; breakpoints?: number[] }) =>
+      request<{ session: SilverDebugView }>("/api/silver-debug/start", { method: "POST", body: JSON.stringify(body) }).then((r) => r.session),
+    command: (cmd: "next" | "step" | "stepOpcode" | "finish" | "continue" | "break" | "eval" | "stack", arg?: string | number) =>
+      request<{ session: SilverDebugView }>("/api/silver-debug/command", { method: "POST", body: JSON.stringify({ cmd, arg }) }).then((r) => r.session),
+    stop: () => request<{ session: SilverDebugView }>("/api/silver-debug/stop", { method: "POST" }).then((r) => r.session)
+  },
+  /** IDE-wide settings the server keeps (~/.hardkas-ide/settings.json). */
+  settings: {
+    get: () => request<{ settings: { thirdPartyExtensions: boolean } }>("/api/settings").then((r) => r.settings),
+    set: (patch: { thirdPartyExtensions?: boolean }) =>
+      request<{ settings: { thirdPartyExtensions: boolean } }>("/api/settings", { method: "POST", body: JSON.stringify(patch) }).then((r) => r.settings)
   },
   plugins: {
     /** Fetches a remote text/JSON document through ide-server (no CORS issues). */
@@ -433,8 +477,12 @@ export const api = {
       request<{ exists: boolean; running: boolean; perSecond: number; windowBlocks: number; routeFull: number; blocks: Array<{ hash: string; at: string }> }>(`/api/node/blocks?limit=${limit}`),
     /** Starts or stops the existing miner container (HardKas creates it on the first fund). */
     miner: (action: "start" | "stop") => request<{ running: boolean }>("/api/node/miner", { method: "POST", body: JSON.stringify({ action }) }),
-    /** Removes the local Docker node + miner containers and wipes `.hardkas/node-data`, `.hardkas/localnet`, and dev accounts. */
-    reset: () => request<{ ok: true; wiped: string[]; containersRemoved: boolean }>("/api/node/reset", { method: "POST" })
+    /**
+     * Prepares the workspace for a fresh local chain: wipes `.hardkas/node-data` and `.hardkas/localnet`, moves the
+     * simnet dev keystores to `backupDir` and copies `accounts.real.json` there (it stays in place). No container is removed.
+     */
+    reset: () =>
+      request<{ ok: true; wiped: string[]; moved: string[]; copied: string[]; backupDir: string | null; containersRemoved: boolean }>("/api/node/reset", { method: "POST" })
   },
   vsx: {
     search: (q: string, size = 24) => request<{ total: number; hits: import("@/store/vsx").VsxSearchHit[] }>(`/api/vsx/search?q=${encodeURIComponent(q)}&size=${size}`),

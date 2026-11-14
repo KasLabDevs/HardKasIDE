@@ -17,4 +17,4 @@ The IDE only **reads** the database (directly, read-only). Anything that changes
 - The numbers in Overview are the index's. A few files under `.hardkas/artifacts` are not indexed on purpose (for example the timestamp-named copies of plans), so a file count on disk will not match.
 - "Doctor" can report issues even when the index is current: it also reports artifacts that fail verification, which the Problems tab lists one by one.
 - The same read-only query is available to AI agents through the MCP server as `query_index` (see [mcp.md](mcp.md)).
-- Needs Node 22.13 or newer on the IDE server (built-in `node:sqlite`).
+- Uses Node's built-in `node:sqlite` on the IDE server, which runs on Node 24.22.1 (the version in `package.json` `engines`).

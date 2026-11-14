@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureHardkasConfig, ensureWorkspaceBase, FRONTEND_STACKS, scaffoldFrontend, type FrontendStackId, type StarterContractSpec } from "./frontendScaffold.js";
-import { getRoot, exists } from "./workspace.js";
+import { getRoot, exists, isTrusted, requireTrusted, trustFolder, WorkspaceError } from "./workspace.js";
 
 const IDE_REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -41,6 +41,10 @@ export function cliInfo(cwd: string, force = false): Promise<CliInfo> {
   if (cached && !force) return cached;
   const p = (async (): Promise<CliInfo> => {
     const resolved = await resolveHardkas(cwd);
+    // `hardkas --version` loads the project's hardkas.config.ts, which is code: not in a folder the user has not trusted.
+    if (getRoot() && isInsideDir(cwd, getRoot()!) && !(await isTrusted(cwd))) {
+      return { version: null, pinned: HARDKAS_CLI_VERSION, source: resolved.source ?? "project", command: resolved.command, error: "not run: this folder is not trusted yet" };
+    }
     const source: CliInfo["source"] =
       resolved.source ??
       (resolved.prefix.length > 0 ? "npx" : process.env.HARDKAS_BIN === resolved.command ? "env" : resolved.command.startsWith(cwd) ? "project" : "repo");
@@ -100,7 +104,21 @@ interface Resolved {
   source?: CliInfo["source"];
 }
 
-/** Prefers HARDKAS_BIN or sibling HardKas-repo build (when present), then workspace/repo binaries, then npx. */
+function isInsideDir(child: string, parent: string): boolean {
+  const norm = (p: string) => (process.platform === "win32" ? path.resolve(p).toLowerCase() : path.resolve(p));
+  const rel = path.relative(norm(parent), norm(child));
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+/**
+ * Which `hardkas` runs, in this order:
+ *   1. HARDKAS_BIN, when set;
+ *   2. the project's own CLI (`node_modules/.bin/hardkas`), whatever its version: the status bar warns when it is
+ *      not the version the IDE was tested with;
+ *   3. `npx @hardkas/cli@<pinned>`.
+ * HARDKAS_IDE_CLI_FROM_REPO=1 (development of HardKAS itself) puts a sibling HardKas-repo build, then the IDE repo's
+ * demo-workspace CLI, before step 2. It is off by default so the IDE runs the CLI its users get.
+ */
 async function resolveHardkas(cwd: string): Promise<Resolved> {
   const isWin = process.platform === "win32";
   if (process.env.HARDKAS_BIN) {
@@ -110,31 +128,25 @@ async function resolveHardkas(cwd: string): Promise<Resolved> {
     }
     return { command: bin, prefix: [], shell: isWin, source: "env" };
   }
-  const siblingCli = path.resolve(IDE_REPO_ROOT, "..", "HardKas-repo", "packages", "cli", "dist", "index.js");
-  if (await exists(siblingCli)) {
-    return { command: process.execPath, prefix: [siblingCli], shell: false, source: "repo" };
+  if (process.env.HARDKAS_IDE_CLI_FROM_REPO === "1") {
+    const siblingCli = path.resolve(IDE_REPO_ROOT, "..", "HardKas-repo", "packages", "cli", "dist", "index.js");
+    if (await exists(siblingCli)) return { command: process.execPath, prefix: [siblingCli], shell: false, source: "repo" };
+    const repoFallback = path.join(IDE_REPO_ROOT, "examples", "demo-workspace", "node_modules", ".bin", isWin ? "hardkas.cmd" : "hardkas");
+    if (await exists(repoFallback)) return { command: repoFallback, prefix: [], shell: isWin, source: "repo" };
   }
   const local = path.join(cwd, "node_modules", ".bin", isWin ? "hardkas.cmd" : "hardkas");
-  const repoFallback = path.join(IDE_REPO_ROOT, "examples", "demo-workspace", "node_modules", ".bin", isWin ? "hardkas.cmd" : "hardkas");
-  if (await exists(local)) {
-    let localVersion: string | null = null;
-    try {
-      const pkgRaw = await fs.readFile(path.join(cwd, "node_modules", "@hardkas", "cli", "package.json"), "utf8");
-      localVersion = (JSON.parse(pkgRaw) as { version?: string }).version ?? null;
-    } catch {
-      localVersion = null;
-    }
-    if (localVersion === HARDKAS_CLI_VERSION || !(await exists(repoFallback))) {
-      return { command: local, prefix: [], shell: isWin, source: "project" };
-    }
-  }
-  if (await exists(repoFallback)) {
-    return { command: repoFallback, prefix: [], shell: isWin, source: "repo" };
-  }
+  if (await exists(local)) return { command: local, prefix: [], shell: isWin, source: "project" };
   return { command: isWin ? "npx.cmd" : "npx", prefix: ["-y", `@hardkas/cli@${HARDKAS_CLI_VERSION}`], shell: isWin, source: "npx" };
 }
 
 const ALLOWED_COMMANDS = new Set(["hardkas", "npx", "npm"]);
+
+/**
+ * npm subcommands the IDE runs. `npm exec`/`npx` (except vitest), `explore`, `config` and `publish` are not among
+ * them: they run or change things the IDE never needs. Project scripts (`npm run`, `npm test`) only run in a folder
+ * the user trusts, like everything else of the project.
+ */
+const NPM_SUBCOMMANDS = new Set(["install", "i", "ci", "uninstall", "test", "t", "run", "run-script", "ls", "list", "outdated", "audit", "view", "info"]);
 const WIN_SHELL_UNSAFE = /[\0\r\n&|<>^%!]/;
 
 export interface RunOptions {
@@ -148,16 +160,21 @@ export interface RunOptions {
 
 export async function startJob(options: RunOptions): Promise<Job> {
   const cwd = options.cwd ?? getRoot();
-  if (!cwd) throw new Error("No workspace is open and no cwd was given");
-  if (!(await exists(cwd))) throw new Error(`cwd does not exist: ${cwd}`);
+  if (!cwd) throw new WorkspaceError(409, "NO_WORKSPACE", "No workspace is open and no cwd was given");
+  if (!(await exists(cwd))) throw new WorkspaceError(400, "BAD_CWD", `cwd does not exist: ${cwd}`);
 
   const requestedCmd = options.command ?? "hardkas";
   if (!ALLOWED_COMMANDS.has(requestedCmd)) {
-    throw new Error(`Disallowed command: ${requestedCmd}`);
+    throw new WorkspaceError(400, "COMMAND_NOT_ALLOWED", `Disallowed command: ${requestedCmd}`);
   }
   if (requestedCmd === "npx" && options.args[0] !== "vitest") {
-    throw new Error("npx is only permitted for running vitest");
+    throw new WorkspaceError(400, "COMMAND_NOT_ALLOWED", "npx is only permitted for running vitest");
   }
+  if (requestedCmd === "npm" && !NPM_SUBCOMMANDS.has(String(options.args[0] ?? ""))) {
+    throw new WorkspaceError(400, "COMMAND_NOT_ALLOWED", `npm ${String(options.args[0] ?? "")} is not one of the npm commands the IDE runs`);
+  }
+  // Every command here runs project code (hardkas.config.ts, npm scripts, tests).
+  await requireTrusted(cwd);
 
   let command: string;
   let args: string[];
@@ -179,10 +196,10 @@ export async function startJob(options: RunOptions): Promise<Job> {
 
   for (const arg of args) {
     if (typeof arg !== "string" || arg.includes("\0") || arg.includes("\r") || arg.includes("\n")) {
-      throw new Error("Invalid control characters in job arguments");
+      throw new WorkspaceError(400, "BAD_ARGUMENT", "Invalid control characters in job arguments");
     }
     if (shell && WIN_SHELL_UNSAFE.test(arg)) {
-      throw new Error(`Unsafe shell character in argument: ${arg}`);
+      throw new WorkspaceError(400, "BAD_ARGUMENT", `Unsafe shell character in argument: ${arg}`);
     }
   }
 
@@ -398,15 +415,20 @@ function runSubprocessToJob(
  */
 export async function createProject(options: CreateProjectOptions): Promise<{ job: Job; dest: string }> {
   const template = PROJECT_TEMPLATES.find((t) => t.id === options.template);
-  if (!template) throw new Error(`Unknown template: ${options.template}`);
-  if (!/^[A-Za-z0-9._-]+$/.test(options.name)) throw new Error("Project name may only contain letters, digits, dot, dash and underscore");
+  if (!template) throw new WorkspaceError(400, "BAD_PROJECT", `Unknown template: ${options.template}`);
+  if (!/^[A-Za-z0-9._-]+$/.test(options.name)) throw new WorkspaceError(400, "BAD_PROJECT", "Project name may only contain letters, digits, dot, dash and underscore");
   const frontendId: FrontendStackId =
     options.frontend && FRONTEND_STACKS.some((f) => f.id === options.frontend) ? options.frontend : "none";
   const shouldInstall = options.install !== false;
   const parent = path.resolve(options.parentDir);
-  if (!(await exists(parent))) throw new Error(`Parent folder does not exist: ${parent}`);
+  // The wizard proposes ~/hardkas-projects/<name>: create that default folder on first use. Any other parent
+  // must exist, so a typo does not silently create folders elsewhere.
+  if (!(await exists(parent))) {
+    if (path.resolve(parent) === path.join(os.homedir(), "hardkas-projects")) await fs.mkdir(parent, { recursive: true });
+    else throw new WorkspaceError(400, "NO_PARENT_FOLDER", `Parent folder does not exist: ${parent}`);
+  }
   const dest = path.join(parent, options.name);
-  if (await exists(dest)) throw new Error(`Destination already exists: ${dest}`);
+  if (await exists(dest)) throw new WorkspaceError(409, "ALREADY_EXISTS", `Destination already exists: ${dest}`);
 
   const cliArgs = template.command === "init" ? ["init", "--json"] : ["create", template.id, dest, "--json"];
   const id = `job_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -459,6 +481,8 @@ export async function createProject(options: CreateProjectOptions): Promise<{ jo
         finish(job, emitter, step1Code, `HardKas scaffold exited with code ${step1Code}`);
         return;
       }
+      // The IDE made this folder from a HardKas template: it is trusted, so its CLI, scripts and tests may run.
+      await trustFolder(dest);
 
       // Step 2: Ensure starter contract + package.json + optional frontend stack
       push("stdout", `\n[step 2/4] Configuring workspace & frontend (${frontendId})...\n`);
@@ -479,6 +503,12 @@ export async function createProject(options: CreateProjectOptions): Promise<{ jo
           finish(job, emitter, rootInstallCode, `npm install failed in root workspace (exit ${rootInstallCode})`);
           return;
         }
+        // The SilverScript compiler is a separate download; without it the first Compile fails. Best effort: a
+        // project without network still opens, and the compile panel offers the same install.
+        push("stdout", `\nInstalling the SilverScript compiler (hardkas toolchain install silverc)...\n`);
+        const cli = await resolveHardkas(dest);
+        const silvercCode = await runSubprocessToJob(cli.command, [...cli.prefix, "toolchain", "install", "silverc", "--json"], dest, cli.shell, push);
+        if (silvercCode !== 0) push("stderr", `  ! silverc was not installed (exit ${silvercCode}); install it later from the compiler panel.\n`);
       } else {
         push("stdout", `\n[step 3/4] Skipping root npm install (unchecked).\n`);
       }
@@ -571,12 +601,13 @@ function synthesizeDummyConstructorArgs(source: string): string | null {
  */
 export async function checkSilverSource(options: SilverCheckOptions): Promise<SilverCheckResult> {
   const cwd = options.cwd ?? getRoot();
-  if (!cwd) throw new Error("No workspace is open");
+  if (!cwd) throw new WorkspaceError(409, "NO_WORKSPACE", "No workspace is open");
+  await requireTrusted(cwd);
 
   const resolvedTarget = path.resolve(cwd, options.filePath);
   const rel = path.relative(cwd, resolvedTarget);
   if (rel.startsWith("..") || path.isAbsolute(rel)) {
-    throw new Error(`Path escapes workspace: ${options.filePath}`);
+    throw new WorkspaceError(400, "OUTSIDE_WORKSPACE", `Path escapes workspace: ${options.filePath}`);
   }
 
   const sourceText = options.content !== undefined ? options.content : await fs.readFile(resolvedTarget, "utf8");

@@ -10,7 +10,14 @@ import * as ide from "./ide.js";
  * It is a client of the IDE server (`pnpm dev:server`, :7421), so everything an agent does goes through the
  * same project, the same `hardkas` CLI and the same allowlist the IDE uses. What it deliberately does NOT offer:
  * private keys, wiping the local chain, arbitrary shell commands, mainnet.
+ *
+ * Every request carries `x-hardkas-client: mcp`, and the IDE server enforces the limits (an agent cannot talk its
+ * way past them): key stores, `.env` and SSH/PEM files are refused, only HardKas projects can be opened, a folder
+ * must already be trusted by the user, and nothing runs in an untrusted one. Spending on the public testnet is off
+ * unless the person starting the MCP server sets HARDKAS_MCP_ALLOW_TESTNET=1.
  */
+
+const ALLOW_TESTNET = process.env.HARDKAS_MCP_ALLOW_TESTNET === "1";
 
 const server = new McpServer(
   { name: "hardkas-ide", version: "0.3.0" },
@@ -20,7 +27,11 @@ const server = new McpServer(
       "Start with workspace_status; open a project with open_workspace if none is open.",
       "Environments: simulator (in-memory), localnet (Docker rusty-kaspad, simnet) and testnet (testnet-10). Mainnet is not supported.",
       "Typical flow: compile_silverscript, then deploy_contract, then spend_contract; or send_payment for plain transfers.",
-      "Amounts are in KAS as decimal strings. Private keys are never exposed."
+      "Amounts are in KAS as decimal strings.",
+      "Files that hold private keys, .env files and SSH keys cannot be read or written through these tools; the IDE server refuses them.",
+      ALLOW_TESTNET
+        ? "Spending on testnet-10 is enabled for this session."
+        : "Spending tools work on simulator and localnet only; testnet-10 spending is off unless the user enables it (HARDKAS_MCP_ALLOW_TESTNET=1)."
     ].join("\n")
   }
 );
@@ -77,6 +88,9 @@ const relPath = z
   .string()
   .min(1)
   .refine((p) => !p.includes("..") && !p.startsWith("/") && !p.startsWith("\\") && !/^[A-Za-z]:/.test(p) && !p.startsWith("-") && !p.includes("\0"), "path must be relative to the project folder");
+/** Targets a spending tool may use: the public testnet only when the user enabled it for this MCP server. */
+const spendTarget = target.refine((t) => t !== "testnet" || ALLOW_TESTNET, "testnet-10 spending is off; the user can enable it with HARDKAS_MCP_ALLOW_TESTNET=1");
+const localTarget = z.enum(["simulator", "localnet"]).describe("simulator = in-memory, localnet = Docker rusty-kaspad simnet");
 const READ = { readOnlyHint: true, openWorldHint: false } as const;
 const WRITE = { readOnlyHint: false, destructiveHint: false, openWorldHint: false } as const;
 
@@ -90,7 +104,7 @@ server.registerTool(
 
 server.registerTool(
   "open_workspace",
-  { title: "Open a project", description: "Opens a project folder in the IDE server (the folder should hold a hardkas.config.ts).", inputSchema: { path: z.string().min(1).describe("Absolute path to the project folder") }, annotations: WRITE },
+  { title: "Open a project", description: "Opens a HardKas project folder in the IDE server (it must hold a hardkas.config.ts or a package.json that uses @hardkas/). Nothing of the project runs until the user has trusted the folder in the IDE.", inputSchema: { path: z.string().min(1).describe("Absolute path to the project folder") }, annotations: WRITE },
   safe(async ({ path }) => text(await ide.openWorkspace(path)))
 );
 
@@ -183,7 +197,7 @@ server.registerTool(
   {
     title: "Fund an account (test coins)",
     description: "Gives an account test coins: simulator credits it in memory; localnet mines to it on the Docker node. The public testnet cannot be funded from here.",
-    inputSchema: { name, amountKas: kas, target: z.enum(["simulator", "localnet"]) },
+    inputSchema: { name, amountKas: kas, target: localTarget },
     annotations: WRITE
   },
   safe(async ({ name, amountKas, target }) => {
@@ -198,8 +212,8 @@ server.registerTool(
   "send_payment",
   {
     title: "Send a payment (plan, sign, send)",
-    description: "Runs the full HardKas lifecycle for a plain transfer between two project accounts: tx plan, tx sign, tx send. Returns the artifact paths, the tx id and the receipt. Test coins only.",
-    inputSchema: { from: name, to: name, amountKas: kas, target },
+    description: "Runs the full HardKas lifecycle for a plain transfer between two project accounts: tx plan, tx sign, tx send. Returns the artifact paths, the tx id and the receipt. Simulator and localnet; testnet-10 only when the user enabled it.",
+    inputSchema: { from: name, to: name, amountKas: kas, target: spendTarget },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true }
   },
   safe(async ({ from, to, amountKas, target }) => {
@@ -256,12 +270,13 @@ server.registerTool(
   "deploy_contract",
   {
     title: "Deploy a compiled contract",
-    description: "hardkas silver deploy: funds the contract address from an account and waits for it. Needs the compile record path from compile_silverscript. Test coins only.",
+    description: "hardkas silver deploy: funds the contract address from an account and waits for it, on the local node. Needs the compile record path from compile_silverscript. Test coins only.",
     inputSchema: { compileRecordPath: relPath, from: name, amountKas: kas, contract: name.optional().describe("Contract name when the file defines several") },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true }
   },
   safe(async ({ compileRecordPath, from, amountKas, contract }) => {
-    const args = ["silver", "deploy", compileRecordPath, "--from", from, "--amount", amountKas, "--wait", "--json"];
+    // Always the local node, named explicitly: never whatever network the project config makes the default.
+    const args = ["silver", "deploy", compileRecordPath, "--from", from, "--amount", amountKas, "--network", "simnet", "--wait", "--json"];
     if (contract) args.push("--contract", contract);
     return text(await withRelativeRecordPath(await cli(args, "silver deploy failed", { timeoutMs: 300_000 })));
   })
@@ -285,7 +300,8 @@ server.registerTool(
     const hash = deployRecordPath.split("/").pop()?.replace(/[^A-Za-z0-9]/g, "").slice(-16) || "deploy";
     const argsFile = `.hardkas/ide/spend-args/${hash}-${entry}.json`;
     await ide.writeFile(argsFile, JSON.stringify(args, null, 2));
-    const cliArgs = ["silver", "spend", deployRecordPath, "--entry", entry, "--to", to, "--args", argsFile, "--wait", "--json"];
+    // Always the local node, named explicitly (a deploy record from elsewhere does not move the spend there).
+    const cliArgs = ["silver", "spend", deployRecordPath, "--entry", entry, "--to", to, "--args", argsFile, "--network", "simnet", "--wait", "--json"];
     if (sequence) cliArgs.push("--sequence", sequence);
     return text(await withRelativeRecordPath(await cli(cliArgs, "silver spend failed", { timeoutMs: 300_000 })));
   })

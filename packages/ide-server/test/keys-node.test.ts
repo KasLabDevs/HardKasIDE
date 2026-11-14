@@ -444,7 +444,11 @@ describe("Node reset: the key backup", () => {
     assert.equal(Buffer.compare(await fs.readFile(path.join(backup, "accounts.real.json")), realBefore), 0, "accounts.real.json backup");
     assertSameBytes(await snapshot(older), olderBefore, "earlier backup");
 
-    for (const rel of ["dev-accounts", "accounts.real.json", "node-data", "localnet"]) {
+    assert.deepEqual(result.moved, [".hardkas/dev-accounts"]);
+    assert.deepEqual(result.copied, [".hardkas/accounts.real.json"]);
+    // accounts.real.json holds the user's testnet keys: it stays in place, byte for byte (the backup is a copy).
+    assert.equal(Buffer.compare(await fs.readFile(path.join(hk, "accounts.real.json")), realBefore), 0, "accounts.real.json in place");
+    for (const rel of ["dev-accounts", "node-data", "localnet"]) {
       await assert.rejects(fs.access(path.join(hk, rel)), `${rel} should be gone from .hardkas`);
     }
     assert.equal(await fs.readFile(path.join(hk, "keep.json"), "utf8"), "other");
@@ -533,7 +537,8 @@ describe("Node reset: the key backup", () => {
 
     const result = await resetWorkspaceChainState(root, FIXED_NOW);
 
-    assert.deepEqual(result, { wiped: [], backedUp: [".hardkas/accounts.real.json"], backupDir: `.hardkas/backups/${STAMP_DIR}` });
+    assert.deepEqual(result, { wiped: [], backedUp: [".hardkas/accounts.real.json"], moved: [], copied: [".hardkas/accounts.real.json"], backupDir: `.hardkas/backups/${STAMP_DIR}` });
+    assert.equal(await fs.readFile(path.join(hk, "accounts.real.json"), "utf8"), real, "still in place");
     assert.deepEqual(await fs.readdir(path.join(hk, "backups", STAMP_DIR)), ["accounts.real.json"]);
     assert.equal(await fs.readFile(path.join(hk, "backups", STAMP_DIR, "accounts.real.json"), "utf8"), real);
   });
@@ -541,7 +546,7 @@ describe("Node reset: the key backup", () => {
   it("is a no-op on a folder without .hardkas, and creates nothing", async () => {
     const root = await makeTemp();
     const result = await resetWorkspaceChainState(root, FIXED_NOW);
-    assert.deepEqual(result, { wiped: [], backedUp: [], backupDir: null });
+    assert.deepEqual(result, { wiped: [], backedUp: [], moved: [], copied: [], backupDir: null });
     assert.deepEqual(await fs.readdir(root), []);
   });
 

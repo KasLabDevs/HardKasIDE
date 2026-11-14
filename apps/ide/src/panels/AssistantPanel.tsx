@@ -794,6 +794,7 @@ function Settings({ onClose }: { onClose: () => void }) {
         )}
         <div className="text-[10px] text-fg-muted mt-1">
           Saved in your system's credential store (Windows Credential Manager, macOS Keychain or the Linux Secret Service), never in a file, and never sent back to the browser. If <code className="font-mono">{envName}</code> is set, that key is used instead.
+          {" "}A key is only ever sent to the host it was saved for{sameProvider && config?.keyBoundTo ? <>: <code className="font-mono">{config.keyBoundTo}</code></> : ""}. Changing the Base URL to another host needs the key pasted again.
         </div>
       </div>
       )}

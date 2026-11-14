@@ -1,23 +1,22 @@
 import clsx from "clsx";
 import {
-  Activity,
   AlertTriangle,
-  Bug,
   CheckCircle2,
   Cpu,
+  Download,
   ExternalLink,
   FileCode2,
   Hammer,
   Layers,
   Play,
-  RotateCcw,
   ShieldAlert,
   ShieldCheck,
-  SkipForward,
   Sparkles,
   Stethoscope,
   XCircle
 } from "lucide-react";
+import type { ConsolePlugin } from "@/plugins/console";
+import { SilverDebugger } from "./SilverDebugger";
 import { useEffect, useMemo, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { CompilationResult, CompilerPlugin } from "@/plugins/compiler";
@@ -25,9 +24,9 @@ import { copyText } from "@/utils/clipboard";
 import { parseCompileRecord } from "@/utils/silverRecords";
 import {
   analyzeSilverVersion,
-  buildSilverDebugTrace,
-  inspectTxV1AndCovenant,
+  isSilvercMissing,
   parseSilverDiagnostics,
+  summarizeSilverSource,
   SILVER_TOOLCHAIN,
   type SilverCompileSummary
 } from "@/utils/silverInspector";
@@ -63,14 +62,6 @@ export function CompilePanel() {
   const [toolBusy, setToolBusy] = useState<string | null>(null);
   const [toolOutput, setToolOutput] = useState<{ title: string; ok: boolean; data: unknown } | null>(null);
   const [activeFileContent, setActiveFileContent] = useState<string>("");
-
-  // Debugger (cli-debugger) state
-  const [debugOpen, setDebugOpen] = useState<boolean>(true);
-  const [debugEntrypoint, setDebugEntrypoint] = useState<string>("");
-  const [debugStepIdx, setDebugStepIdx] = useState<number>(0);
-  const [simInputKas, setSimInputKas] = useState<string>("100");
-  const [simOutputKas, setSimOutputKas] = useState<string>("100");
-  const [simSigValid, setSimSigValid] = useState<boolean>(true);
 
   const compiledRecord = useSilver((s) => s.compiled);
   const setCompiled = useSilver((s) => s.setCompiled);
@@ -150,8 +141,9 @@ export function CompilePanel() {
   // Requirement 5: Version & Pragma check
   const versionCheck = useMemo(() => analyzeSilverVersion(activeFileContent), [activeFileContent]);
 
-  // Requirement 1: TX v1 & Covenant State Inspection
-  const txV1 = useMemo(() => inspectTxV1AndCovenant(activeFileContent, compileSummary), [activeFileContent, compileSummary]);
+  // What the source says, plus the script silverc really produced (if compiled).
+  const summary = useMemo(() => summarizeSilverSource(activeFileContent, compileSummary), [activeFileContent, compileSummary]);
+  const silvercMissing = isSilvercMissing(compileSummary?.errorText) || isSilvercMissing(liveCheck?.errorText);
 
   // Requirement 2: Line-linked diagnostics (silverc + static source analysis + audit findings)
   const auditFindings = useMemo(() => {
@@ -169,30 +161,23 @@ export function CompilePanel() {
     [currentSil, activeFileContent, compileSummary, auditFindings]
   );
 
-  // Requirement 3: Source-level debugger (cli-debugger) trace
-  const debugTrace = useMemo(() => {
-    const inSompi = Math.max(0, Math.round((Number(simInputKas) || 0) * 100_000_000));
-    const outSompi = Math.max(0, Math.round((Number(simOutputKas) || 0) * 100_000_000));
-    return buildSilverDebugTrace(activeFileContent, debugEntrypoint || undefined, {
-      inputSompi: inSompi,
-      outputSompi: outSompi,
-      signatureValid: simSigValid
-    });
-  }, [activeFileContent, debugEntrypoint, simInputKas, simOutputKas, simSigValid]);
-
-  const currentDebugStep = debugTrace.steps[Math.min(debugStepIdx, Math.max(0, debugTrace.steps.length - 1))] ?? null;
-
   const jumpToLine = async (file: string, line: number, column = 1) => {
     await engine.call("fileManager", "open", file).catch(() => undefined);
     await engine.call("editor", "gotoLine", line, column).catch(() => undefined);
   };
 
-  const stepDebuggerTo = async (nextIdx: number) => {
-    const clamped = Math.max(0, Math.min(debugTrace.steps.length - 1, nextIdx));
-    setDebugStepIdx(clamped);
-    const step = debugTrace.steps[clamped];
-    if (step && currentSil) {
-      await jumpToLine(currentSil, step.line, 1);
+  const installSilverc = async () => {
+    setToolBusy("install");
+    useIde.getState().setStatus("Installing silverc…");
+    try {
+      const run = await engine.get<ConsolePlugin>("console").runHardkas(["toolchain", "install", "silverc", "--json"]);
+      setToolOutput({ title: "Install silverc", ok: run.status === "succeeded", data: run.result ?? run.stderr });
+      useIde.getState().setStatus(run.status === "succeeded" ? "silverc installed" : "silverc install failed");
+      if (run.status === "succeeded" && currentSil) await compiler.checkDiagnostics(currentSil);
+    } catch (e) {
+      setToolOutput({ title: "Install silverc failed", ok: false, data: String(e) });
+    } finally {
+      setToolBusy(null);
     }
   };
 
@@ -262,8 +247,8 @@ export function CompilePanel() {
   return (
     <div className="flex flex-col h-full text-xs">
       <div className="panel-header">
-        <span>SilverScript Compiler &amp; TX v1 Inspector</span>
-        <span className="font-mono text-[10px] text-accent">silverc v{SILVER_TOOLCHAIN.silvercVersion}</span>
+        <span>SilverScript Compiler</span>
+        <span className="font-mono text-[10px] text-accent" title="The silverc version HardKas pins">silverc v{SILVER_TOOLCHAIN.silvercVersion}</span>
       </div>
 
       <div className="p-3 space-y-3 overflow-auto flex-1">
@@ -299,7 +284,6 @@ export function CompilePanel() {
           <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-fg-muted">
             <span className="px-1.5 py-0.5 rounded bg-bg border border-border">silverc v{SILVER_TOOLCHAIN.silvercVersion}</span>
             <span className="px-1.5 py-0.5 rounded bg-bg border border-border">SilverScript {SILVER_TOOLCHAIN.languageVersion}</span>
-            <span className="px-1.5 py-0.5 rounded bg-bg border border-border">TX v{SILVER_TOOLCHAIN.txVersion} (Blake2b)</span>
           </div>
           {versionCheck.status !== "ok" && (
             <div className="text-[11px] text-warn leading-snug pt-0.5">{versionCheck.message}</div>
@@ -333,7 +317,7 @@ export function CompilePanel() {
           <textarea
             id="compile-constructor-args"
             className="input font-mono text-[11px] h-14 resize-y"
-            placeholder='[{"type":"int","value":7}] — leave empty if no constructor params'
+            placeholder='[{"kind":"int","value":7}] — leave empty if no constructor params'
             value={argsJson}
             onChange={(e) => setArgsJson(e.target.value)}
           />
@@ -458,334 +442,88 @@ export function CompilePanel() {
           </div>
         )}
 
-        {/* Requirement 1: TX v1 Visibility (compute_budget, covenant_id, output bindings & resulting script) */}
+        {silvercMissing && (
+          <div role="alert" className="rounded border border-warn/50 bg-warn/10 p-2.5 space-y-1.5">
+            <div className="font-semibold text-warn text-[11px]">The SilverScript compiler (silverc) is not installed</div>
+            <div className="text-fg-muted text-[11px]">HardKas downloads the pinned silverc and checks its digest before using it.</div>
+            <button type="button" className="btn-primary w-full" disabled={toolBusy !== null} onClick={() => void installSilverc()} title="hardkas toolchain install silverc">
+              <Download size={13} /> {toolBusy === "install" ? "Installing silverc…" : "Install silverc"}
+            </button>
+          </div>
+        )}
+
+        {/* What the source says. Read from the text, never executed: no IDs, scripts or costs are made up here. */}
         {currentSil && activeFileContent.trim().length > 0 && (
-          <div className="rounded border border-accent/30 bg-bg-panel p-2.5 space-y-2.5">
+          <div className="rounded border border-border bg-bg-panel p-2.5 space-y-2">
             <div className="flex items-center justify-between">
               <span className="font-semibold text-fg flex items-center gap-1.5 text-[11px]">
                 <Layers size={13} className="text-accent shrink-0" />
-                TX v1 &amp; Covenant Inspector
+                Contract summary
               </span>
-              <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-accent/10 border border-accent/30 text-accent">
-                tx.version = 1
-              </span>
+              <span className="text-[10px] text-fg-muted">read from the source</span>
             </div>
 
-            {/* Covenant ID */}
-            <div className="rounded border border-border bg-bg p-2 space-y-1">
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-fg-muted uppercase font-semibold">Covenant ID (Blake2b-256)</span>
-                <button
-                  type="button"
-                  onClick={() => void copyText(txV1.covenantId)}
-                  className="text-accent hover:underline font-mono cursor-pointer"
-                >
-                  Copy ID
-                </button>
+            <div className="grid grid-cols-3 gap-1.5 text-[10px] font-mono">
+              <div className="rounded bg-bg px-1.5 py-1 border border-border">
+                <div className="text-fg-muted text-[9px]">Entrypoints</div>
+                <div className="text-fg font-semibold">{summary.entrypoints.length}</div>
               </div>
-              <div className="font-mono text-[10px] text-fg break-all select-all">{txV1.covenantId}</div>
-            </div>
-
-            {/* Compute Budget & Mass metrics */}
-            <div className="rounded border border-border bg-bg p-2 space-y-1.5">
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-fg-muted uppercase font-semibold flex items-center gap-1">
-                  <Activity size={11} className="text-accent" /> compute_budget
-                </span>
-                <span className="font-mono text-fg tabular-nums">
-                  {txV1.computeBudgetUsed.toLocaleString()} / {txV1.computeBudgetLimit.toLocaleString()} ({txV1.computeBudgetPercent}%)
-                </span>
+              <div className="rounded bg-bg px-1.5 py-1 border border-border">
+                <div className="text-fg-muted text-[9px]">require(…)</div>
+                <div className="text-fg font-semibold">{summary.requireCount}</div>
               </div>
-              <div className="w-full h-1.5 rounded-full bg-bg-panel border border-border overflow-hidden">
-                <div
-                  className={clsx(
-                    "h-full transition-all",
-                    txV1.computeBudgetPercent > 80 ? "bg-error" : txV1.computeBudgetPercent > 50 ? "bg-warn" : "bg-ok"
-                  )}
-                  style={{ width: `${Math.max(4, txV1.computeBudgetPercent)}%` }}
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-1.5 pt-0.5 text-[10px] font-mono">
-                <div className="rounded bg-bg-panel px-1.5 py-1 border border-border">
-                  <div className="text-fg-muted text-[9px]">SigOp Cost</div>
-                  <div className="text-fg font-semibold">{txV1.sigOpCount} sigOp(s)</div>
-                </div>
-                <div className="rounded bg-bg-panel px-1.5 py-1 border border-border">
-                  <div className="text-fg-muted text-[9px]">Script Size</div>
-                  <div className="text-fg font-semibold">{txV1.scriptByteSize} B</div>
-                </div>
-                <div className="rounded bg-bg-panel px-1.5 py-1 border border-border">
-                  <div className="text-fg-muted text-[9px]">Est. TX Mass</div>
-                  <div className="text-fg font-semibold">{txV1.estimatedMassGrams} g</div>
-                </div>
+              <div className="rounded bg-bg px-1.5 py-1 border border-border">
+                <div className="text-fg-muted text-[9px]">Signature checks</div>
+                <div className="text-fg font-semibold">{summary.sigChecks}</div>
               </div>
             </div>
 
-            {/* Output Covenant Bindings (tx.outputs[i]) */}
-            <div className="space-y-1.5">
-              <div className="text-[10px] font-semibold uppercase text-fg-muted">
-                Covenant Output Bindings ({txV1.outputBindings.length})
+            <div className="rounded border border-border bg-bg p-2 space-y-1 text-[10px]">
+              <div className="flex items-center justify-between">
+                <span className="text-fg-muted uppercase font-semibold">Compiled locking script</span>
+                {summary.compiledScriptHex && (
+                  <button type="button" onClick={() => void copyText(summary.compiledScriptHex ?? "")} className="text-accent hover:underline font-mono cursor-pointer">
+                    Copy
+                  </button>
+                )}
               </div>
-              {txV1.outputBindings.length === 0 ? (
-                <div className="text-[11px] text-fg-muted bg-bg border border-border rounded p-2">
-                  No <code>tx.outputs[i]</code> bindings enforced in source (standard P2PK/P2SH spend).
-                </div>
+              {summary.compiledScriptHex ? (
+                <>
+                  <div className="font-mono text-fg">{summary.compiledScriptBytes} bytes · from silverc</div>
+                  <div className="font-mono text-fg-muted break-all select-all max-h-16 overflow-auto">{summary.compiledScriptHex}</div>
+                </>
               ) : (
-                <div className="space-y-1">
-                  {txV1.outputBindings.map((b) => (
-                    <div
-                      key={`${b.entrypoint}-out-${b.outputIndex}`}
-                      className="rounded border border-border bg-bg p-2 text-[11px] space-y-1"
-                    >
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="font-mono font-semibold text-accent">
-                          tx.outputs[{b.outputIndex}] · <span className="text-fg">{b.entrypoint}()</span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => void jumpToLine(currentSil, b.line, 1)}
-                          className="font-mono text-[10px] text-accent hover:underline cursor-pointer"
-                          title="Jump to output binding line in .sil"
-                        >
-                          line :{b.line}
-                        </button>
-                      </div>
-                      <div className="text-[10px] font-mono text-fg-muted break-all">
-                        <span className="text-fg">lock:</span> {b.lockingBinding}
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] font-mono">
-                        <span className="text-fg-muted">
-                          <span className="text-fg">value:</span> {b.valueBinding}
-                        </span>
-                        <span
-                          className={clsx(
-                            "px-1.5 py-0.2 rounded text-[9px]",
-                            b.isRecursive ? "bg-accent/15 text-accent border border-accent/30" : "bg-ok/15 text-ok border border-ok/30"
-                          )}
-                        >
-                          {b.isRecursive ? "1:1 State Continuation" : "Bound Output"}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <div className="text-fg-muted">Compile the contract to see the script silverc produces.</div>
               )}
             </div>
 
-            {/* Resulting Script After State Change */}
-            <div className="space-y-1.5 pt-1 border-t border-border">
-              <div className="text-[10px] font-semibold uppercase text-fg-muted">
-                Resulting Script After State Change
-              </div>
-              {txV1.stateTransitions.map((st) => (
-                <div key={st.entrypoint} className="rounded border border-border bg-bg p-2 space-y-1.5 text-[10px]">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono font-semibold text-fg">{st.entrypoint}() transition</span>
-                    <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-bg-panel border border-border text-accent">
-                      {st.mode}
-                    </span>
-                  </div>
-                  <div className="text-fg-muted leading-snug">{st.summary}</div>
-                  <div className="space-y-1 pt-0.5">
-                    <div className="text-[9px] text-fg-muted uppercase">Input Covenant Script (Before)</div>
-                    <div className="font-mono text-[10px] bg-bg-panel border border-border rounded px-1.5 py-1 truncate" title={st.beforeScriptHex}>
-                      {st.beforeScriptHex}
-                    </div>
-                    <div className="text-[9px] text-fg-muted uppercase pt-0.5">Resulting Output Scripts (After)</div>
-                    {st.afterOutputs.map((out) => (
-                      <div key={out.outputIndex} className="rounded bg-bg-panel border border-border p-1.5 space-y-0.5 font-mono">
-                        <div className="flex items-center justify-between">
-                          <span className="text-accent">#{out.outputIndex} {out.lockingScriptType}</span>
-                          <span className="text-fg-muted">{out.valueConstraint}</span>
-                        </div>
-                        <div className="text-fg truncate" title={out.resultingScriptHex}>
-                          script: {out.resultingScriptHex}
-                        </div>
-                        <div className="text-fg-muted truncate" title={out.covenantId}>
-                          covenantId: {out.covenantId.slice(0, 24)}…
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+            <div className="space-y-1">
+              <div className="text-[10px] font-semibold uppercase text-fg-muted">Output constraints ({summary.outputRefs.length})</div>
+              {summary.outputRefs.length === 0 ? (
+                <div className="text-[11px] text-fg-muted bg-bg border border-border rounded p-2">
+                  The source puts no condition on <code>tx.outputs[i]</code>.
                 </div>
-              ))}
+              ) : (
+                summary.outputRefs.map((o, i) => (
+                  <button
+                    key={`${o.line}-${o.outputIndex}-${o.field}-${i}`}
+                    type="button"
+                    onClick={() => void jumpToLine(currentSil, o.line, 1)}
+                    className="w-full text-left rounded border border-border bg-bg p-1.5 text-[10px] font-mono hover:bg-bg-hover cursor-pointer"
+                    title="Jump to this line"
+                  >
+                    <span className="text-accent">{o.entrypoint}()</span> · tx.outputs[{o.outputIndex}].{o.field} <span className="text-fg">{o.constraint}</span>
+                    <span className="text-fg-muted"> · :{o.line}</span>
+                  </button>
+                ))
+              )}
             </div>
           </div>
         )}
 
-        {/* Requirement 3: Source-Level SilverScript Step Debugger (cli-debugger integration) */}
         {currentSil && activeFileContent.trim().length > 0 && (
-          <div className="rounded border border-border bg-bg-panel p-2.5 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setDebugOpen((v) => !v)}
-                className="font-semibold text-fg flex items-center gap-1.5 text-[11px] cursor-pointer"
-              >
-                <Bug size={13} className="text-accent shrink-0" />
-                <span>SilverScript Source Debugger (cli-debugger)</span>
-              </button>
-              <span className="font-mono text-[10px] text-fg-muted">
-                Step {Math.min(debugStepIdx + 1, debugTrace.steps.length)}/{debugTrace.steps.length}
-              </span>
-            </div>
-
-            {debugOpen && (
-              <div className="space-y-2">
-                {/* Entrypoint & Mock Context Controls */}
-                <div className="grid grid-cols-2 gap-1.5">
-                  <div>
-                    <label htmlFor="sil-debug-ep" className="text-[10px] text-fg-muted block mb-0.5">
-                      Entrypoint
-                    </label>
-                    <select
-                      id="sil-debug-ep"
-                      value={debugTrace.selectedEntrypoint}
-                      onChange={(e) => {
-                        setDebugEntrypoint(e.target.value);
-                        setDebugStepIdx(0);
-                      }}
-                      className="select py-1 text-[11px] font-mono"
-                    >
-                      {debugTrace.entrypoints.map((ep) => (
-                        <option key={ep} value={ep}>
-                          {ep}()
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="sil-debug-out-kas" className="text-[10px] text-fg-muted block mb-0.5">
-                      Output Value (KAS)
-                    </label>
-                    <input
-                      id="sil-debug-out-kas"
-                      className="input py-1 text-[11px] font-mono"
-                      value={simOutputKas}
-                      onChange={(e) => {
-                        setSimOutputKas(e.target.value);
-                        setSimInputKas(e.target.value);
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <label className="flex items-center gap-2 text-[11px] text-fg-muted cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={simSigValid}
-                    onChange={(e) => setSimSigValid(e.target.checked)}
-                  />
-                  <span>Simulate valid Schnorr signature (checkSig = true)</span>
-                </label>
-
-                {/* Stepping controls */}
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => void stepDebuggerTo(0)}
-                    className="btn-ghost border border-border px-2 py-1 text-[11px]"
-                    title="Reset to entrypoint start"
-                  >
-                    <RotateCcw size={12} /> Reset
-                  </button>
-                  <button
-                    type="button"
-                    disabled={debugStepIdx <= 0}
-                    onClick={() => void stepDebuggerTo(debugStepIdx - 1)}
-                    className="btn-ghost border border-border px-2 py-1 text-[11px] disabled:opacity-40"
-                  >
-                    &lt; Prev
-                  </button>
-                  <button
-                    type="button"
-                    disabled={debugStepIdx >= debugTrace.steps.length - 1}
-                    onClick={() => void stepDebuggerTo(debugStepIdx + 1)}
-                    className="btn-primary px-2.5 py-1 text-[11px] flex-1"
-                  >
-                    <SkipForward size={12} /> Step Line
-                  </button>
-                </div>
-
-                {/* Active line trace card */}
-                {currentDebugStep && (
-                  <div
-                    className={clsx(
-                      "rounded border p-2 space-y-1.5 text-[11px]",
-                      currentDebugStep.status === "pass"
-                        ? "border-ok/40 bg-ok/5"
-                        : "border-error/40 bg-error/10"
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void jumpToLine(currentSil, currentDebugStep.line, 1)}
-                        className="font-mono text-[10px] text-accent hover:underline cursor-pointer"
-                      >
-                        {currentSil.split("/").pop()}:{currentDebugStep.line}
-                      </button>
-                      <span
-                        className={clsx(
-                          "font-mono text-[9px] font-bold px-1.5 py-0.5 rounded uppercase",
-                          currentDebugStep.status === "pass" ? "bg-ok/20 text-ok" : "bg-error/20 text-error"
-                        )}
-                      >
-                        {currentDebugStep.status} · +{currentDebugStep.computeCost} compute
-                      </span>
-                    </div>
-                    <pre className="font-mono text-[10px] bg-bg border border-border rounded p-1.5 overflow-x-auto text-fg">
-                      {currentDebugStep.code}
-                    </pre>
-                    <div className="text-[10px] text-fg-muted leading-snug">{currentDebugStep.explanation}</div>
-
-                    {/* VM Stack & Locals at current step */}
-                    <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10px] font-mono">
-                      <div className="rounded bg-bg border border-border p-1.5">
-                        <div className="text-[9px] text-fg-muted uppercase mb-0.5">VM Stack Top</div>
-                        {currentDebugStep.stackTop.map((item, i) => (
-                          <div key={i} className="text-accent truncate">
-                            [{i}] {item}
-                          </div>
-                        ))}
-                      </div>
-                      <div className="rounded bg-bg border border-border p-1.5">
-                        <div className="text-[9px] text-fg-muted uppercase mb-0.5">Compute Used</div>
-                        <div className="text-fg font-semibold">{currentDebugStep.cumulativeCompute} units</div>
-                        <div className="text-fg-muted text-[9px]">of {SILVER_TOOLCHAIN.computeBudgetLimit.toLocaleString()}</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Clickable step list */}
-                <div className="max-h-36 overflow-y-auto space-y-1 border-t border-border pt-1.5">
-                  {debugTrace.steps.map((s) => (
-                    <button
-                      key={s.index}
-                      type="button"
-                      onClick={() => void stepDebuggerTo(s.index)}
-                      className={clsx(
-                        "w-full text-left px-2 py-1 rounded font-mono text-[10px] flex items-center justify-between gap-2 cursor-pointer",
-                        s.index === debugStepIdx
-                          ? "bg-accent/15 border border-accent text-fg"
-                          : "bg-bg hover:bg-bg-hover text-fg-muted"
-                      )}
-                    >
-                      <span className="truncate">
-                        <span className="text-accent">:{s.line}</span> {s.code}
-                      </span>
-                      <span className={s.status === "pass" ? "text-ok shrink-0" : "text-error shrink-0"}>
-                        {s.status === "pass" ? "✓" : "✗"}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          <SilverDebugger file={currentSil} source={activeFileContent} argsJson={argsJson} jumpToLine={jumpToLine} />
         )}
-
         {/* Requirement 4: Simulator vs. Real Node (rusty-kaspad) Differences Matrix */}
         <div className="rounded border border-border bg-bg-panel p-2.5 space-y-1.5 text-[10px]">
           <div className="flex items-center justify-between">
@@ -801,17 +539,15 @@ export function CompilePanel() {
             <div className={clsx("rounded border p-2 space-y-1", target === "simulator" ? "border-accent bg-accent/5" : "border-border bg-bg")}>
               <div className="font-semibold text-fg">Simulator (In-Memory)</div>
               <div className="text-fg-muted leading-snug">
-                • <b>No VM script check:</b> Skips consensus opcode verification.
-                <br />• <b>0-block maturity:</b> Instant coinbase spend.
-                <br />• <b>Addresses:</b> Allows <code>kaspa:sim_*</code>.
+                • HardKAS's in-memory model, not consensus code.
+                <br />• Its results are synthetic: useful to iterate, never proof that the node accepts a spend.
               </div>
             </div>
             <div className={clsx("rounded border p-2 space-y-1", target === "localnet" ? "border-accent bg-accent/5" : "border-border bg-bg")}>
               <div className="font-semibold text-fg">Local Node (rusty-kaspad)</div>
               <div className="text-fg-muted leading-snug">
-                • <b>Full Covenant v1 VM:</b> Enforces <code>compute_budget</code> &amp; output bindings.
-                <br />• <b>100-DAA maturity:</b> Real coinbase lock.
-                <br />• <b>Addresses:</b> Requires <code>kaspasim:</code> &amp; Schnorr sigs.
+                • A real rusty-kaspad (Toccata) runs the script and the consensus rules.
+                <br />• Accepted or rejected here is what the node really decided.
               </div>
             </div>
           </div>

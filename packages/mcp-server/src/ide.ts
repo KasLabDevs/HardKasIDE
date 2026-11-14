@@ -16,7 +16,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   try {
     res = await fetch(`${IDE_URL}${path}`, {
       method,
-      headers: body === undefined ? undefined : { "content-type": "application/json" },
+      // Marks every request as an AI agent's: the IDE server then refuses key stores, .env and SSH/PEM files, lets it
+      // open only HardKas projects, and never lets it trust a folder.
+      headers: body === undefined ? { "x-hardkas-client": "mcp" } : { "content-type": "application/json", "x-hardkas-client": "mcp" },
       body: body === undefined ? undefined : JSON.stringify(body)
     });
   } catch {

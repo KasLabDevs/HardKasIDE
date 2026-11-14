@@ -201,8 +201,13 @@ export class EnvironmentPlugin extends Plugin {
         {
           label: "Wiping all local chain data",
           run: async () => {
-            await api.node.reset();
-            await this.runCli(["node", "reset", "--yes"], "node reset failed: the local chain was not wiped");
+            const saved = await api.node.reset();
+            // Say where the keys went every time, also when the CLI step after it fails.
+            const where = saved.backupDir
+              ? ` Dev keystores were moved to ${saved.backupDir}${saved.copied.length ? "; accounts.real.json stays in place and a copy is there too" : ""}.`
+              : "";
+            if (where) useIde.getState().setStatus(`Local chain reset.${where}`);
+            await this.runCli(["node", "reset", "--yes"], `node reset failed: the local chain was not wiped.${where}`);
           }
         },
         { ...this.stepStartNode(), label: "Starting a fresh node" },

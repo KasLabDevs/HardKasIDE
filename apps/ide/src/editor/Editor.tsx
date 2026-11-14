@@ -5,6 +5,7 @@ import { useEngine } from "@/engine/context";
 import type { DebugPlugin } from "@/plugins/debug";
 import type { EditorPlugin } from "@/plugins/editor";
 import { currentLocation, useDebug } from "@/store/debug";
+import { silverDebugLine, useSilverDebug } from "@/store/silverDebug";
 import { useEditorCursor } from "@/store/editorCursor";
 import { useIde } from "@/store/ide";
 import { useVsx } from "@/store/vsx";
@@ -52,6 +53,7 @@ export function Editor() {
   const debugState = useDebug((s) => s.state);
   const frames = useDebug((s) => s.frames);
   const frameIndex = useDebug((s) => s.frame);
+  const silverView = useSilverDebug((s) => s.view);
   useEffect(() => {
     const ed = editorRef.current;
     const monaco = monacoRef.current;
@@ -64,9 +66,12 @@ export function Editor() {
     bpCollection.current = ed.createDecorationsCollection(bps);
     const loc = currentLocation({ state: debugState, frames, frame: frameIndex });
     const marks: Monaco.editor.IModelDeltaDecoration[] = loc && loc.file === activeFile ? [{ range: new monaco.Range(loc.line, 1, loc.line, 1), options: { isWholeLine: true, className: "hk-current-line", glyphMarginClassName: "hk-current-arrow" } }] : [];
+    // The SilverScript debugger's line (a .sil file; the test debugger never stops in one).
+    const silLine = silverDebugLine(silverView, activeFile);
+    if (silLine !== null && marks.length === 0) marks.push({ range: new monaco.Range(silLine, 1, silLine, 1), options: { isWholeLine: true, className: "hk-current-line", glyphMarginClassName: "hk-current-arrow" } });
     markCollection.current?.clear();
     markCollection.current = ed.createDecorationsCollection(marks);
-  }, [activeFile, breakpoints, bpStatus, debugState, frames, frameIndex, mounted]);
+  }, [activeFile, breakpoints, bpStatus, debugState, frames, frameIndex, mounted, silverView]);
 
   const editorOptions = useMemo<Monaco.editor.IStandaloneEditorConstructionOptions>(
     () => ({

@@ -1,9 +1,10 @@
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
-import { Hono } from "hono";
+import { Hono, type Context, type Next } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,10 +20,12 @@ import { ensureHardkasConfig, FRONTEND_STACKS, type FrontendStackId, type Starte
 import { checkSilverSource, cliInfo, createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe, waitForJob } from "./runner.js";
 import { checkUpdates } from "./updates.js";
 import { closeTerminal, defaultShell, listTerminals, openTerminal } from "./terminal.js";
+import { readIdeSettings, thirdPartyExtensionsEnabled, writeIdeSettings } from "./ideSettings.js";
+import { currentView, runnerInfo, sendCommand, startSession, stopSession, type DebugCommand, type StartRequest } from "./silverDebug.js";
 import { examplesDir, fetchText, installNpmPlugin, listExamples, loadRegistry, pluginsRoot, readStatic, searchNpmPlugins } from "./plugins.js";
 import { installVsx, readIndex, readVsxFile, searchVsx, setVsxEnabled, uninstallVsx } from "./vsx.js";
-import { closeWorkspace, describeWorkspace, getRoot, listRecents, openWorkspace, readDevServerToken } from "./workspace.js";
-import { allowedHostnames, isAllowedHost } from "./guard.js";
+import { closeWorkspace, describeWorkspace, getRoot, listRecents, openWorkspace, readDevServerToken, requireTrusted, trustFolder, WorkspaceError } from "./workspace.js";
+import { allowedHostnames, checkRequest, ideOrigins, isAllowedHost, isPublicStatic, SANDBOX_CSP, type RequestFacts } from "./guard.js";
 import { isHardkasMiner, LocalNodeError, resetWorkspaceChainState } from "./localNode.js";
 
 /**
@@ -42,71 +45,52 @@ const DEV_SERVER = process.env.HARDKAS_DEV_SERVER ?? "http://localhost:7420";
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
-function isLocalOrigin(origin: string | undefined): boolean {
-  if (!origin) return false;
-  try {
-    const url = new URL(origin);
-    return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-  } catch {
-    return false;
-  }
-}
-
-function localOnly(c: { req: { header(name: string): string | undefined } }): boolean {
-  const secFetchSite = c.req.header("sec-fetch-site");
-  if (secFetchSite === "cross-site") return false;
-
-  const origin = c.req.header("origin");
-  if (origin) return isLocalOrigin(origin);
-
-  const referer = c.req.header("referer");
-  if (referer) return isLocalOrigin(referer);
-
-  const host = c.req.header("host");
-  if (host) {
-    try {
-      const url = new URL(`http://${host}`);
-      return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-    } catch {
-      return false;
-    }
-  }
-
-  // No Origin, Referer or Host at all: not a browser. Nothing local needs this, so refuse.
-  return false;
-}
-
-// Every /api request (GET and WebSocket upgrades included) must name a loopback Host: this is what stops a web page
-// that rebinds its own domain to 127.0.0.1 from reading project files through same-origin GETs. See guard.ts.
+// Running from src/*.ts (tsx, `pnpm dev`) means development: the UI then comes from the Vite server on :5173.
+const DEV_MODE = fileURLToPath(import.meta.url).endsWith(".ts");
 const ALLOWED_HOSTS = allowedHostnames();
-app.use("/api/*", async (c, next) => {
+const IDE_ORIGINS = ideOrigins(PORT, { dev: DEV_MODE });
+
+function requestFacts(c: { req: { method: string; path: string; header(name: string): string | undefined } }): RequestFacts {
+  return { method: c.req.method, path: c.req.path, host: c.req.header("host"), origin: c.req.header("origin"), secFetchSite: c.req.header("sec-fetch-site"), referer: c.req.header("referer") };
+}
+
+/** True when the request comes from the IDE page itself or from a local program (see `checkRequest`). */
+function localOnly(c: { req: { method: string; path: string; header(name: string): string | undefined } }): boolean {
+  return checkRequest(requestFacts(c), ALLOWED_HOSTS, IDE_ORIGINS).ok;
+}
+
+// Every request names a loopback Host (stops DNS rebinding, see guard.ts); every /api request also comes from the
+// IDE page or a local program, whatever its method: a GET can read a file or start the CLI, and the terminal
+// WebSocket is refused here, before the upgrade.
+app.use("*", async (c, next) => {
   if (!isAllowedHost(c.req.header("host"), ALLOWED_HOSTS)) {
     return c.json({ ok: false, code: "FORBIDDEN_HOST", message: "the IDE server only answers on localhost, 127.0.0.1 or [::1]" }, 403);
   }
   await next();
 });
 
+app.use("/api/*", async (c, next) => {
+  const verdict = checkRequest(requestFacts(c), ALLOWED_HOSTS, IDE_ORIGINS);
+  if (!verdict.ok) return c.json({ ok: false, code: verdict.code, message: verdict.message }, verdict.status);
+  await next();
+});
+
 app.use(
   "/api/*",
   cors({
-    origin: (origin) => {
+    origin: (origin, c) => {
       if (!origin) return origin;
-      return isLocalOrigin(origin) ? origin : "";
+      if (isPublicStatic(c.req.path)) return "*";
+      return IDE_ORIGINS.has(origin.toLowerCase()) ? origin : "";
     },
-    allowHeaders: ["Content-Type", "Authorization", "X-Hardkas-Request"],
+    allowHeaders: ["Content-Type", "X-Hardkas-Request", "X-Hardkas-Client"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
   })
 );
 
-app.use("/api/*", async (c, next) => {
-  const method = c.req.method.toUpperCase();
-  if (["POST", "PUT", "DELETE", "PATCH"].includes(method)) {
-    if (!localOnly(c)) {
-      return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin or host" }, 403);
-    }
-  }
-  await next();
-});
+// Bodies are JSON settings, file contents and goals: 16 MB is far above any of them and stops a request from
+// filling the server's memory.
+app.use("/api/*", bodyLimit({ maxSize: 16 * 1024 * 1024, onError: (c) => c.json({ ok: false, code: "BODY_TOO_LARGE", message: "request body over 16 MB" }, 413) }));
 
 app.onError((error, c) => {
   if (error instanceof StoreError) {
@@ -115,7 +99,19 @@ app.onError((error, c) => {
   if (error instanceof FsError) {
     return c.json({ ok: false, code: error.code, message: error.message }, error.status as 400);
   }
+  if (error instanceof WorkspaceError) {
+    return c.json({ ok: false, code: error.code, message: error.message }, error.status as 400);
+  }
+  // A body that is not JSON is the caller's mistake, not the server's.
+  if (error instanceof SyntaxError) {
+    return c.json({ ok: false, code: "BAD_REQUEST", message: "the request body is not valid JSON" }, 400);
+  }
   const message = error instanceof Error ? error.message : String(error);
+  // File-system mistakes in the request (a folder read as a file, a path that does not exist) are not server faults.
+  const fsCode = (error as NodeJS.ErrnoException | null)?.code;
+  if (fsCode === "ENOENT") return c.json({ ok: false, code: "NOT_FOUND", message }, 404);
+  if (fsCode === "EISDIR" || fsCode === "ENOTDIR" || fsCode === "ENOTEMPTY") return c.json({ ok: false, code: "BAD_PATH", message }, 400);
+  if (fsCode === "EEXIST") return c.json({ ok: false, code: "ALREADY_EXISTS", message }, 409);
   return c.json({ ok: false, code: "INTERNAL", message }, 500);
 });
 
@@ -125,11 +121,30 @@ app.get("/api/workspace", async (c) => c.json({ ok: true, workspace: await descr
 
 app.get("/api/workspace/recents", async (c) => c.json({ ok: true, recents: await listRecents(), home: os.homedir() }));
 
+/** Requests from the MCP server (and so from any AI agent using it) carry this header; the MCP server sets it. */
+function fromAgent(c: { req: { header(name: string): string | undefined } }): boolean {
+  return (c.req.header("x-hardkas-client") ?? "").toLowerCase() === "mcp";
+}
+
+function clientOf(c: { req: { header(name: string): string | undefined } }): wsfs.FsClient {
+  return fromAgent(c) ? "agent" : "user";
+}
+
 app.post("/api/workspace/open", async (c) => {
   const body = (await c.req.json()) as { path?: string };
   if (!body.path) return c.json({ ok: false, code: "BAD_REQUEST", message: "path is required" }, 400);
-  const workspace = await openWorkspace(body.path);
+  // An agent may only switch to an existing HardKas project; the user may open any folder (it opens untrusted).
+  const workspace = await openWorkspace(body.path, { requireProject: fromAgent(c) });
   return c.json({ ok: true, workspace });
+});
+
+// Trusting a folder is the user's decision: never an agent's.
+app.post("/api/workspace/trust", async (c) => {
+  if (fromAgent(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "only the user can trust a folder, in the IDE" }, 403);
+  const root = getRoot();
+  if (!root) return c.json({ ok: false, code: "NO_WORKSPACE", message: "No workspace is open" }, 409);
+  await trustFolder(root);
+  return c.json({ ok: true, workspace: await describeWorkspace() });
 });
 
 app.post("/api/workspace/close", (c) => {
@@ -144,7 +159,7 @@ app.get("/api/fs/tree", async (c) => c.json({ ok: true, root: getRoot(), tree: a
 app.get("/api/fs/file", async (c) => {
   const p = c.req.query("path");
   if (!p) return c.json({ ok: false, code: "BAD_REQUEST", message: "path is required" }, 400);
-  return c.json({ ok: true, path: p, content: await wsfs.readFile(p) });
+  return c.json({ ok: true, path: p, content: await wsfs.readFile(p, clientOf(c)) });
 });
 
 app.get("/api/fs/find", async (c) => {
@@ -159,28 +174,28 @@ app.put("/api/fs/file", async (c) => {
   if (!body.path || typeof body.content !== "string") {
     return c.json({ ok: false, code: "BAD_REQUEST", message: "path and content are required" }, 400);
   }
-  await wsfs.writeFile(body.path, body.content);
+  await wsfs.writeFile(body.path, body.content, clientOf(c));
   return c.json({ ok: true });
 });
 
 app.post("/api/fs/mkdir", async (c) => {
   const body = (await c.req.json()) as { path?: string };
   if (!body.path) return c.json({ ok: false, code: "BAD_REQUEST", message: "path is required" }, 400);
-  await wsfs.mkdir(body.path);
+  await wsfs.mkdir(body.path, clientOf(c));
   return c.json({ ok: true });
 });
 
 app.post("/api/fs/rename", async (c) => {
   const body = (await c.req.json()) as { from?: string; to?: string };
   if (!body.from || !body.to) return c.json({ ok: false, code: "BAD_REQUEST", message: "from and to are required" }, 400);
-  await wsfs.rename(body.from, body.to);
+  await wsfs.rename(body.from, body.to, clientOf(c));
   return c.json({ ok: true });
 });
 
 app.delete("/api/fs", async (c) => {
   const p = c.req.query("path");
   if (!p) return c.json({ ok: false, code: "BAD_REQUEST", message: "path is required" }, 400);
-  await wsfs.remove(p);
+  await wsfs.remove(p, clientOf(c));
   return c.json({ ok: true });
 });
 
@@ -189,7 +204,7 @@ app.post("/api/fs/search", async (c) => {
   if (typeof body.query !== "string") {
     return c.json({ ok: false, code: "BAD_REQUEST", message: "query is required" }, 400);
   }
-  const res = await wsfs.searchWorkspace(body);
+  const res = await wsfs.searchWorkspace(body, clientOf(c));
   return c.json({ ok: true, ...res });
 });
 
@@ -198,7 +213,7 @@ app.post("/api/fs/replace", async (c) => {
   if (typeof body.query !== "string" || typeof body.replacement !== "string") {
     return c.json({ ok: false, code: "BAD_REQUEST", message: "query and replacement are required" }, 400);
   }
-  const res = await wsfs.replaceInWorkspace({ ...body, replacement: body.replacement });
+  const res = await wsfs.replaceInWorkspace({ ...body, replacement: body.replacement }, clientOf(c));
   return c.json({ ok: true, ...res });
 });
 
@@ -378,6 +393,30 @@ app.get(
   })
 );
 
+// ---------------------------------------------------------------- IDE settings: third-party extensions
+
+app.get("/api/settings", async (c) => c.json({ ok: true, settings: await readIdeSettings() }));
+
+app.post("/api/settings", async (c) => {
+  if (fromAgent(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "an agent cannot change the IDE's settings" }, 403);
+  const body = (await c.req.json().catch(() => null)) as { thirdPartyExtensions?: unknown } | null;
+  if (!body || typeof body !== "object") return c.json({ ok: false, code: "BAD_REQUEST", message: "a JSON object is required" }, 400);
+  return c.json({ ok: true, settings: await writeIdeSettings({ ...(typeof body.thirdPartyExtensions === "boolean" ? { thirdPartyExtensions: body.thirdPartyExtensions } : {}) }) });
+});
+
+// Open VSX extensions and npm / URL plugins run code nobody reviewed: off until the user turns them on in Extensions.
+// The bundled example plugins are part of the IDE and stay available.
+const EXTENSIONS_OFF = { ok: false, code: "EXTENSIONS_OFF", message: "Third-party extensions are turned off. Turn them on in the Extensions view if you need them." } as const;
+async function extensionsGate(c: Context, next: Next) {
+  if (await thirdPartyExtensionsEnabled()) return next();
+  if (c.req.method === "GET" && c.req.path === "/api/vsx/installed") return c.json({ ok: true, installed: [] });
+  return c.json(EXTENSIONS_OFF, 403);
+}
+app.use("/api/vsx/*", extensionsGate);
+app.use("/api/plugins/npm", extensionsGate);
+app.use("/api/plugins/search", extensionsGate);
+app.use("/api/plugins/static/*", extensionsGate);
+
 // ---------------------------------------------------------------- external plugins
 
 app.get("/api/plugins/fetch", async (c) => {
@@ -385,6 +424,14 @@ app.get("/api/plugins/fetch", async (c) => {
   if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
   const url = c.req.query("url");
   if (!url) return c.json({ ok: false, code: "BAD_REQUEST", message: "url is required" }, 400);
+  // The bundled example manifests live on this server: read them from disk instead of fetching loopback.
+  const example = /^\/api\/plugins\/examples\/(.+)$/.exec(new URL(url, "http://127.0.0.1").pathname);
+  if (example && (url.startsWith("/") || ["localhost", "127.0.0.1", "[::1]"].includes(new URL(url).hostname))) {
+    const file = await readStatic(examplesDir(), decodeURIComponent(example[1]));
+    if (!file) return c.json({ ok: false, code: "NOT_FOUND", message: "no such example plugin file" }, 404);
+    return c.json({ ok: true, text: file.body.toString("utf8") });
+  }
+  if (!(await thirdPartyExtensionsEnabled())) return c.json(EXTENSIONS_OFF, 403);
   return c.json({ ok: true, text: await fetchText(url) });
 });
 
@@ -409,18 +456,27 @@ app.get("/api/plugins/search", async (c) => {
   return c.json({ ok: true, registry: fromRegistry, results: npm });
 });
 
+// Plugin pages, extension files and the workspace's dapp/ are served with a sandbox CSP: their scripts run on an
+// opaque origin, so they cannot call the IDE API as the IDE (the API refuses `Origin: null`). They talk to the IDE
+// only through the iframe plugin bridge (postMessage), which keeps its permission prompts.
+function sandboxedFile(file: { body: Buffer; type: string }): Response {
+  return new Response(new Uint8Array(file.body), {
+    headers: { "content-type": file.type, "cache-control": "no-cache", "content-security-policy": SANDBOX_CSP, "x-content-type-options": "nosniff" }
+  });
+}
+
 app.get("/api/plugins/examples/*", async (c) => {
   const rel = c.req.path.replace(/^\/api\/plugins\/examples\//, "");
   const file = await readStatic(examplesDir(), rel);
   if (!file) return c.text("not found", 404);
-  return new Response(file.body, { headers: { "content-type": file.type, "cache-control": "no-cache" } });
+  return sandboxedFile(file);
 });
 
 app.get("/api/plugins/static/*", async (c) => {
   const rel = c.req.path.replace(/^\/api\/plugins\/static\//, "");
   const file = await readStatic(path.join(pluginsRoot(), "node_modules"), rel);
   if (!file) return c.text("not found", 404);
-  return new Response(file.body, { headers: { "content-type": file.type, "cache-control": "no-cache" } });
+  return sandboxedFile(file);
 });
 
 // ---------------------------------------------------------------- VS Code extensions (Open VSX)
@@ -452,7 +508,7 @@ app.get("/api/vsx/file/:id/*", async (c) => {
   const rel = c.req.path.replace(new RegExp(`^/api/vsx/file/${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`), "");
   const file = await readVsxFile(id, decodeURIComponent(rel));
   if (!file) return c.text("not found", 404);
-  return new Response(file.body, { headers: { "content-type": file.type, "cache-control": "no-cache" } });
+  return sandboxedFile(file);
 });
 
 // ---------------------------------------------------------------- dev-server proxy
@@ -564,7 +620,7 @@ app.post("/api/assistant/chat", async (c) => {
       await stream.writeSSE({ event: "done", data: "{}" });
     } catch (error) {
       if (ac.signal.aborted) return;
-      const code = error instanceof AssistantError ? error.code : "INTERNAL";
+      const code = error instanceof AssistantError || error instanceof WorkspaceError ? error.code : "INTERNAL";
       await stream.writeSSE({ event: "error", data: JSON.stringify({ code, message: error instanceof Error ? error.message : String(error) }) });
     }
   });
@@ -583,7 +639,7 @@ app.post("/api/assistant/agent", async (c) => {
       }
     } catch (error) {
       if (ac.signal.aborted) return;
-      const code = error instanceof AssistantError ? error.code : "INTERNAL";
+      const code = error instanceof AssistantError || error instanceof WorkspaceError ? error.code : "INTERNAL";
       await stream.writeSSE({ event: "error", data: JSON.stringify({ code, message: error instanceof Error ? error.message : String(error) }) });
     }
   });
@@ -621,9 +677,41 @@ app.get("/api/debug/events", (c) =>
   })
 );
 
+// ---------------------------------------------------------------- SilverScript step debugger (cli-debugger)
+
+app.get("/api/silver-debug/runner", async (c) => c.json({ ok: true, runner: await runnerInfo() }));
+
+app.post("/api/silver-debug/approve", async (c) => {
+  if (fromAgent(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "an agent cannot approve a runner" }, 403);
+  const body = (await c.req.json().catch(() => null)) as { sha256?: unknown } | null;
+  const info = await runnerInfo();
+  if (!info.available || !info.sha256) return c.json({ ok: false, code: "RUNNER_NOT_FOUND", message: info.message }, 409);
+  // The page approves the build it was shown: a runner replaced meanwhile is not approved by that click.
+  if (body?.sha256 !== info.sha256) return c.json({ ok: false, code: "RUNNER_CHANGED", message: "The runner changed since it was shown. Check it again." }, 409);
+  await writeIdeSettings({ approvedSilverRunnerSha256: info.sha256 });
+  return c.json({ ok: true, runner: await runnerInfo() });
+});
+
+app.get("/api/silver-debug", (c) => c.json({ ok: true, session: currentView() }));
+
+app.post("/api/silver-debug/start", async (c) => {
+  const body = (await c.req.json()) as StartRequest;
+  return c.json({ ok: true, session: await startSession(body) });
+});
+
+app.post("/api/silver-debug/command", async (c) => {
+  const body = (await c.req.json()) as { cmd?: DebugCommand; arg?: string | number };
+  if (!body.cmd) return c.json({ ok: false, code: "BAD_REQUEST", message: "cmd is required" }, 400);
+  return c.json({ ok: true, session: await sendCommand(body.cmd, body.arg) });
+});
+
+app.post("/api/silver-debug/stop", async (c) => c.json({ ok: true, session: await stopSession() }));
+
 app.post("/api/debug/start", async (c) => {
   if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
   const body = (await c.req.json().catch(() => ({}))) as Parameters<typeof debugSession.start>[0];
+  // The debugger runs the project's tests: project code.
+  await requireTrusted();
   try {
     await debugSession.start(body);
     return c.json({ ok: true });
@@ -732,6 +820,8 @@ app.get("/api/system", async (c) => {
 
 app.get("/api/cli", async (c) => c.json({ ok: true, cli: await cliInfo(getRoot() ?? process.cwd(), c.req.query("refresh") === "1") }));
 app.get("/api/cli/catalog", async (c) => {
+  // Reading the catalog loads the project's CLI package: only in a trusted folder.
+  if (getRoot()) await requireTrusted();
   const catalog = await getCliCatalog(getRoot() ?? process.cwd());
   return c.json(catalog);
 });
@@ -815,7 +905,8 @@ app.post("/api/node/miner", async (c) => {
 app.post("/api/node/reset", async (c) => {
   if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
   const root = getRoot();
-  if (!root) return c.json({ ok: true, wiped: [], backedUp: [], backupDir: null, containersRemoved: false });
+  if (!root) return c.json({ ok: true, wiped: [], backedUp: [], moved: [], copied: [], backupDir: null, containersRemoved: false });
+  await requireTrusted(root);
   await ensureHardkasConfig(root).catch(() => {});
   try {
     const result = await resetWorkspaceChainState(root);
@@ -826,7 +917,16 @@ app.post("/api/node/reset", async (c) => {
   }
 });
 
-const serverInfo = () => ({ name: "hardkas-ide-server", port: PORT, devServer: DEV_SERVER, workspace: getRoot(), ui: UI_READY ? "served from this server" : "not built: run pnpm build, or use the Vite dev server at http://localhost:5173" });
+// The IDE version, from this server's package.json (packages/ide-server, or stage/server in the desktop app). The
+// desktop shell checks it before loading whatever listens on its port.
+const IDE_VERSION: string = (() => {
+  try {
+    return (JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8")) as { version?: string }).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+})();
+const serverInfo = () => ({ name: "hardkas-ide-server", version: IDE_VERSION, port: PORT, devServer: DEV_SERVER, workspace: getRoot(), ui: UI_READY ? "served from this server" : "not built: run pnpm build, or use the Vite dev server at http://localhost:5173" });
 app.get("/api/info", (c) => c.json(serverInfo()));
 
 // ---------------------------------------------------------------- the IDE itself (production build)
@@ -845,13 +945,18 @@ app.get("/dapp/*", async (c) => {
   const dappDir = path.join(root, "dapp");
   const file = (await readStatic(dappDir, rel)) ?? (await readStatic(dappDir, "index.html"));
   if (!file) return c.text("not found in workspace dapp/", 404);
-  return new Response(file.body, { headers: { "content-type": file.type, "cache-control": "no-cache" } });
+  return sandboxedFile(file);
 });
 
 app.get("*", async (c) => {
   if (c.req.path.startsWith("/api/")) return c.json({ ok: false, code: "NOT_FOUND", message: `No route ${c.req.path}` }, 404);
   if (!UI_READY) return c.json(serverInfo());
-  const rel = decodeURIComponent(c.req.path);
+  let rel: string;
+  try {
+    rel = decodeURIComponent(c.req.path);
+  } catch {
+    return c.text("bad request", 400);
+  }
   // Real files first; any other path is a client-side route and gets index.html.
   const file = (rel !== "/" ? await readStatic(UI_DIR, rel) : null) ?? (await readStatic(UI_DIR, "index.html"));
   if (!file) return c.text("not found", 404);
@@ -877,4 +982,6 @@ async function main() {
   injectWebSocket(server);
 }
 
-void main();
+// Tests import the app without opening a port (HARDKAS_IDE_NO_LISTEN=1) and call `app.request(...)`.
+export { app };
+if (process.env.HARDKAS_IDE_NO_LISTEN !== "1") void main();

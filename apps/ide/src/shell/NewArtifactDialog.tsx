@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { Code2, File, FilePlus2, Folder, FolderPlus, Layers, ShieldCheck, Sparkles, TestTube2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useEngine } from "@/engine/context";
+import { buildStarterContractCode, type StarterContractSpec } from "./silverTemplates";
 
 export interface NewArtifactModalOptions {
   folder?: string;
@@ -80,6 +81,11 @@ export function toFileStem(raw: string, fallback = "MyContract"): string {
   return cleaned || fallback;
 }
 
+/** The same starter contracts as the New Project wizard (compiled with the pinned silverc by scripts/check-templates.mjs). */
+function starter(kind: StarterContractSpec["kind"], className: string, fanout?: number): string {
+  return buildStarterContractCode({ kind, className, fanout }, className)?.code ?? "";
+}
+
 export const WIZARD_TEMPLATES: readonly WizardTemplate[] = [
   {
     id: "silver-basic",
@@ -92,17 +98,7 @@ export const WIZARD_TEMPLATES: readonly WizardTemplate[] = [
     ext: ".sil",
     defaultClass: "VaultGuard",
     description: "Clean SilverScript contract skeleton with constructor parameters and an entry point.",
-    buildContent: (className) => `pragma silverscript ^0.1.0;
-
-/**
- * @title ${className}
- */
-contract ${className}(pubkey owner) {
-  entry spend(sig ownerSig) {
-    require(checkSig(ownerSig, owner));
-  }
-}
-`
+    buildContent: (className) => starter("silver-basic", className)
   },
   {
     id: "covenant-1-n",
@@ -115,40 +111,8 @@ contract ${className}(pubkey owner) {
     ext: ".sil",
     defaultClass: "PaymentSplitter",
     supportsFanout: true,
-    description: "Enforces that spending 1 input UTXO distributes funds across N designated recipient outputs (tx.outputs[0..N-1]).",
-    buildContent: (className, n) => {
-      const count = Math.min(Math.max(n, 2), 6);
-      const lockParams = Array.from({ length: count }, (_, i) => `  bytes recipient${i + 1}Lock`).join(",\n");
-      const outputChecks = Array.from(
-        { length: count },
-        (_, i) =>
-          `    // Output #${i}: enforce recipient ${i + 1} lockingBytecode and minimum share\n` +
-          `    require(tx.outputs[${i}].lockingBytecode == recipient${i + 1}Lock);\n` +
-          `    require(tx.outputs[${i}].value >= shareSompi);`
-      ).join("\n\n");
-      return `pragma silverscript ^0.1.0;
-
-/**
- * @title ${className} (Covenant 1:${count})
- * Splits a single UTXO across ${count} recipient outputs with deterministic value and script guards.
- */
-contract ${className}(
-  pubkey operator,
-${lockParams},
-  int shareSompi
-) {
-  entry distribute(sig operatorSig) {
-    require(checkSig(operatorSig, operator));
-
-${outputChecks}
-  }
-
-  entry cancel(sig operatorSig) {
-    require(checkSig(operatorSig, operator));
-  }
-}
-`;
-    }
+    description: "The spend must use this UTXO as its only input and pay each of N recipient scriptPubKeys (tx.outputs[0..N-1]) at least a share.",
+    buildContent: (className, n) => starter("covenant-1-n", className, n)
   },
   {
     id: "covenant-1-1",
@@ -160,36 +124,8 @@ ${outputChecks}
     defaultFolder: "contracts",
     ext: ".sil",
     defaultClass: "StatefulVault",
-    description: "Enforces a 1:1 state continuation output keeping the same covenant lockingBytecode and bounded withdrawal per spend.",
-    buildContent: (className) => `pragma silverscript ^0.1.0;
-
-/**
- * @title ${className} (Covenant 1:1)
- * Rate-limited vault that enforces output[0] recreates this covenant with the remaining balance.
- */
-contract ${className}(
-  pubkey owner,
-  pubkey guardian,
-  int maxWithdrawSompi
-) {
-  entry withdrawPartial(sig ownerSig, int withdrawSompi) {
-    require(checkSig(ownerSig, owner));
-    require(withdrawSompi > 0);
-    require(withdrawSompi <= maxWithdrawSompi);
-
-    bytes selfLock = tx.inputs[this.activeInputIndex].lockingBytecode;
-    int currentBalance = tx.inputs[this.activeInputIndex].value;
-
-    require(tx.outputs[0].lockingBytecode == selfLock);
-    require(tx.outputs[0].value >= currentBalance - withdrawSompi);
-  }
-
-  entry emergencySweep(sig ownerSig, sig guardianSig) {
-    require(checkSig(ownerSig, owner));
-    require(checkSig(guardianSig, guardian));
-  }
-}
-`
+    description: "Recursive vault: a partial withdrawal must send output[0] back to this same contract (same scriptPubKey) with the rest of the balance.",
+    buildContent: (className) => starter("covenant-1-1", className)
   },
   {
     id: "covenant-escrow",
@@ -201,41 +137,8 @@ contract ${className}(
     defaultFolder: "contracts",
     ext: ".sil",
     defaultClass: "OrderEscrow",
-    description: "Commerce escrow with output covenant enforcement for seller settlement, buyer refund, and arbiter resolution.",
-    buildContent: (className) => `pragma silverscript ^0.1.0;
-
-/**
- * @title ${className}
- * Multi-party escrow covenant enforcing settlement destination and amount.
- */
-contract ${className}(
-  pubkey buyer,
-  pubkey seller,
-  pubkey arbiter,
-  bytes sellerLock,
-  bytes buyerLock,
-  int amountSompi
-) {
-  entry releaseToSeller(sig buyerSig) {
-    require(checkSig(buyerSig, buyer));
-    require(tx.outputs[0].lockingBytecode == sellerLock);
-    require(tx.outputs[0].value >= amountSompi);
-  }
-
-  entry refundToBuyer(sig sellerSig) {
-    require(checkSig(sellerSig, seller));
-    require(tx.outputs[0].lockingBytecode == buyerLock);
-    require(tx.outputs[0].value >= amountSompi);
-  }
-
-  entry arbitrateSeller(sig arbiterSig, sig sellerSig) {
-    require(checkSig(arbiterSig, arbiter));
-    require(checkSig(sellerSig, seller));
-    require(tx.outputs[0].lockingBytecode == sellerLock);
-    require(tx.outputs[0].value >= amountSompi);
-  }
-}
-`
+    description: "2-of-3 escrow: every spend path needs two of buyer, seller and arbiter, and output[0] must pay the agreed scriptPubKey.",
+    buildContent: (className) => starter("covenant-escrow", className)
   },
   {
     id: "covenant-timelock",
@@ -247,33 +150,8 @@ contract ${className}(
     defaultFolder: "contracts",
     ext: ".sil",
     defaultClass: "VestingVault",
-    description: "Time-locked vault requiring tx.time >= unlockTime and enforcing payout to the beneficiary's lockingBytecode.",
-    buildContent: (className) => `pragma silverscript ^0.1.0;
-
-/**
- * @title ${className}
- * Time-locked vesting contract with beneficiary output guard.
- */
-contract ${className}(
-  pubkey beneficiary,
-  pubkey grantor,
-  bytes beneficiaryLock,
-  int unlockTime,
-  int vestAmountSompi
-) {
-  entry claim(sig beneficiarySig) {
-    require(checkSig(beneficiarySig, beneficiary));
-    require(tx.time >= unlockTime);
-    require(tx.outputs[0].lockingBytecode == beneficiaryLock);
-    require(tx.outputs[0].value >= vestAmountSompi);
-  }
-
-  entry revoke(sig grantorSig, sig beneficiarySig) {
-    require(checkSig(grantorSig, grantor));
-    require(checkSig(beneficiarySig, beneficiary));
-  }
-}
-`
+    description: "Time-locked vault: claim needs the beneficiary's signature, tx.time >= unlockTime and output[0] paying the beneficiary's scriptPubKey.",
+    buildContent: (className) => starter("covenant-timelock", className)
   },
   {
     id: "ts-class",

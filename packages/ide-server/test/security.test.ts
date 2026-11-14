@@ -97,7 +97,7 @@ describe("Key export: plaintext real accounts must be simnet", () => {
 });
 
 describe("Node reset keeps the account keys", () => {
-  it("moves the keys to a backup and deletes only chain state", async () => {
+  it("moves the dev keystores and copies accounts.real.json to a backup, and deletes only chain state", async () => {
     const root = await makeWorkspace();
     const hk = path.join(root, ".hardkas");
     await fs.mkdir(path.join(hk, "node-data"), { recursive: true });
@@ -117,14 +117,14 @@ describe("Node reset keeps the account keys", () => {
     assert.equal(await fs.readFile(path.join(backup, "accounts.real.json"), "utf8"), "{\"accounts\":[]}");
     assert.equal(await fs.readFile(path.join(backup, "dev-accounts", "alice.json"), "utf8"), "{\"k\":1}");
     await assert.rejects(fs.access(path.join(hk, "node-data")));
-    await assert.rejects(fs.access(path.join(hk, "accounts.real.json")));
+    // The real (testnet) accounts stay where they are; the backup holds a copy.
     assert.equal(await fs.readFile(path.join(hk, "keep.json"), "utf8"), "other");
   });
 
   it("creates no backup when there are no keys", async () => {
     const root = await makeWorkspace();
     const result = await resetWorkspaceChainState(root);
-    assert.deepEqual(result, { wiped: [], backedUp: [], backupDir: null });
+    assert.deepEqual(result, { wiped: [], backedUp: [], moved: [], copied: [], backupDir: null });
     await assert.rejects(fs.access(path.join(root, ".hardkas", "backups")));
   });
 

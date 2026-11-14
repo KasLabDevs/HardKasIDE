@@ -1,0 +1,20 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "dev",
+  "description": "Development only (tauri dev, selected by tauri.dev.conf.json): the same window controls for the Vite dev UI on localhost:5173. Release builds do not list this capability, so the remote URL gets nothing there.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://localhost:5173/*"]
+  },
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-title"
+  ]
+}

@@ -2,6 +2,7 @@ import AdmZip from "adm-zip";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { WorkspaceError } from "./workspace.js";
 
 /**
  * VS Code extensions from Open VSX (the open registry used by Theia, Gitpod, VSCodium).
@@ -116,7 +117,7 @@ async function writeIndex(list: InstalledVsx[]): Promise<void> {
 }
 
 export async function installVsx(namespace: string, name: string, version?: string): Promise<InstalledVsx> {
-  if (!/^[\w.-]+$/.test(namespace) || !/^[\w.-]+$/.test(name)) throw new Error("Invalid extension id");
+  if (!/^[\w.-]+$/.test(namespace) || !/^[\w.-]+$/.test(name)) throw new WorkspaceError(400, "BAD_EXTENSION_ID", "Invalid extension id");
   // Resolve metadata (latest version if none given).
   const metaUrl = version ? `${VSX_API}/${namespace}/${name}/${version}` : `${VSX_API}/${namespace}/${name}`;
   const metaRes = await fetch(metaUrl, { headers: { accept: "application/json" } });
