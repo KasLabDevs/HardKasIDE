@@ -8,6 +8,7 @@ A single-purpose IDE for [HardKas](https://github.com/KasLabDevs/HardKas) projec
 - **Project flow** shaped like Visual Studio: a Home screen with New project (from HardKas CLI templates), Open folder and Recents.
 - Projects are real folders on disk with `hardkas.config.ts` and `.hardkas/`, driven through `hardkas <cmd> --json`.
 
+- **Deploy & Run** in five tabs: Payments, SilverScript, Covenants, KCC20 and ZK. Contracts, covenant chains and payments are driven from the panel, and a command card runs each inspection command (`kcc20`, `zk`, `silver inspect / verify / test`, `tx verify`…) and reads its verdict. See [docs/deploy-and-run.md](docs/deploy-and-run.md).
 - **Index view**: browse everything HardKAS indexes (artifacts, events, lineage, transactions), query it with read-only SQL and run integrity checks. See [docs/index-view.md](docs/index-view.md).
 - **Test debugger**: breakpoints, stepping, variables and watches for the project's vitest tests (F5, F9, F10, F11). See [docs/debugging.md](docs/debugging.md).
 - **SilverScript debugger**: runs a contract entry on the Kaspa script engine line by line (breakpoints, locals, stack, eval), with `sig` arguments signed by simnet dev accounts. Needs a local build of `cli-debugger`. See [docs/debugging.md](docs/debugging.md#debugging-silverscript-contracts).
