@@ -1,34 +1,42 @@
 import clsx from "clsx";
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronRight, Copy, Loader2, Play, ShieldCheck, XCircle } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronRight, Copy, KeyRound, Loader2, Play, ShieldCheck, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { ConsolePlugin } from "@/plugins/console";
 import type { FileManagerPlugin } from "@/plugins/fileManager";
 import { flattenTreePaths } from "@/shell/commandPaletteModel";
+import { useEnv } from "@/store/env";
 import { useIde } from "@/store/ide";
 import { useSilver } from "@/store/silver";
 import { copyText } from "@/utils/clipboard";
-import { buildCommand, commandLine, failureText, initialValues, readVerdict, resultRows, type CommandSpec, type FieldSpec, type ResultRow, type Verdict } from "./commandSpec";
+import { buildCommand, commandLine, encryptedSigners, failureText, initialValues, readVerdict, resultRows, type CommandSpec, type FieldSpec, type ResultRow, type Verdict } from "./commandSpec";
 
-interface Outcome {
+export interface Outcome {
   verdict: Verdict;
   label?: string;
   rows: ResultRow[];
   line: string;
   failure?: string;
   raw: unknown;
+  /** The command exited 0 and gave no bad verdict. */
+  ok: boolean;
 }
 
-/** One `hardkas` command as a card: its fields, a run button, and the answer read back as a verdict and rows. */
-export function CommandCard({ spec, defaultOpen = false }: { spec: CommandSpec; defaultOpen?: boolean }) {
+/**
+ * One `hardkas` command as a card: its fields, a run button, and the answer read back as a verdict and rows.
+ * `preset` gives some fields their starting value (a card keyed by what it presets starts over when it changes);
+ * `onOutcome` hears every answer, so a view can reload what the command changed.
+ */
+export function CommandCard({ spec, defaultOpen = false, preset, onOutcome }: { spec: CommandSpec; defaultOpen?: boolean; preset?: Readonly<Record<string, string>>; onOutcome?: (outcome: Outcome) => void }) {
   const engine = useEngine();
   const tree = useIde((s) => s.tree);
   const compiled = useSilver((s) => s.compiled);
   const covenants = useSilver((s) => s.covenants);
   const deployments = useSilver((s) => s.deployments);
+  const accounts = useEnv((s) => s.accounts);
 
   const [open, setOpen] = useState(defaultOpen);
-  const [values, setValues] = useState<Record<string, string>>(() => initialValues(spec));
+  const [values, setValues] = useState<Record<string, string>>(() => initialValues(spec, preset));
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [problem, setProblem] = useState<{ fieldId?: string; text: string } | null>(null);
@@ -44,6 +52,14 @@ export function CommandCard({ spec, defaultOpen = false }: { spec: CommandSpec; 
     return [...new Set([...records, ...all])];
   }, [tree, compiled, covenants, deployments]);
 
+  // A signing step with an encrypted account: the IDE never takes a password, so the command stays in the terminal.
+  const blockedSigners = useMemo(() => encryptedSigners(spec, values, accounts), [spec, values, accounts]);
+  const blockedLine = useMemo(() => {
+    if (blockedSigners.length === 0) return null;
+    const built = buildCommand(spec, values);
+    return built.ok ? commandLine(built.args) : null;
+  }, [blockedSigners, spec, values]);
+
   const run = async () => {
     const built = buildCommand(spec, values);
     if (!built.ok) {
@@ -51,6 +67,7 @@ export function CommandCard({ spec, defaultOpen = false }: { spec: CommandSpec; 
       setProblem({ fieldId: built.fieldId, text: built.error });
       return;
     }
+    if (blockedSigners.length > 0) return;
     setProblem(null);
     setBusy(true);
     setOutcome(null);
@@ -61,7 +78,7 @@ export function CommandCard({ spec, defaultOpen = false }: { spec: CommandSpec; 
       const succeeded = res.status === "succeeded";
       const { verdict, label } = readVerdict(res.result, succeeded);
       const failed = verdict === "bad" || !succeeded;
-      setOutcome({
+      const outcome: Outcome = {
         verdict,
         label,
         // A refusal (exit 1 with a verdict) still carries its facts: show them, plus why.
@@ -69,8 +86,11 @@ export function CommandCard({ spec, defaultOpen = false }: { spec: CommandSpec; 
         line: commandLine(built.args),
         // An error envelope ({ ok: false, code, message }) or no answer at all: say it as a sentence above the rows.
         failure: failed && (res.result == null || (res.result as { ok?: unknown }).ok === false) ? failureText(res.result, res.stderr, res.exitCode) : undefined,
-        raw: res.result
-      });
+        raw: res.result,
+        ok: !failed
+      };
+      setOutcome(outcome);
+      onOutcome?.(outcome);
     } catch (e) {
       setProblem({ text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -104,10 +124,20 @@ export function CommandCard({ spec, defaultOpen = false }: { spec: CommandSpec; 
           )}
 
           {spec.fields.map((f) => (
-            <Field key={f.id} cardId={spec.id} field={f} value={values[f.id] ?? ""} onChange={(v) => set(f.id, v)} files={files} invalid={problem?.fieldId === f.id} />
+            <Field key={f.id} cardId={spec.id} field={f} value={values[f.id] ?? ""} onChange={(v) => set(f.id, v)} files={files} accounts={accounts} invalid={problem?.fieldId === f.id} />
           ))}
 
-          <button type="button" className="btn-primary w-full justify-center" disabled={busy} onClick={() => void run()}>
+          {blockedSigners.length > 0 && (
+            <div role="status" className="rounded border border-warn/40 bg-warn/5 p-2 space-y-1 text-[12px]" data-testid={`card-${spec.id}-terminal`}>
+              <div className="flex items-center gap-1.5 font-semibold text-warn">
+                <KeyRound size={12} className="shrink-0" /> {blockedSigners.join(", ")} {blockedSigners.length === 1 ? "is an encrypted account" : "are encrypted accounts"}
+              </div>
+              <p className="text-fg-muted leading-snug">The IDE never takes a keystore password. Run this in a terminal; HardKAS asks for the password there. Development accounts need none.</p>
+              {blockedLine && <code className="block font-mono break-all rounded bg-bg p-1.5 select-all">{blockedLine}</code>}
+            </div>
+          )}
+
+          <button type="button" className="btn-primary w-full justify-center" disabled={busy || blockedSigners.length > 0} onClick={() => void run()}>
             {busy ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} {busy ? "Running…" : (spec.action ?? "Run")}
           </button>
 
@@ -130,7 +160,23 @@ function VerdictDot({ verdict }: { verdict: Verdict }) {
   return <Check size={13} className="ml-auto shrink-0 text-fg-muted" aria-label="last run: done" />;
 }
 
-function Field({ cardId, field, value, onChange, files, invalid }: { cardId: string; field: FieldSpec; value: string; onChange: (v: string) => void; files: string[]; invalid: boolean }) {
+function Field({
+  cardId,
+  field,
+  value,
+  onChange,
+  files,
+  accounts,
+  invalid
+}: {
+  cardId: string;
+  field: FieldSpec;
+  value: string;
+  onChange: (v: string) => void;
+  files: string[];
+  accounts: ReadonlyArray<{ name: string; kind: string }>;
+  invalid: boolean;
+}) {
   const id = `${cardId}-${field.id}`;
   const listId = `${id}-files`;
   const suggestions = useMemo(() => {
@@ -164,6 +210,18 @@ function Field({ cardId, field, value, onChange, files, invalid }: { cardId: str
           {field.choices?.map((c) => (
             <option key={c.value} value={c.value}>
               {c.label}
+            </option>
+          ))}
+        </select>
+      ) : field.kind === "account" && accounts.length > 0 ? (
+        // The workspace's accounts by name. A starting value that is not one of them stays visible as such: the
+        // command gets exactly what is shown, and HardKAS says ACCOUNT_NOT_FOUND if it has to.
+        <select {...common} value={value} onChange={(e) => onChange(e.target.value)}>
+          {!field.required && <option value="">(none)</option>}
+          {value && !accounts.some((a) => a.name === value) && <option value={value}>{value} (not an account of this workspace)</option>}
+          {accounts.map((a) => (
+            <option key={a.name} value={a.name}>
+              {a.name} ({a.kind})
             </option>
           ))}
         </select>
@@ -258,6 +316,11 @@ function Answer({ outcome }: { outcome: Outcome }) {
       </div>
     </div>
   );
+}
+
+/** The answer of a card, drawn by other views too (the escrow status panel). */
+export function CardAnswer({ outcome }: { outcome: Outcome }) {
+  return <Answer outcome={outcome} />;
 }
 
 /** A stack of cards under a short heading. */

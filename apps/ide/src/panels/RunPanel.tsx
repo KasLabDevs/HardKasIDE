@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { ArrowRightLeft, Coins, FileCode2, GitBranch, Lock } from "lucide-react";
+import { ArrowRightLeft, Coins, FileCode2, GitBranch, Handshake, Lock } from "lucide-react";
 import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useIde } from "@/store/ide";
 import { useSilver } from "@/store/silver";
@@ -9,14 +9,16 @@ import { ContractGUI } from "./ContractGUI";
 import { CovenantChainSection } from "./CovenantGUI";
 import { CardGroup } from "./run/CommandCard";
 import { COVENANT_CARDS, KCC20_CARDS, SILVER_CARDS, ZK_CARDS } from "./run/cards";
+import { EscrowTab } from "./run/EscrowTab";
 import { PaymentsTab } from "./run/PaymentsTab";
 
-type TabId = "payments" | "silver" | "covenants" | "kcc20" | "zk";
+type TabId = "payments" | "silver" | "covenants" | "escrow" | "kcc20" | "zk";
 
 const TABS: ReadonlyArray<{ id: TabId; label: string; icon: typeof Lock }> = [
   { id: "payments", label: "Payments", icon: ArrowRightLeft },
   { id: "silver", label: "SilverScript", icon: FileCode2 },
   { id: "covenants", label: "Covenants", icon: GitBranch },
+  { id: "escrow", label: "Escrow", icon: Handshake },
   { id: "kcc20", label: "KCC20", icon: Coins },
   { id: "zk", label: "ZK", icon: Lock }
 ];
@@ -34,7 +36,7 @@ function loadTab(): TabId {
 }
 
 /**
- * Deploy & Run: one tab per kind of work, in the editor's tab style: payments, SilverScript, covenants, KCC20, ZK.
+ * Deploy & Run: one tab per kind of work, in the editor's tab style: payments, SilverScript, covenants, escrow, KCC20, ZK.
  * Where it runs (simulator, local node, testnet) is chosen in the top bar, not here.
  */
 export function RunPanel() {
@@ -88,6 +90,9 @@ export function RunPanel() {
           </div>
         </div>
       );
+      break;
+    case "escrow":
+      body = <EscrowTab />;
       break;
     case "kcc20":
       body = (

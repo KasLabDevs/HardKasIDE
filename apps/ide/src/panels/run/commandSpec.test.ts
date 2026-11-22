@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildCommand, checkWord, commandLine, failureText, initialValues, psktSupport, readVerdict, resultRows, scratchPath, type CommandSpec } from "./commandSpec";
-import { ALL_CARDS } from "./cards";
+import { buildCommand, checkWord, commandLine, encryptedSigners, failureText, initialValues, psktSupport, readVerdict, resultRows, scratchPath, type CommandSpec } from "./commandSpec";
+import { ALL_CARDS, ESCROW_CARDS } from "./cards";
 
 const spec: CommandSpec = {
   id: "kcc20-check",
@@ -48,6 +48,122 @@ describe("buildCommand", () => {
   it("leaves out an option that was not filled in", () => {
     const r = buildCommand(spec, { transfer: "{}" });
     expect(r.ok && r.args).not.toContain("--network");
+  });
+
+  it("gives an option that takes several values each word after its flag", () => {
+    const s: CommandSpec = { id: "x", title: "x", summary: "x", words: ["escrow", "release"], fields: [{ id: "sigs", label: "Signatures", kind: "text", as: "option", flag: "--signatures", list: true }] };
+    const r = buildCommand(s, { sigs: "a.json, b.json c.json" });
+    expect(r.ok && r.args).toEqual(["escrow", "release", "--signatures", "a.json", "b.json", "c.json", "--json"]);
+  });
+
+  it("treats an account field as a plain word", () => {
+    const s: CommandSpec = { id: "x", title: "x", summary: "x", words: ["escrow", "fund"], fields: [{ id: "from", label: "From", kind: "account", as: "option", flag: "--from", required: true }] };
+    expect(buildCommand(s, { from: "alice" })).toMatchObject({ ok: true, args: ["escrow", "fund", "--from", "alice", "--json"] });
+    expect(buildCommand(s, { from: "a&b" }).ok).toBe(false);
+    expect(buildCommand(s, {})).toEqual({ ok: false, error: "From is required.", fieldId: "from" });
+  });
+});
+
+describe("initialValues and encryptedSigners", () => {
+  const s: CommandSpec = {
+    id: "x",
+    title: "x",
+    summary: "x",
+    words: ["escrow", "sign"],
+    fields: [
+      { id: "id", label: "Escrow", kind: "text", as: "arg", required: true },
+      { id: "account", label: "Account", kind: "account", as: "option", flag: "--account", signs: true, initial: "alice" },
+      { id: "arbiter", label: "Arbiter", kind: "account", as: "option", flag: "--arbiter", initial: "carol" }
+    ]
+  };
+  it("a preset wins over a field's own starting value", () => {
+    expect(initialValues(s)).toEqual({ id: "", account: "alice", arbiter: "carol" });
+    expect(initialValues(s, { id: "abc", account: "bob" })).toEqual({ id: "abc", account: "bob", arbiter: "carol" });
+  });
+  it("names the signing accounts that are encrypted, and only those", () => {
+    const accounts = [
+      { name: "alice", keystore: "dev-keystore" },
+      { name: "bob", keystore: "encrypted" },
+      { name: "carol", keystore: "encrypted" }
+    ];
+    expect(encryptedSigners(s, { account: "alice", arbiter: "carol" }, accounts)).toEqual([]);
+    expect(encryptedSigners(s, { account: "bob", arbiter: "carol" }, accounts)).toEqual(["bob"]); // carol does not sign here
+    expect(encryptedSigners(s, { account: "nobody" }, accounts)).toEqual([]); // unknown: the CLI says ACCOUNT_NOT_FOUND
+  });
+});
+
+describe("the escrow cards", () => {
+  const byId = (id: string) => ESCROW_CARDS.find((c) => c.id === id)!;
+  const ID = "0b0a3a4e-1234-4abc-8def-0123456789ab";
+
+  it("cover the whole lifecycle, and nothing takes a password or a key", () => {
+    expect(ESCROW_CARDS.map((c) => c.words.join(" "))).toEqual(["escrow create", "escrow fund", "escrow status", "escrow prepare", "escrow sign", "escrow release", "escrow reconcile"]);
+    for (const c of ESCROW_CARDS) for (const f of c.fields) expect(`${f.id} ${f.label} ${f.flag ?? ""}`, `${c.id}.${f.id}`).not.toMatch(/password|private|secret|mnemonic/i);
+  });
+
+  it("offer the local node only: simnet, never mainnet or testnet", () => {
+    for (const c of ESCROW_CARDS) {
+      const net = c.fields.find((f) => f.flag === "--network");
+      if (!net) continue;
+      expect(net.choices?.map((x) => x.value), c.id).toEqual(["simnet"]);
+      expect(net.required, c.id).toBe(true);
+    }
+  });
+
+  it("create: the parties are accounts, EscrowFull by its principal, and the record is written, nothing sent", () => {
+    const c = byId("escrow-create");
+    expect(c.fields.filter((f) => f.kind === "account").map((f) => f.flag)).toEqual(["--buyer", "--seller", "--arbiter"]);
+    const r = buildCommand(c, initialValues(c));
+    expect(r.ok && r.args).toEqual(["escrow", "create", "--buyer", "alice", "--seller", "bob", "--arbiter", "carol", "--amount", "1", "--network", "simnet", "--json"]);
+    const split = buildCommand(c, { ...initialValues(c), amount: "", buyerAmount: "0.6", sellerAmount: "0.4", feeBudget: "2000000" });
+    expect(split.ok && split.args).toEqual(["escrow", "create", "--buyer", "alice", "--seller", "bob", "--arbiter", "carol", "--buyer-amount", "0.6", "--seller-amount", "0.4", "--fee-budget", "2000000", "--network", "simnet", "--json"]);
+  });
+
+  it("fund: the escrow id, the buyer's account (it signs), --wait only when asked", () => {
+    const c = byId("escrow-fund");
+    expect(c.fields.find((f) => f.id === "from")).toMatchObject({ kind: "account", signs: true, required: true });
+    expect(buildCommand(c, initialValues(c))).toEqual({ ok: false, error: "Escrow is required.", fieldId: "id" });
+    const r = buildCommand(c, initialValues(c, { id: ID }));
+    expect(r.ok && r.args).toEqual(["escrow", "fund", ID, "--from", "alice", "--network", "simnet", "--json"]);
+    const w = buildCommand(c, { ...initialValues(c, { id: ID }), wait: "true" });
+    expect(w.ok && w.args).toContain("--wait");
+  });
+
+  it("status reads only; reconcile asks the node", () => {
+    const s = byId("escrow-status");
+    expect(s.offline).toBe(true);
+    expect(buildCommand(s, { id: ID })).toMatchObject({ ok: true, args: ["escrow", "status", ID, "--json"] });
+    const r = byId("escrow-reconcile");
+    expect(r.offline).toBeUndefined();
+    expect(buildCommand(r, initialValues(r, { id: ID }))).toMatchObject({ ok: true, args: ["escrow", "reconcile", ID, "--network", "simnet", "--json"] });
+  });
+
+  it("prepare: a branch of either contract, the mutual shares together", () => {
+    const c = byId("escrow-prepare");
+    const branches = c.fields.find((f) => f.id === "branch")!.choices!.map((x) => x.value);
+    expect(branches).toEqual(["mutualRelease", "releaseToSeller", "refundBuyer", "executeSplit", "fullRelease", "fullRefund"]);
+    const r = buildCommand(c, initialValues(c, { id: ID }));
+    expect(r.ok && r.args).toEqual(["escrow", "prepare", ID, "--branch", "mutualRelease", "--network", "simnet", "--json"]);
+    const shares = buildCommand(c, { ...initialValues(c, { id: ID }), buyerShare: "0.25", sellerShare: "0.75", out: ".hardkas/ide/release.request.json" });
+    expect(shares.ok && shares.args).toEqual(["escrow", "prepare", ID, "--branch", "mutualRelease", "--buyer-share", "0.25", "--seller-share", "0.75", "--out", ".hardkas/ide/release.request.json", "--network", "simnet", "--json"]);
+  });
+
+  it("sign: an escrow id or a request file, one role, a signing account", () => {
+    const c = byId("escrow-sign");
+    expect(c.fields.find((f) => f.id === "account")).toMatchObject({ kind: "account", signs: true });
+    const r = buildCommand(c, initialValues(c, { target: ID, account: "bob", role: "seller" }));
+    expect(r.ok && r.args).toEqual(["escrow", "sign", ID, "--role", "seller", "--account", "bob", "--network", "simnet", "--json"]);
+    const file = buildCommand(c, initialValues(c, { target: "escrow-0b0a3a4e-mutualRelease.request.json", account: "carol", role: "arbiter" }));
+    expect(file.ok && file.args[2]).toBe("escrow-0b0a3a4e-mutualRelease.request.json");
+    expect(buildCommand(c, initialValues(c, { target: ID, role: "owner" })).ok).toBe(false);
+  });
+
+  it("release: the signed request files of other workspaces, one argument each", () => {
+    const c = byId("escrow-release");
+    const r = buildCommand(c, initialValues(c, { id: ID }));
+    expect(r.ok && r.args).toEqual(["escrow", "release", ID, "--network", "simnet", "--json"]);
+    const files = buildCommand(c, { ...initialValues(c, { id: ID }), signatures: "a.request.json, b.request.json" });
+    expect(files.ok && files.args).toEqual(["escrow", "release", ID, "--signatures", "a.request.json", "b.request.json", "--network", "simnet", "--json"]);
   });
 });
 

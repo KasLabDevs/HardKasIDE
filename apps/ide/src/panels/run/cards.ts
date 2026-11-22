@@ -474,4 +474,125 @@ export const PSKT_CARDS: ReadonlyArray<CommandSpec> = [
   }
 ];
 
-export const ALL_CARDS: ReadonlyArray<CommandSpec> = [...SILVER_CARDS, ...COVENANT_CARDS, ...KCC20_CARDS, ...ZK_CARDS, ...TX_CARDS, ...PSKT_CARDS];
+// ---- Escrow: the v2 lifecycle (EscrowFull / EscrowSplit) on the local node ----------------------------------
+
+/** The local node only: `hardkas escrow` refuses mainnet itself and testnet needs an opt-in the IDE does not offer. */
+const ESCROW_NETWORK = { id: "network", label: "Network", kind: "select" as const, as: "option" as const, flag: "--network", required: true, initial: "simnet", choices: [NETWORKS[0]] };
+const ESCROW_ID = { id: "id", label: "Escrow", kind: "text" as const, as: "arg" as const, required: true, placeholder: "escrow id (uuid)", hint: "Pick one in the list above, or paste its id." };
+const ESCROW_BRANCHES = [
+  { value: "mutualRelease", label: "mutualRelease (buyer + seller; Full and Split)" },
+  { value: "releaseToSeller", label: "releaseToSeller (seller + arbiter; EscrowFull)" },
+  { value: "refundBuyer", label: "refundBuyer (buyer + arbiter; EscrowFull)" },
+  { value: "executeSplit", label: "executeSplit (a party + arbiter; EscrowSplit)" },
+  { value: "fullRelease", label: "fullRelease (EscrowSplit)" },
+  { value: "fullRefund", label: "fullRefund (EscrowSplit)" }
+];
+
+export const ESCROW_CARDS: ReadonlyArray<CommandSpec> = [
+  {
+    id: "escrow-create",
+    title: "Create an escrow",
+    summary: "Compiles a v2 escrow between three parties with the pinned silverc and records it under .hardkas/escrows. Nothing is sent: fund it next.",
+    words: ["escrow", "create"],
+    action: "Create",
+    fields: [
+      { id: "buyer", label: "Buyer", kind: "account", as: "option", flag: "--buyer", required: true, initial: "alice", hint: "Pays the funding; refunds go back to this account." },
+      { id: "seller", label: "Seller", kind: "account", as: "option", flag: "--seller", required: true, initial: "bob", hint: "Releases pay this account." },
+      { id: "arbiter", label: "Arbiter", kind: "account", as: "option", flag: "--arbiter", required: true, initial: "carol", hint: "Co-signs a one-sided release or refund." },
+      { id: "amount", label: "Principal (KAS) · EscrowFull", kind: "text", as: "option", flag: "--amount", initial: "1", hint: "Every branch pays this whole amount. Empty it to make an EscrowSplit instead." },
+      { id: "buyerAmount", label: "Buyer allocation (KAS) · EscrowSplit", kind: "text", as: "option", flag: "--buyer-amount", hint: "With the seller allocation; executeSplit pays both at once." },
+      { id: "sellerAmount", label: "Seller allocation (KAS) · EscrowSplit", kind: "text", as: "option", flag: "--seller-amount" },
+      { id: "feeBudget", label: "Fee budget (sompi)", kind: "text", as: "option", flag: "--fee-budget", placeholder: "2000000", hint: "The fee of every release, added to the funding. Default 0.02 KAS; at least the node's minimum relay fee, checked before funding." },
+      { id: "buyerDestination", label: "Refunds pay", kind: "text", as: "option", flag: "--buyer-destination", placeholder: "default: the buyer's own address" },
+      { id: "sellerDestination", label: "Releases pay", kind: "text", as: "option", flag: "--seller-destination", placeholder: "default: the seller's own address" },
+      ESCROW_NETWORK
+    ]
+  },
+  {
+    id: "escrow-fund",
+    title: "Fund the escrow",
+    summary: "One payment of principal + fee budget from the buyer's account to the escrow's address, planned, signed and sent by HardKAS's payment path. Refused before signing if a release could not pay the node's minimum fee.",
+    words: ["escrow", "fund"],
+    action: "Fund",
+    fields: [
+      ESCROW_ID,
+      { id: "from", label: "Buyer's account", kind: "account", as: "option", flag: "--from", required: true, signs: true, initial: "alice", hint: "Its key must be the escrow's buyer key." },
+      { id: "wait", label: "Wait until a chain block accepts it (120 s)", kind: "flag", as: "option", flag: "--wait", hint: "Needs blocks: mine a burst or start the miner while it waits. Without it the funding is broadcast and reconcile confirms it later." },
+      ESCROW_NETWORK
+    ]
+  },
+  {
+    id: "escrow-status",
+    title: "Status of an escrow",
+    summary: "What the workspace's record says: state, funding, prepared release, signatures and release. No node is contacted; reconcile asks the node.",
+    words: ["escrow", "status"],
+    offline: true,
+    action: "Show",
+    fields: [ESCROW_ID]
+  },
+  {
+    id: "escrow-prepare",
+    title: "Prepare a release",
+    summary: "Builds the one transaction of a branch over the recorded funding and writes the release request each required signer signs (here, or in their own workspace).",
+    words: ["escrow", "prepare"],
+    action: "Prepare",
+    fields: [
+      ESCROW_ID,
+      { id: "branch", label: "Branch", kind: "select", as: "option", flag: "--branch", required: true, initial: "mutualRelease", choices: ESCROW_BRANCHES },
+      { id: "buyerShare", label: "Buyer's share (KAS)", kind: "text", as: "option", flag: "--buyer-share", hint: "mutualRelease only, with the seller's share; together the principal. Empty: the contract's default allocation." },
+      { id: "sellerShare", label: "Seller's share (KAS)", kind: "text", as: "option", flag: "--seller-share" },
+      { id: "out", label: "Write the request to", kind: "text", as: "option", flag: "--out", placeholder: "default: escrow-<id>-<branch>.request.json in the workspace" },
+      ESCROW_NETWORK
+    ]
+  },
+  {
+    id: "escrow-sign",
+    title: "Sign the release",
+    summary: "Signs the prepared release as one role with an account of this workspace. Given an escrow id the signature goes into its record; given a request file from another workspace, the file is checked against the escrow's terms and signed.",
+    words: ["escrow", "sign"],
+    action: "Sign",
+    fields: [
+      { id: "target", label: "Escrow id or release request", kind: "path", as: "arg", required: true, suggest: "\\.request\\.json$", placeholder: "escrow id, or escrow-….request.json", hint: "Pick an escrow in the list above, or a request file another workspace prepared." },
+      {
+        id: "role",
+        label: "Role",
+        kind: "select",
+        as: "option",
+        flag: "--role",
+        required: true,
+        initial: "buyer",
+        choices: [
+          { value: "buyer", label: "buyer" },
+          { value: "seller", label: "seller" },
+          { value: "arbiter", label: "arbiter" }
+        ]
+      },
+      { id: "account", label: "Signing account", kind: "account", as: "option", flag: "--account", required: true, signs: true, initial: "alice", hint: "Its key must be the escrow's key for that role." },
+      { id: "out", label: "Write the signed request to", kind: "text", as: "option", flag: "--out", placeholder: "with a request file; default: the file itself" },
+      ESCROW_NETWORK
+    ]
+  },
+  {
+    id: "escrow-release",
+    title: "Release",
+    summary: "Sends the prepared release once every required role signed: each signature verified (BIP340) first, then one send. Refused while the node does not list the funding unspent (ESCROW_FUNDING_NOT_UNSPENT): reconcile after a block, then release.",
+    words: ["escrow", "release"],
+    action: "Release",
+    fields: [
+      ESCROW_ID,
+      { id: "signatures", label: "Signed request files", kind: "text", as: "option", flag: "--signatures", list: true, placeholder: "a.request.json, b.request.json", hint: "From signers in other workspaces, separated by commas. Empty when everyone signed here." },
+      { id: "wait", label: "Wait until a chain block accepts it (120 s)", kind: "flag", as: "option", flag: "--wait", hint: "Needs blocks: mine a burst or start the miner while it waits." },
+      ESCROW_NETWORK
+    ]
+  },
+  {
+    id: "escrow-reconcile",
+    title: "Reconcile with the node",
+    summary: "Looks at the node once for the pending funding and release (mempool, then chain) and records what it shows: accepted by a chain block → FUNDED / RELEASED.",
+    words: ["escrow", "reconcile"],
+    action: "Reconcile",
+    fields: [ESCROW_ID, ESCROW_NETWORK]
+  }
+];
+
+export const ALL_CARDS: ReadonlyArray<CommandSpec> = [...SILVER_CARDS, ...COVENANT_CARDS, ...KCC20_CARDS, ...ZK_CARDS, ...TX_CARDS, ...PSKT_CARDS, ...ESCROW_CARDS];
