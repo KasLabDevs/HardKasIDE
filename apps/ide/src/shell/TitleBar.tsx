@@ -881,7 +881,7 @@ function PropertiesDialog({ onClose }: { onClose: () => void }) {
               <span className="text-fg-muted">Active Target:</span>
               <span className="col-span-2 text-accent">{envOf(target).label}</span>
               <span className="text-fg-muted">HardKas CLI:</span>
-              <span className="col-span-2 text-fg">{cli?.version ?? "0.13.0-rc.1"}</span>
+              <span className="col-span-2 text-fg">{cli?.version ?? "0.13.0-rc.3"}</span>
               <span className="text-fg-muted">SilverScript:</span>
               <span className="col-span-2 text-fg">silverc v1.0.0 · pragma ^0.1.0 · TX v1</span>
             </div>

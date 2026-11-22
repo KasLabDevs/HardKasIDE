@@ -23,7 +23,7 @@ The **Explorer** card (Blocks tab) shows the blocks the miner found, its rate, a
 
 ## Reset from scratch
 
-The reset (it asks first) stops the node, clears the project's chain state (`.hardkas/node-data`, `.hardkas/localnet`), wipes the node with `hardkas node reset --yes`, starts a fresh one and funds the dev accounts. Keys are never deleted: the dev keystores (`.hardkas/dev-accounts`) are moved to `.hardkas/backups/reset-<time>/`, and `.hardkas/accounts.real.json` (which can hold testnet keys) stays in place while a copy goes to the same backup. The reset is refused when `.hardkas` is a link to another folder, and in a folder that is not trusted.
+The reset (it asks first) stops the node, clears the project's chain state (`.hardkas/node-data`, `.hardkas/localnet`), wipes the node with `hardkas localnet reset --yes` (on a CLI without `localnet reset`, up to 0.13.0-rc.3, the deprecated `hardkas node reset --yes`), starts a fresh one and funds the dev accounts. Keys are never deleted: the dev keystores (`.hardkas/dev-accounts`) are moved to `.hardkas/backups/reset-<time>/`, and `.hardkas/accounts.real.json` (which can hold testnet keys) stays in place while a copy goes to the same backup. The reset is refused when `.hardkas` is a link to another folder, and in a folder that is not trusted.
 
 ## Which hardkas runs
 

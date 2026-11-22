@@ -186,11 +186,11 @@ export class EnvironmentPlugin extends Plugin {
   }
 
   /**
-   * Wipes the local chain and starts over: stop node + miner, `node reset --yes` (removes all local chain
+   * Wipes the local chain and starts over: stop node + miner, `localnet reset --yes` (removes all local chain
    * data), `localnet start --toccata` (fresh node, dev accounts recreated), and funds all dev accounts so
    * none remain at 0 KAS. Callers must have asked the user to confirm: this is destructive. The server moves the
    * account keys (accounts.real.json, dev-accounts) to .hardkas/backups/reset-<time>/ instead of deleting them, and
-   * leaves the containers to HardKas (`localnet stop`, `node reset`).
+   * leaves the containers to HardKas (`localnet stop`, `localnet reset`).
    */
   async resetNode(): Promise<void> {
     await this.runOp(
@@ -207,7 +207,7 @@ export class EnvironmentPlugin extends Plugin {
               ? ` Dev keystores were moved to ${saved.backupDir}${saved.copied.length ? "; accounts.real.json stays in place and a copy is there too" : ""}.`
               : "";
             if (where) useIde.getState().setStatus(`Local chain reset.${where}`);
-            await this.runCli(["node", "reset", "--yes"], `node reset failed: the local chain was not wiped.${where}`);
+            await this.wipeLocalChain(where);
           }
         },
         { ...this.stepStartNode(), label: "Starting a fresh node" },
@@ -217,6 +217,22 @@ export class EnvironmentPlugin extends Plugin {
       ],
       "Fresh chain ready. All dev accounts are funded and confirmed."
     );
+  }
+
+  /**
+   * `localnet reset --yes` (HardKas after 0.13.0-rc.3: stops the node and its miner, removes this workspace's
+   * chain data, keeps keys and records, refuses a running node whose chain is another workspace's). On an older
+   * CLI, where `localnet` has no reset, the now deprecated `node reset --yes` does the same wipe.
+   */
+  private async wipeLocalChain(where: string): Promise<void> {
+    const run = await this.console().runHardkas(["localnet", "reset", "--yes", "--json"]);
+    if (run.status === "succeeded") return;
+    if (isUnsupportedCliFeature(run, "reset")) {
+      this.console().info("This HardKas CLI has no `localnet reset`; using the older `node reset`.");
+      await this.runCli(["node", "reset", "--yes"], `node reset failed: the local chain was not wiped.${where}`);
+      return;
+    }
+    throw new Error(`${extractCliError(run.result, run.stderr) ?? `localnet reset failed (exit ${run.exitCode})`}: the local chain was not wiped.${where}`);
   }
 
   /** Runs a hardkas command through the console and throws with `failure` when it does not succeed. */

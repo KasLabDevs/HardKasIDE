@@ -78,7 +78,7 @@ function main() {
   const silverc = resolveSilverc();
   if (!fs.existsSync(silverc.file)) {
     console.error(`silverc not found (${silverc.from}): ${silverc.file}`);
-    console.error("Install the pinned compiler with:  npx -y @hardkas/cli@0.13.0-rc.1 toolchain install silverc");
+    console.error("Install the pinned compiler with:  npx -y @hardkas/cli@0.13.0-rc.3 toolchain install silverc");
     console.error("or point SILVERC at a silverc v1.0.0 binary.");
     return 2;
   }

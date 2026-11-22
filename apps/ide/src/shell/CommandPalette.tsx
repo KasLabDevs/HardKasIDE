@@ -130,7 +130,7 @@ export function CommandPalette() {
       { id: "node:start", kind: "command", title: "Node: start localnet (rusty-kaspad)", hint: "hardkas localnet start --toccata", run: () => engine.get<EnvironmentPlugin>("environment").startNode() },
       { id: "node:stop", kind: "command", title: "Node: stop localnet", hint: "hardkas localnet stop", run: () => engine.get<EnvironmentPlugin>("environment").stopNode() },
       { id: "node:restart", kind: "command", title: "Node: restart localnet", run: () => engine.get<EnvironmentPlugin>("environment").restartNode() },
-      { id: "node:reset", kind: "command", title: "Node: reset from scratch (wipes the local chain)", hint: "hardkas node reset --yes", run: () => confirmAndResetNode(engine) },
+      { id: "node:reset", kind: "command", title: "Node: reset from scratch (wipes the local chain)", hint: "hardkas localnet reset --yes", run: () => confirmAndResetNode(engine) },
       { id: "sidebar", kind: "command", title: "View: toggle primary side bar", keys: "Ctrl+B", run: () => ide().setSidebarOpen(!ide().sidebarOpen) },
       { id: "terminal:new", kind: "command", title: "Terminal: new terminal", keys: "Ctrl+Shift+`", run: () => ide().requestTerminal() },
       { id: "zoom:in", kind: "command", title: "View: zoom in", keys: "Ctrl+=", run: () => zoomBy(10) },

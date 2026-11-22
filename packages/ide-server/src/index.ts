@@ -899,7 +899,7 @@ app.post("/api/node/miner", async (c) => {
 });
 
 // Prepares the open workspace for a fresh local chain. The node and miner containers are NOT touched here: the IDE's
-// reset flow stops them with `hardkas localnet stop` and wipes the node with `hardkas node reset --yes`, so HardKas
+// reset flow stops them with `hardkas localnet stop` and wipes the node with `hardkas localnet reset --yes`, so HardKas
 // itself decides what belongs to its localnet (the containers are shared by every HardKas project on this machine).
 // Account keys are moved to .hardkas/backups/reset-<time>/, never deleted: accounts.real.json can hold testnet keys.
 app.post("/api/node/reset", async (c) => {

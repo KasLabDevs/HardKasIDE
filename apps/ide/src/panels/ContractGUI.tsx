@@ -121,7 +121,7 @@ export function ContractGUI({ includeCovenants = true }: { includeCovenants?: bo
       {target === "localnet" && (!node?.miner?.running || busy !== null) && <MinerNotice compact />}
       {recordProblems.length > 0 && (
         <div role="status" className="rounded border border-warn/40 bg-warn/10 p-2 text-[12px] text-warn break-words">
-          {recordProblems.length} record{recordProblems.length === 1 ? "" : "s"} under .hardkas/artifacts/silver could not be read as expected (see the Console). A newer HardKas CLI may have changed their format; the IDE was tested with {cli?.pinned ?? "0.13.0-rc.1"}.
+          {recordProblems.length} record{recordProblems.length === 1 ? "" : "s"} under .hardkas/artifacts/silver could not be read as expected (see the Console). A newer HardKas CLI may have changed their format; the IDE was tested with {cli?.pinned ?? "0.13.0-rc.3"}.
         </div>
       )}
 

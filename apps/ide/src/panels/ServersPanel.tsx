@@ -132,7 +132,7 @@ export function ServersPanel() {
             onClick={async () => {
               if (await confirmDialog("Reset the local node from scratch?\n\nThis stops the node and miner, DELETES the whole local chain (deployed contracts and previous history disappear), then recreates and seeds the dev accounts (100 KAS each from localnet Treasury, waiting for confirmed balances). Account keys are not deleted: the simnet dev keystores (.hardkas/dev-accounts) are moved to .hardkas/backups/reset-<time>/, and .hardkas/accounts.real.json stays where it is (a copy goes to the same backup), so testnet accounts keep working. Artifacts and your files are kept.", { title: "Reset local node", confirmLabel: "Reset from scratch", danger: true })) void env.resetNode();
             }}
-            title="hardkas localnet stop → hardkas node reset --yes → hardkas localnet start"
+            title="hardkas localnet stop → hardkas localnet reset --yes → hardkas localnet start"
           >
             <Eraser size={12} /> {nodeBusy === "reset" ? "Resetting…" : "Reset from scratch…"}
           </button>

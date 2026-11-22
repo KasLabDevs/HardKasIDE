@@ -17,7 +17,7 @@ const IDE_REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
  */
 
 /** The CLI version the IDE was built and tested against; the npx fallback pins it. */
-export const HARDKAS_CLI_VERSION = "0.13.0-rc.1";
+export const HARDKAS_CLI_VERSION = "0.13.0-rc.3";
 
 export interface CliInfo {
   /** What `hardkas --version` printed, or null when it could not run. */

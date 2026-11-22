@@ -28,7 +28,7 @@ jobs:
         run: node scripts/version.mjs check
       # The project templates must compile with the SilverScript compiler the HardKas CLI installs.
       - name: Install silverc
-        run: npx -y @hardkas/cli@0.13.0-rc.1 toolchain install silverc
+        run: npx -y @hardkas/cli@0.13.0-rc.3 toolchain install silverc
       - name: Project templates compile
         run: node scripts/check-templates.mjs
 
