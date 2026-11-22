@@ -8,6 +8,7 @@ import { useSilver, type CovenantRecord, type SilParam } from "@/store/silver";
 import { copyText } from "@/utils/clipboard";
 import { hexToBytes } from "@/utils/kaspaAddress";
 import { groupCovenantChains } from "@/utils/silverRecords";
+import { CovenantAdvanceForm, CovenantStartForm, EngineCovenantCard, stateJsonFromAbi } from "./CovenantEngineGUI";
 
 export function toSilverArg(p: SilParam, raw: string): { kind: string; value: unknown } | { kind: "signature"; account: string } {
   const v = raw.trim();
@@ -88,16 +89,19 @@ export function CovenantChainSection({ alwaysShowHeader = false }: { alwaysShowH
   const engine = useEngine();
   const silver = engine.get<SilverPlugin>("silverContracts");
   const covenants = useSilver((s) => s.covenants);
+  const engineCovenants = useSilver((s) => s.engineCovenants);
   const compiled = useSilver((s) => s.compiled);
   const busy = useSilver((s) => s.busy);
   const [refreshing, setRefreshing] = useState(false);
 
   const chains = useMemo(() => groupCovenantChains(covenants), [covenants]);
+  // a covenant the engine's records know and a silverCovenant record also names is one chain: the record card shows it
+  const engineOnly = useMemo(() => engineCovenants.filter((c) => !chains.some((g) => g.covenantId === c.covenantId)), [engineCovenants, chains]);
   const hasCompiledCovenant = Boolean(
     compiled?.contracts.some((c) => c.covenantPolicies && Object.keys(c.covenantPolicies).length > 0)
   );
 
-  if (!alwaysShowHeader && chains.length === 0 && !hasCompiledCovenant) return null;
+  if (!alwaysShowHeader && chains.length === 0 && engineOnly.length === 0 && !hasCompiledCovenant) return null;
 
   const refresh = async () => {
     setRefreshing(true);
@@ -113,7 +117,7 @@ export function CovenantChainSection({ alwaysShowHeader = false }: { alwaysShowH
       <div className="label flex items-center justify-between">
         <span className="tabular-nums flex items-center gap-1.5">
           <ShieldCheck size={12} className="text-accent" />
-          Toccata Covenants (v1) · {chains.length}
+          Toccata Covenants (v1) · {chains.length + engineOnly.length}
         </span>
         <button
           type="button"
@@ -125,21 +129,27 @@ export function CovenantChainSection({ alwaysShowHeader = false }: { alwaysShowH
           <RefreshCw size={11} className={refreshing ? "animate-spin" : ""} />
         </button>
       </div>
-      {chains.length === 0 ? (
+      {chains.length === 0 && engineOnly.length === 0 ? (
         <div className="rounded border border-border bg-bg-elev p-2 text-fg-muted text-[12px] leading-snug">
-          No active v1 chains yet. Compile a <code className="font-mono text-fg">#[covenant]</code> <code className="font-mono text-fg">.sil</code> contract and click <span className="text-fg font-medium">Genesis</span> in SilverScript contracts to create an anchor UTXO and execute state transitions.
+          No active v1 chains yet. Compile a <code className="font-mono text-fg">#[covenant]</code> <code className="font-mono text-fg">.sil</code> contract and click <span className="text-fg font-medium">Genesis</span> in SilverScript contracts to create an anchor UTXO and execute state transitions, or <span className="text-fg font-medium">Start a covenant</span> below for one with several outputs.
         </div>
       ) : (
-        chains.map((g, idx) => (
-          <CovenantChainCard
-            key={g.covenantId}
-            covenantId={g.covenantId}
-            head={g.head}
-            history={g.history}
-            defaultOpen={idx === 0}
-          />
-        ))
+        <>
+          {chains.map((g, idx) => (
+            <CovenantChainCard
+              key={g.covenantId}
+              covenantId={g.covenantId}
+              head={g.head}
+              history={g.history}
+              defaultOpen={idx === 0}
+            />
+          ))}
+          {engineOnly.map((c, idx) => (
+            <EngineCovenantCard key={c.covenantId} chain={c} defaultOpen={chains.length === 0 && idx === 0} />
+          ))}
+        </>
       )}
+      <CovenantStartForm />
     </div>
   );
 }
@@ -157,8 +167,12 @@ function CovenantChainCard({
 }) {
   const engine = useEngine();
   const busy = useSilver((s) => s.busy);
+  const engineCovenants = useSilver((s) => s.engineCovenants);
   const [open, setOpen] = useState(defaultOpen);
   const [copiedId, setCopiedId] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
+  // the same covenant in the engine's records (an `advance` after a `genesis`): its tip is the one to spend next
+  const engineChain = engineCovenants.find((c) => c.covenantId === covenantId);
 
   const policyNames = useMemo(() => {
     const map = head.abi?.covenantPolicies;
@@ -270,6 +284,13 @@ function CovenantChainCard({
             </div>
           </div>
 
+          {engineChain && engineChain.transactions.some((t) => t.kind === "transition") && (
+            <div className="text-[12px] text-fg-muted leading-snug">
+              The v1 engine also recorded {engineChain.transactions.filter((t) => t.kind === "transition").length} transition(s) of this covenant (silver covenant advance); its tip by those records:{" "}
+              {engineChain.tip.length === 0 ? "none" : engineChain.tip.map((t) => `${t.outpoint.slice(0, 8)}…:${t.index} ${formatKas(t.amountSompi)}`).join(", ")}.
+            </div>
+          )}
+
           {/* Transition Policies */}
           {policyNames.length === 0 ? (
             <div className="text-[12px] text-warn">
@@ -284,6 +305,25 @@ function CovenantChainCard({
                 disabled={busy !== null}
               />
             ))
+          )}
+
+          {/* HardKAS 0.13: any topology through the v1 engine, from the compile record and the covenant id */}
+          <button type="button" className="btn-ghost justify-center w-full" data-testid={`covenant-advance-toggle-${head.contract}`} onClick={() => setAdvancing((v) => !v)}>
+            {advancing ? <ChevronDown size={11} /> : <ChevronRight size={11} />} Advance (silver covenant advance: 1:N, N:M, termination)
+          </button>
+          {advancing && (
+            <CovenantAdvanceForm
+              target={{
+                covenantId,
+                compileRecordPath: head.compileRecordPath,
+                contract: head.contract,
+                abi: head.abi,
+                tip:
+                  engineChain && engineChain.tip.length > 0
+                    ? engineChain.tip.map((t) => ({ outpoint: t.outpoint, amountSompi: t.amountSompi, declaredState: t.declaredState }))
+                    : [{ outpoint: `${head.outpoint.transactionId}:${head.outpoint.index}`, amountSompi: head.valueSompi, declaredState: head.abi?.stateFields?.length ? (JSON.parse(stateJsonFromAbi(head.abi)) as Record<string, unknown>) : undefined }]
+              }}
+            />
           )}
         </div>
       )}

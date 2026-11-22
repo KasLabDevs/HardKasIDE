@@ -8,7 +8,7 @@ import { NodeBusyCover } from "@/shell/NodeOpProgress";
 import { ContractGUI } from "./ContractGUI";
 import { CovenantChainSection } from "./CovenantGUI";
 import { CardGroup } from "./run/CommandCard";
-import { COVENANT_CARDS, KCC20_CARDS, SILVER_CARDS, ZK_CARDS } from "./run/cards";
+import { COVENANT_CARDS, KCC20_CARDS, KCC20_NODE_CARDS, SILVER_CARDS, ZK_CARDS } from "./run/cards";
 import { PaymentsTab } from "./run/PaymentsTab";
 
 type TabId = "payments" | "silver" | "covenants" | "kcc20" | "zk";
@@ -91,12 +91,21 @@ export function RunPanel() {
       break;
     case "kcc20":
       body = (
-        <CardGroup
-          title="KCC-20 tokens"
-          note="Encode and decode a token state, check a transfer against the leader's rules, read a program artifact. Everything here is read-only."
-          specs={KCC20_CARDS}
-          openFirst
-        />
+        <div className="space-y-4">
+          <CardGroup
+            title="On the node (experimental)"
+            note="Deploy a token, transfer it and read balances on the local node through HardKAS's v1 engine (hardkas kcc20 deploy | transfer | balance). Signed by the development accounts; mainnet is refused."
+            specs={KCC20_NODE_CARDS}
+            openFirst
+          />
+          <div className="border-t border-border pt-3">
+            <CardGroup
+              title="Off chain"
+              note="Encode and decode a token state, check a transfer against the leader's rules, read a program artifact. Everything here is read-only."
+              specs={KCC20_CARDS}
+            />
+          </div>
+        </div>
       );
       break;
     case "zk":

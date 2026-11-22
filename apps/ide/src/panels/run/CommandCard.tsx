@@ -1,22 +1,41 @@
 import clsx from "clsx";
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronRight, Copy, Loader2, Play, ShieldCheck, XCircle } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronRight, Copy, Loader2, Play, Send, ShieldCheck, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { ConsolePlugin } from "@/plugins/console";
 import type { FileManagerPlugin } from "@/plugins/fileManager";
 import { flattenTreePaths } from "@/shell/commandPaletteModel";
+import { useEnv } from "@/store/env";
 import { useIde } from "@/store/ide";
 import { useSilver } from "@/store/silver";
 import { copyText } from "@/utils/clipboard";
 import { buildCommand, commandLine, failureText, initialValues, readVerdict, resultRows, type CommandSpec, type FieldSpec, type ResultRow, type Verdict } from "./commandSpec";
 
-interface Outcome {
+/** What one run of a command came to: its verdict, its rows, the exact command line, and why it failed when it did. */
+export interface Outcome {
   verdict: Verdict;
   label?: string;
   rows: ResultRow[];
   line: string;
   failure?: string;
   raw: unknown;
+}
+
+/** The outcome of a finished run (`console.runHardkas`), read the way every card reads it. */
+export function outcomeOf(args: ReadonlyArray<string>, res: { status: string; exitCode: number | null; result: unknown; stderr?: string }): Outcome {
+  const succeeded = res.status === "succeeded";
+  const { verdict, label } = readVerdict(res.result, succeeded);
+  const failed = verdict === "bad" || !succeeded;
+  return {
+    verdict,
+    label,
+    // A refusal (exit 1 with a verdict) still carries its facts: show them, plus why.
+    rows: resultRows(res.result),
+    line: commandLine(args),
+    // An error envelope ({ ok: false, code, message }) or no answer at all: say it as a sentence above the rows.
+    failure: failed && (res.result == null || (res.result as { ok?: unknown }).ok === false) ? failureText(res.result, res.stderr, res.exitCode) : undefined,
+    raw: res.result
+  };
 }
 
 /** One `hardkas` command as a card: its fields, a run button, and the answer read back as a verdict and rows. */
@@ -58,19 +77,8 @@ export function CommandCard({ spec, defaultOpen = false }: { spec: CommandSpec; 
       const fm = engine.get<FileManagerPlugin>("fileManager");
       for (const f of built.files) await fm.writeFile(f.path, f.content);
       const res = await engine.get<ConsolePlugin>("console").runHardkas(built.args);
-      const succeeded = res.status === "succeeded";
-      const { verdict, label } = readVerdict(res.result, succeeded);
-      const failed = verdict === "bad" || !succeeded;
-      setOutcome({
-        verdict,
-        label,
-        // A refusal (exit 1 with a verdict) still carries its facts: show them, plus why.
-        rows: resultRows(res.result),
-        line: commandLine(built.args),
-        // An error envelope ({ ok: false, code, message }) or no answer at all: say it as a sentence above the rows.
-        failure: failed && (res.result == null || (res.result as { ok?: unknown }).ok === false) ? failureText(res.result, res.stderr, res.exitCode) : undefined,
-        raw: res.result
-      });
+      setOutcome(outcomeOf(built.args, res));
+      if (spec.sends) void engine.call("silverContracts", "refreshDeployments").catch(() => undefined);
     } catch (e) {
       setProblem({ text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -91,15 +99,22 @@ export function CommandCard({ spec, defaultOpen = false }: { spec: CommandSpec; 
         {open ? <ChevronDown size={12} className="shrink-0 text-fg-muted" /> : <ChevronRight size={12} className="shrink-0 text-fg-muted" />}
         <span className="font-semibold text-fg truncate">{spec.title}</span>
         {spec.alpha && <span className="shrink-0 rounded-full border border-warn/40 px-1.5 text-[12px] text-warn">alpha</span>}
+        {spec.experimental && <ExperimentalBadge />}
         {outcome && <VerdictDot verdict={outcome.verdict} />}
       </button>
 
       {open && (
         <div id={bodyId} className="px-2.5 pb-2.5 space-y-2 border-t border-border/70 pt-2">
           <p className="text-fg-muted leading-snug">{spec.summary}</p>
+          {spec.caveat && <p className="text-[12px] text-warn leading-snug">{spec.caveat}</p>}
           {spec.offline && (
             <div className="flex items-center gap-1 text-[12px] text-fg-muted">
               <ShieldCheck size={12} className="text-ok shrink-0" /> Reads and checks only: sends nothing, signs nothing.
+            </div>
+          )}
+          {spec.sends && (
+            <div className="flex items-center gap-1 text-[12px] text-fg-muted">
+              <Send size={12} className="text-accent shrink-0" /> Signs with the named development account and sends to the node. No password is taken here.
             </div>
           )}
 
@@ -124,6 +139,15 @@ export function CommandCard({ spec, defaultOpen = false }: { spec: CommandSpec; 
   );
 }
 
+/** HardKAS labels the command experimental: said the same way everywhere. */
+export function ExperimentalBadge({ title }: { title?: string }) {
+  return (
+    <span className="shrink-0 rounded-full border border-warn/40 px-1.5 text-[12px] text-warn" title={title}>
+      experimental
+    </span>
+  );
+}
+
 function VerdictDot({ verdict }: { verdict: Verdict }) {
   if (verdict === "ok") return <CheckCircle2 size={13} className="ml-auto shrink-0 text-ok" aria-label="last run: ok" />;
   if (verdict === "bad") return <XCircle size={13} className="ml-auto shrink-0 text-error" aria-label="last run: failed" />;
@@ -133,6 +157,7 @@ function VerdictDot({ verdict }: { verdict: Verdict }) {
 function Field({ cardId, field, value, onChange, files, invalid }: { cardId: string; field: FieldSpec; value: string; onChange: (v: string) => void; files: string[]; invalid: boolean }) {
   const id = `${cardId}-${field.id}`;
   const listId = `${id}-files`;
+  const accounts = useEnv((s) => s.accounts);
   const suggestions = useMemo(() => {
     if (field.kind !== "path" || !field.suggest) return [];
     const re = new RegExp(field.suggest, "i");
@@ -167,6 +192,16 @@ function Field({ cardId, field, value, onChange, files, invalid }: { cardId: str
             </option>
           ))}
         </select>
+      ) : field.kind === "account" && accounts.length > 0 ? (
+        // The workspace's accounts by name: the development accounts the node seeded (no password), or the ones added.
+        <select {...common} value={value} onChange={(e) => onChange(e.target.value)}>
+          <option value="">{field.required ? "choose an account" : "(default)"}</option>
+          {accounts.map((a) => (
+            <option key={a.name} value={a.name}>
+              {a.name}
+            </option>
+          ))}
+        </select>
       ) : field.kind === "json" || field.multiline ? (
         <textarea
           {...common}
@@ -179,7 +214,7 @@ function Field({ cardId, field, value, onChange, files, invalid }: { cardId: str
         />
       ) : (
         <>
-          <input {...common} list={field.kind === "path" ? listId : undefined} spellCheck={false} autoComplete="off" value={value} placeholder={field.placeholder} onChange={(e) => onChange(e.target.value)} />
+          <input {...common} list={field.kind === "path" ? listId : undefined} spellCheck={false} autoComplete="off" value={value} placeholder={field.kind === "account" ? "account name (no accounts loaded yet)" : field.placeholder} onChange={(e) => onChange(e.target.value)} />
           {field.kind === "path" && (
             <datalist id={listId}>
               {suggestions.map((p) => (
@@ -194,7 +229,8 @@ function Field({ cardId, field, value, onChange, files, invalid }: { cardId: str
   );
 }
 
-function Answer({ outcome }: { outcome: Outcome }) {
+/** The answer of a run: its verdict, its rows (long values copyable, objects folded) and the exact command line. */
+export function Answer({ outcome }: { outcome: Outcome }) {
   const [copied, setCopied] = useState<string | null>(null);
   const copy = async (key: string, text: string) => {
     if (await copyText(text)) {

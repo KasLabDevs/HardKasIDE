@@ -19,7 +19,8 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api": { target: "http://127.0.0.1:7421", changeOrigin: false, ws: true }
+      // HARDKAS_IDE_PORT: the port ide-server listens on when it is not the default (a second checkout beside a running one)
+      "/api": { target: `http://127.0.0.1:${process.env.HARDKAS_IDE_PORT ?? 7421}`, changeOrigin: false, ws: true }
     }
   },
   build: {

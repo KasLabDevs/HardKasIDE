@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { EngineCovenantChain } from "@/utils/engineCovenants";
 import { parseSilOutline } from "@/utils/silParser";
 
 /** SilverScript contracts: ABI of compiled contracts, deployed instances, spends. */
@@ -124,6 +125,8 @@ interface SilverState {
   deployments: DeployRecord[];
   spends: SpendRecord[];
   covenants: CovenantRecord[];
+  /** Covenants made by the v1 engine (`silver covenant start | advance`, `kcc20 deploy | transfer`), from its plan and signed records. */
+  engineCovenants: EngineCovenantChain[];
   checksByFile: Record<string, SilCheckState>;
   /** Record files under .hardkas/artifacts/silver that did not parse cleanly (unknown schema, missing fields). */
   recordProblems: RecordProblem[];
@@ -145,6 +148,7 @@ export const useSilver = create<SilverState>((set) => ({
   deployments: [],
   spends: [],
   covenants: [],
+  engineCovenants: [],
   checksByFile: {},
   recordProblems: [],
   busy: null,
