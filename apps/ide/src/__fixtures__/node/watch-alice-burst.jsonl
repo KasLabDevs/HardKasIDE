@@ -1,0 +1,3 @@
+{"at":"2026-11-22T22:44:51.135Z","event":"snapshot","address":"kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn","network":"simnet","utxos":[{"transactionId":"170ecff27b8c17303ecffde73555e7f89ef5d200e96a59402f0b9d34e56f3606","index":0,"amountSompi":"10000000000","state":"mature","covenantBound":false}],"balance":{"mature":"10000000000","pending":"0","stasisCount":0}}
+{"at":"2026-11-22T22:45:01.866Z","event":"added","txid":"c29d0ee95bf65c5898f189bb376a15b56496b19860500e8288be501d51f28fc9","outputs":[{"transactionId":"c29d0ee95bf65c5898f189bb376a15b56496b19860500e8288be501d51f28fc9","index":0,"amountSompi":"100000000","state":"pending","covenantBound":false}]}
+{"at":"2026-11-22T22:49:51.159Z","event":"end","reason":"timeout","events":1}

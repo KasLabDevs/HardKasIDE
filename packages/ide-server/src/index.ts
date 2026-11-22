@@ -17,7 +17,7 @@ import * as store from "./store.js";
 import { StoreError } from "./store.js";
 import { getCliCatalog } from "./cliCatalog.js";
 import { ensureHardkasConfig, FRONTEND_STACKS, type FrontendStackId, type StarterContractSpec } from "./frontendScaffold.js";
-import { checkSilverSource, cliInfo, createProject, getJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe, waitForJob } from "./runner.js";
+import { checkSilverSource, cliInfo, createProject, getJob, killJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe, waitForJob } from "./runner.js";
 import { checkUpdates } from "./updates.js";
 import { closeTerminal, defaultShell, listTerminals, openTerminal } from "./terminal.js";
 import { readIdeSettings, thirdPartyExtensionsEnabled, writeIdeSettings } from "./ideSettings.js";
@@ -259,6 +259,15 @@ app.get("/api/jobs/:id", (c) => {
   const job = getJob(c.req.param("id"));
   if (!job) return c.json({ ok: false, code: "NOT_FOUND", message: "job not found" }, 404);
   return c.json({ ok: true, job });
+});
+
+/** Stops a running job (a long-lived `hardkas watch`, a stuck command). Its followers get the usual exit and done. */
+app.delete("/api/jobs/:id", (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const job = getJob(c.req.param("id"));
+  if (!job) return c.json({ ok: false, code: "NOT_FOUND", message: "job not found" }, 404);
+  const killed = killJob(job.id);
+  return c.json({ ok: true, killed, job: summarize(job) });
 });
 
 app.get("/api/jobs/:id/stream", (c) => {

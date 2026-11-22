@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -95,6 +95,8 @@ export interface Job {
 
 const jobs = new Map<string, Job>();
 const emitters = new Map<string, EventEmitter>();
+/** The child process of every running job, so a long-lived one (`hardkas watch`) can be stopped on request. */
+const children = new Map<string, ChildProcess>();
 const MAX_JOBS = 200;
 
 interface Resolved {
@@ -241,6 +243,7 @@ export async function startJob(options: RunOptions): Promise<Job> {
     finish(job, emitter, 1, String(error));
     return job;
   }
+  children.set(id, child);
 
   child.stdout.on("data", (chunk: Buffer) => {
     const text = chunk.toString("utf8");
@@ -263,8 +266,39 @@ export async function startJob(options: RunOptions): Promise<Job> {
   return job;
 }
 
+/**
+ * Stops a running job's process. Returns false when the job is unknown or already over. The exit is reported
+ * through the job's normal "close" path, so followers see `exit` and `done` like for any other end.
+ *
+ * On Windows `child.kill()` only reaches the process it spawned: with `shell: true` that is cmd.exe, and the
+ * CLI it started would keep running (and keep the node's wRPC subscription open), so the whole tree is ended
+ * with `taskkill /T`. Elsewhere SIGTERM first, SIGKILL if the process is still there after a few seconds.
+ */
+export function killJob(id: string): boolean {
+  const job = jobs.get(id);
+  const child = children.get(id);
+  if (!job || job.status !== "running" || !child || child.pid === undefined) return false;
+  job.events.push({ type: "stderr", data: "stopped by the IDE\n", at: new Date().toISOString() });
+  emitters.get(id)?.emit("event", job.events[job.events.length - 1]);
+  if (process.platform === "win32") {
+    try {
+      spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }).on("error", () => child.kill());
+    } catch {
+      child.kill();
+    }
+  } else {
+    child.kill("SIGTERM");
+    const force = setTimeout(() => {
+      if (jobs.get(id)?.status === "running") child.kill("SIGKILL");
+    }, 3000);
+    child.once("close", () => clearTimeout(force));
+  }
+  return true;
+}
+
 function finish(job: Job, emitter: EventEmitter, code: number, errorText: string | null): void {
   if (job.status !== "running") return;
+  children.delete(job.id);
   job.exitCode = code;
   job.endedAt = new Date().toISOString();
   job.status = code === 0 ? "succeeded" : "failed";

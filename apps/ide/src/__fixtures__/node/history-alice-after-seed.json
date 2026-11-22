@@ -1,0 +1,190 @@
+{
+  "ok": true,
+  "command": "history",
+  "mode": "cli",
+  "schema": "hardkas.addressHistory.v1",
+  "address": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn",
+  "networkId": "simnet",
+  "entries": [
+    {
+      "txId": "170ecff27b8c17303ecffde73555e7f89ef5d200e96a59402f0b9d34e56f3606",
+      "source": "node",
+      "direction": "in",
+      "receivedSompi": "10000000000",
+      "covenantBoundReceivedSompi": "0",
+      "spentSompi": "0",
+      "netSompi": "10000000000",
+      "outputs": [
+        {
+          "index": 0,
+          "amountSompi": "10000000000"
+        }
+      ],
+      "spends": [],
+      "coinbase": false,
+      "covenantBound": false,
+      "acceptance": {
+        "chainBlockHash": "f7fab1f599999682d23d88cbd22bcdb08ae6726c35074e0fc88a33cb9288969a",
+        "daaScore": "3911",
+        "blueScore": "3432",
+        "previousChainBlockHash": "f94ae3e431baff7fa6a8ec2f390c1c3f0a5f2a7751ae48c4a6d5096438ba103f",
+        "confirmationsDaa": "2306",
+        "confirmationsBlue": "2174"
+      }
+    },
+    {
+      "txId": "3eb37777d9d8df933753c8c9e6a06a1bfe3e8d7cb5538279cbf40ebb4b018731",
+      "source": "workspace",
+      "direction": "self",
+      "receivedSompi": "3999796400",
+      "covenantBoundReceivedSompi": "0",
+      "spentSompi": "5000000000",
+      "netSompi": "-1000203600",
+      "outputs": [
+        {
+          "amountSompi": "3999796400"
+        }
+      ],
+      "spends": [
+        {
+          "outpoint": "3dc6e4635d3390bfe502c83a8f220bc31df2414d4a14e8b2cdfad6da6584dad5:38",
+          "amountSompi": "5000000000",
+          "matchedBy": "workspace-plan"
+        }
+      ],
+      "coinbase": false,
+      "covenantBound": false,
+      "workspace": {
+        "submissionArtifactId": "2910390a098bf80d252b63d16b4d77d83b95f87dcae1dd8164e6f05f50d2632e",
+        "planArtifactId": "c6681cdc856c3aeea8b6c816d265ea3bda312be3e1e08b60f5c7f6d1a0cb8448",
+        "submittedAt": "2026-10-26T01:08:44.069Z",
+        "state": "SUBMITTED"
+      },
+      "outsideWindow": "the workspace's evidence locates no accepting chain block for it (state SUBMITTED): the window does not hold its acceptance"
+    },
+    {
+      "txId": "46e49b3ca3aae823d9a5a2d69a93b7b2ce2a7064c1bf12c85415f35d30a16b7e",
+      "source": "workspace",
+      "direction": "self",
+      "receivedSompi": "3999796400",
+      "covenantBoundReceivedSompi": "0",
+      "spentSompi": "5000000000",
+      "netSompi": "-1000203600",
+      "outputs": [
+        {
+          "amountSompi": "3999796400"
+        }
+      ],
+      "spends": [
+        {
+          "outpoint": "3d6c028004ef2857ff37ffc3f1b734a1bbf7a064e377a38a9b27ed577bcc73b8:5",
+          "amountSompi": "5000000000",
+          "matchedBy": "workspace-plan"
+        }
+      ],
+      "coinbase": false,
+      "covenantBound": false,
+      "workspace": {
+        "submissionArtifactId": "895a02727f71aa39cdf09e27cfd582cf9a223d21772fba5a72d2c6abe21b187d",
+        "planArtifactId": "f139fc9e58871e8e52ed538fec3f08a4f34623d8a0530c69cb6b8b8a9fd204e6",
+        "submittedAt": "2026-10-25T20:32:33.131Z",
+        "state": "CONFIRMED",
+        "acceptingBlockHash": "e3f2f9fd0591ef81cc815a2bb6870d576df8cdbc06b5badf5a0347fd5b9b57cb"
+      },
+      "outsideWindow": "the workspace's evidence locates no accepting chain block for it (state CONFIRMED): the window does not hold its acceptance"
+    },
+    {
+      "txId": "9de8d745579e021615550eabc5e0b758f71defeef8378d0de850fecded91cac6",
+      "source": "workspace",
+      "direction": "self",
+      "receivedSompi": "3999796400",
+      "covenantBoundReceivedSompi": "0",
+      "spentSompi": "5000000000",
+      "netSompi": "-1000203600",
+      "outputs": [
+        {
+          "amountSompi": "3999796400"
+        }
+      ],
+      "spends": [
+        {
+          "outpoint": "292872fc526f03330c6a79c29374e21925eef74f86a64a94ea4287b0e3aff38d:49",
+          "amountSompi": "5000000000",
+          "matchedBy": "workspace-plan"
+        }
+      ],
+      "coinbase": false,
+      "covenantBound": false,
+      "workspace": {
+        "submissionArtifactId": "0ffb25d601dbecac6b1767d7169eef6de2b708e3cf4c7437199a0e3b51c3f711",
+        "planArtifactId": "804ebca7643e9d771369a41a444b321cf21d35658727b14c2815e52d9047de45",
+        "submittedAt": "2026-10-25T20:29:33.081Z",
+        "state": "CONFIRMED",
+        "acceptingBlockHash": "f3cc36bf5c8b3036e77e1c53097b67098334402f3b70945a97e86d5fe4d2201e"
+      },
+      "outsideWindow": "the workspace's evidence locates no accepting chain block for it (state CONFIRMED): the window does not hold its acceptance"
+    }
+  ],
+  "total": 4,
+  "page": {
+    "offset": 0,
+    "limit": 100
+  },
+  "coverage": {
+    "window": {
+      "requested": {
+        "kind": "default",
+        "lookback": 1000
+      },
+      "from": {
+        "hash": "411f8cd26f3d41aea39e78573927da24d23995705b579f30959b9127e96b79e3",
+        "daaScore": "0"
+      },
+      "firstCoveredDaaScore": "1",
+      "to": {
+        "hash": "c8d9266e78b727ca313531a7c28c3150cb11c68d2e59805eee2c4585c4f7f1f8",
+        "daaScore": "6213"
+      },
+      "chainBlocks": 143,
+      "reachedTip": true,
+      "startsAtPruningPoint": true,
+      "clampedToPruningPoint": false,
+      "requestedStartNotReached": false,
+      "startOffSelectedChain": false,
+      "stoppedBy": "tip",
+      "pruningPoint": {
+        "hash": "411f8cd26f3d41aea39e78573927da24d23995705b579f30959b9127e96b79e3",
+        "daaScore": "0",
+        "isGenesis": true
+      }
+    },
+    "spends": "node-entries",
+    "inputsWithoutEntry": 0,
+    "point": {
+      "virtualDaaScore": "6217",
+      "sinkHash": "c8d9266e78b727ca313531a7c28c3150cb11c68d2e59805eee2c4585c4f7f1f8",
+      "sinkBlueScore": "5606"
+    },
+    "node": {
+      "networkId": "simnet",
+      "isSynced": false,
+      "serverVersion": "2.1.0"
+    },
+    "workspace": {
+      "merged": true,
+      "records": 3,
+      "outsideWindow": 3,
+      "rejected": 0
+    },
+    "reads": {
+      "getBlock": 147,
+      "getVirtualChainFromBlockV2": 4,
+      "other": 5
+    },
+    "notCovered": [
+      "transactions not yet accepted by a chain block (a mempool is not history)",
+      "the node says it is not synced: what it has not seen yet is not covered",
+      "records of other workspaces and wallets (only this workspace's own records are merged)"
+    ]
+  }
+}
