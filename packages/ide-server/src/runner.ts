@@ -590,6 +590,9 @@ export interface SilverCheckResult {
   raw?: unknown;
 }
 
+/** Where a contract's constructor values may live, next to `<name>.sil`, in the order they are tried. */
+export const SILVER_ARGS_SUFFIXES = [".constructor-args.json", ".ctor.json"] as const;
+
 function stripSilComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, "");
 }
@@ -603,16 +606,19 @@ function dummyValueForSilType(silType: string): { kind: string; value: unknown }
   if (t === "pubkey" || t === "bytes32") {
     return { kind: "bytes", value: Array.from({ length: 32 }, (_, i) => (i === 0 ? 2 : 17)) };
   }
-  const fixedBytes = /^bytes(\d+)$/.exec(t);
+  // SilverScript spells fixed byte strings `byte[32]` (older code `bytes32`); `byte[]` and `bytes` have no fixed length.
+  const fixedBytes = /^bytes(\d+)$/.exec(t) ?? /^byte\s*\[\s*(\d+)\s*\]$/.exec(t);
   if (fixedBytes) {
-    const len = Math.max(1, Math.min(64, Number(fixedBytes[1]) || 32));
+    const len = Math.max(1, Math.min(520, Number(fixedBytes[1]) || 32));
     return { kind: "bytes", value: Array.from({ length: len }, () => 17) };
   }
-  if (t === "bytes") return { kind: "bytes", value: Array.from({ length: 32 }, () => 17) };
+  if (t === "bytes" || /^byte\s*\[\s*\]$/.test(t)) return { kind: "bytes", value: Array.from({ length: 32 }, () => 17) };
+  if (t === "sig" || t === "datasig") return { kind: "bytes", value: Array.from({ length: 64 }, () => 17) };
   return { kind: "int", value: 1 };
 }
 
-function synthesizeDummyConstructorArgs(source: string): string | null {
+/** Typed placeholder values for every constructor parameter, so a parameterised contract can be checked without args. */
+export function synthesizeDummyConstructorArgs(source: string): string | null {
   const clean = stripSilComments(source);
   const match = /\bcontract\s+[A-Za-z_]\w*\s*\(([^)]*)\)\s*\{/.exec(clean);
   if (!match) return null;
@@ -654,12 +660,13 @@ export async function checkSilverSource(options: SilverCheckOptions): Promise<Si
     await fs.writeFile(tmpSil, sourceText, "utf8");
 
     let argsText = options.constructorArgs?.trim() || "";
-    if (!argsText) {
-      const siblingArgs = `${resolvedTarget.replace(/\.sil$/i, "")}.constructor-args.json`;
+    // The project's own constructor values first: `<name>.constructor-args.json` (HardKas fixtures) or `<name>.ctor.json`.
+    for (const suffix of SILVER_ARGS_SUFFIXES) {
+      if (argsText) break;
       try {
-        argsText = (await fs.readFile(siblingArgs, "utf8")).trim();
+        argsText = (await fs.readFile(`${resolvedTarget.replace(/\.sil$/i, "")}${suffix}`, "utf8")).trim();
       } catch {
-        // No sibling constructor-args.json; synthesize dummy typed values so parameterized contracts compile.
+        // not there: try the next name, then synthesize dummy typed values so parameterized contracts compile.
       }
     }
     if (!argsText) {

@@ -191,11 +191,19 @@ export class CompilerPlugin extends Plugin {
   }
 
   async readArgs(file: string): Promise<string | null> {
-    try {
-      return await this.call<string>("fileManager", "readFile", this.argsFileFor(file));
-    } catch {
-      return null;
+    return (await this.findArgs(file))?.text ?? null;
+  }
+
+  /** The project's constructor values for `file`: `<name>.constructor-args.json`, else `<name>.ctor.json`. */
+  private async findArgs(file: string): Promise<{ path: string; text: string } | null> {
+    for (const path of [this.argsFileFor(file), file.replace(/\.sil$/, "") + ".ctor.json"]) {
+      try {
+        return { path, text: await this.call<string>("fileManager", "readFile", path) };
+      } catch {
+        // not there: try the next name
+      }
     }
+    return null;
   }
 
   async compile(file: string, options?: { args?: string }): Promise<CompilationResult> {
@@ -215,10 +223,10 @@ export class CompilerPlugin extends Plugin {
       usedArgsText = normalized;
       cliArgs.push("--args", argsFile);
     } else {
-      const existingArgs = await this.readArgs(file);
-      if (existingArgs !== null) {
-        usedArgsText = existingArgs;
-        cliArgs.push("--args", argsFile);
+      const existing = await this.findArgs(file);
+      if (existing !== null) {
+        usedArgsText = existing.text;
+        cliArgs.push("--args", existing.path);
       }
     }
     cliArgs.push("--json");
