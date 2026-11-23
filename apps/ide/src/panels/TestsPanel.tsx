@@ -44,9 +44,11 @@ export function TestsPanel() {
   };
   const debugSelected = selectedTest?.location ? () => debug.debugTest(selectedTest.location!.file, selectedTest.title) : () => debug.debugAll();
 
-  const results = (
+  const results = running ? (
+    <LiveResults />
+  ) : (
     <div className="py-1">
-      {!run && !running && !error && (
+      {!run && !error && (
         <div className="px-3 py-2 text-fg-muted">
           No test run yet. HardKas projects ship a vitest suite (for example <code>test/payment.test.ts</code>). Run it to see each test light up, or debug it with breakpoints.
         </div>
@@ -150,7 +152,7 @@ export function TestsPanel() {
         )}
         {error && <div role="alert" className="text-error whitespace-pre-wrap break-words">{error}</div>}
 
-        {run && (
+        {run && !running && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 tabular-nums">
             <Stat label="Runs" value={`${run.passed + run.failed + run.skipped}/${run.total}`} />
             <Stat label="Failures" value={String(run.failed)} tone={run.failed ? "error" : undefined} />
@@ -159,8 +161,8 @@ export function TestsPanel() {
           </div>
         )}
         <div role="progressbar" aria-valuemin={0} aria-valuemax={run?.total ?? 100} aria-valuenow={run ? run.passed + run.failed : 0} className="h-2.5 rounded bg-bg-hover overflow-hidden">
-          {run && <div className={clsx("h-full transition-all", ok ? "bg-ok" : "bg-error")} style={{ width: run.total ? `${((run.passed + run.failed) / run.total) * 100}%` : "100%" }} />}
-          {running && !run && <div className="h-full w-1/3 bg-info animate-pulse" />}
+          {run && !running && <div className={clsx("h-full transition-all", ok ? "bg-ok" : "bg-error")} style={{ width: run.total ? `${((run.passed + run.failed) / run.total) * 100}%` : "100%" }} />}
+          {running && <LiveBar />}
         </div>
       </div>
 
@@ -199,6 +201,57 @@ function pauseLabel(reason: string): string {
     default:
       return "breakpoint";
   }
+}
+
+/** While vitest runs: each test file as it finishes, with its counts and the names of its failing tests. */
+function LiveResults() {
+  const live = useTests((s) => s.live);
+  const passed = live.reduce((n, f) => n + f.tests - f.failed - f.skipped, 0);
+  const failed = live.reduce((n, f) => n + f.failed, 0);
+  return (
+    <div className="py-1" aria-live="polite">
+      <div className="px-3 py-1.5 flex items-center gap-2 text-fg-muted tabular-nums">
+        <RotateCw size={12} className="animate-spin shrink-0 text-info" />
+        {live.length === 0 ? (
+          <span>Starting vitest… the files appear here as they finish.</span>
+        ) : (
+          <span>
+            {live.length} file{live.length === 1 ? "" : "s"} done · <span className="text-ok">{passed} passed</span>
+            {failed > 0 && <span className="text-error"> · {failed} failed</span>}
+          </span>
+        )}
+      </div>
+      {live.map((f) => (
+        <div key={f.file} className="px-3 py-0.5">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <StatusIcon status={f.failed > 0 ? "failed" : f.skipped === f.tests ? "skipped" : "passed"} />
+            <span className="font-mono truncate min-w-0 flex-1" title={f.file}>
+              {f.file}
+            </span>
+            <span className="text-fg-muted tabular-nums shrink-0">
+              {f.tests - f.failed - f.skipped}/{f.tests}
+              {f.durationMs !== null ? ` · ${f.durationMs} ms` : ""}
+            </span>
+          </div>
+          {f.failures.map((name) => (
+            <div key={name} className="pl-5 text-error truncate" title={name}>
+              × {name}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The progress bar while running: green, turning red at the first failure; it fills as files finish. */
+function LiveBar() {
+  const live = useTests((s) => s.live);
+  const failed = live.some((f) => f.failed > 0);
+  if (live.length === 0) return <div className="h-full w-1/3 bg-info animate-pulse" />;
+  // The number of files is not known before vitest ends: the bar grows towards, never reaching, the end.
+  const width = Math.min(95, 100 - 100 / (1 + live.length / 3));
+  return <div className={clsx("h-full transition-all", failed ? "bg-error" : "bg-ok")} style={{ width: `${width}%` }} />;
 }
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "error" }) {

@@ -2,7 +2,7 @@ import { FlaskConical } from "lucide-react";
 import { api, type TreeNode } from "@/api/client";
 import { Plugin } from "@/engine/engine";
 import { useIde } from "@/store/ide";
-import { parseVitestJson, useTests, type TestRun } from "@/store/tests";
+import { foldVitestOutput, parseVitestJson, useTests, type TestRun } from "@/store/tests";
 import { TestsPanel } from "@/panels/TestsPanel";
 import type { ConsolePlugin } from "./console";
 
@@ -177,6 +177,7 @@ export class TestsPlugin extends Plugin {
     const console_ = this.engine.get<ConsolePlugin>("console");
     this.open();
     store.setRunning(true);
+    store.setLive([]);
     store.setError(null);
     try {
       const ide = useIde.getState();
@@ -193,7 +194,14 @@ export class TestsPlugin extends Plugin {
           `--outputFile=${target.outputFile}`,
           "--reporter=default"
         ];
-        const result = await console_.run(args, target.cwd ? { command: "npx", cwd: target.cwd } : { command: "npx" });
+        // The JSON report is written at the end; the default reporter's per-file lines show the run while it goes on.
+        let rest = "";
+        const onOutput = (_stream: "stdout" | "stderr", data: string) => {
+          const folded = foldVitestOutput(useTests.getState().live, rest, data);
+          rest = folded.rest;
+          useTests.getState().setLive(folded.live);
+        };
+        const result = await console_.run(args, target.cwd ? { command: "npx", cwd: target.cwd, onOutput } : { command: "npx", onOutput });
         const text = await api.fs.read(RESULTS_FILE);
         if (!text.trim() || text.trim() === "{}") {
           throw new Error(
