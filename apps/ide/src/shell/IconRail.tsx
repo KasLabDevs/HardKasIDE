@@ -1,28 +1,17 @@
 import clsx from "clsx";
-import { ChevronDown, ChevronUp, ListTree, PanelLeft, Settings, Sparkles, TerminalSquare } from "lucide-react";
-import { useState } from "react";
+import { ListTree, PanelLeft, Settings, Sparkles, TerminalSquare } from "lucide-react";
 import { useEngine, useEngineVersion } from "@/engine/context";
 import type { Plugin } from "@/engine/engine";
 import { useIde, VIEW_PREFIX } from "@/store/ide";
 
 const PINNED_BOTTOM_PLUGINS = new Set(["assistant", "settings"]);
-const MORE_KEY = "hardkas-ide.rail-more";
 /** Plugins that belong with the files rather than with HardKas when their profile says no `group` (external ones, older ones). */
 const WORKSPACE_PLUGINS = new Set(["files", "scripts", "tests"]);
 
-function loadMore(): boolean {
-  try {
-    return localStorage.getItem(MORE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
 /**
- * The rail in three blocks: what any editor has (Explorer, Scripts, Tests), then HardKas (node, accounts, compiler,
- * Deploy & Run, the graphs), then "More" for the views a profile marks `advanced` (indexes, history, plugins), so a
- * first look at the IDE is a handful of icons, not fourteen. An advanced view that is open shows its icon
- * regardless, so nothing lit can hide. Side panels and editor-area views sit together in their block, by `order`.
+ * The rail in two blocks: what any editor has (Explorer, Scripts, Tests), then HardKas (node, accounts, compiler,
+ * Deploy & Run, history, the graphs, the index, plugins). Side panels and editor-area views sit together in their
+ * block, by `order`.
  */
 export function IconRail() {
   const engine = useEngine();
@@ -48,16 +37,6 @@ export function IconRail() {
   const setOutlineOpen = useIde((s) => s.setOutlineOpen);
   const terminalOpen = useIde((s) => s.terminalOpen);
   const setTerminalOpen = useIde((s) => s.setTerminalOpen);
-  const [more, setMore] = useState(loadMore);
-  const toggleMore = () => {
-    const next = !more;
-    setMore(next);
-    try {
-      localStorage.setItem(MORE_KEY, next ? "1" : "0");
-    } catch {
-      // not remembered: fine
-    }
-  };
 
   const sideToggleState = (p: Plugin) => {
     const dock = docks[p.profile.name] ?? "left";
@@ -90,18 +69,14 @@ export function IconRail() {
   };
   const mainViewState = (p: Plugin) => ({ isActive: activeFile === `${VIEW_PREFIX}${p.profile.name}`, where: "", toggle: () => openView(p.profile.name, p.profile.displayName) });
 
-  const isAdvanced = (p: Plugin) => p.profile.advanced === true;
   const isWorkspace = (p: Plugin) => (p.profile.group ?? (WORKSPACE_PLUGINS.has(p.profile.name) ? "workspace" : "hardkas")) === "workspace";
   type Entry = { plugin: Plugin; state: { isActive: boolean; where: string; toggle: () => void }; tab: boolean };
   const entries: Entry[] = [
     ...sidePlugins.map((plugin) => ({ plugin, state: sideToggleState(plugin), tab: (docks[plugin.profile.name] ?? "left") === "main" })),
     ...mainViews.map((plugin) => ({ plugin, state: mainViewState(plugin), tab: true }))
   ].sort((a, b) => (a.plugin.profile.order ?? 100) - (b.plugin.profile.order ?? 100));
-  const workspace = entries.filter((e) => !isAdvanced(e.plugin) && isWorkspace(e.plugin));
-  const hardkas = entries.filter((e) => !isAdvanced(e.plugin) && !isWorkspace(e.plugin));
-  // Under More: the side panels (Plugins) before the editor-area views (history, lineage, index).
-  const advanced = [...entries.filter((e) => isAdvanced(e.plugin) && !e.tab), ...entries.filter((e) => isAdvanced(e.plugin) && e.tab)];
-  const showAdvanced = more || advanced.some((a) => a.state.isActive);
+  const workspace = entries.filter((e) => isWorkspace(e.plugin));
+  const hardkas = entries.filter((e) => !isWorkspace(e.plugin));
 
   const renderBottomPlugin = (plugin: Plugin, FallbackIcon: typeof Sparkles) => {
     const st = sideToggleState(plugin);
@@ -141,14 +116,6 @@ export function IconRail() {
       {workspace.map((e) => renderPlugin(e.plugin, e.state, e.tab))}
       {workspace.length > 0 && hardkas.length > 0 && <div className="w-5 border-t border-border my-1" role="separator" aria-label="HardKas" title="HardKas: node, accounts, compiler, Deploy & Run, graphs" />}
       {hardkas.map((e) => renderPlugin(e.plugin, e.state, e.tab))}
-      {advanced.length > 0 && (
-        <>
-          {/* The chevron closes the HardKas block; the line below it opens the views it hides. */}
-          <RailToggle on={showAdvanced} onClick={toggleMore} onLabel="Fewer views" offLabel={`More views (${advanced.map((a) => a.plugin.profile.displayName).join(", ")})`} icon={showAdvanced ? <ChevronUp size={17} /> : <ChevronDown size={17} />} />
-          {showAdvanced && <div className="w-5 border-t border-border my-1" role="separator" />}
-          {showAdvanced && advanced.map((e) => renderPlugin(e.plugin, e.state, e.tab))}
-        </>
-      )}
       {/* layout toggles and workspace settings, pinned to the bottom of the rail */}
       <div className="mt-auto flex flex-col items-center gap-0.5 pt-1.5 border-t border-border w-full">
         {assistantPlugin && renderBottomPlugin(assistantPlugin, Sparkles)}
