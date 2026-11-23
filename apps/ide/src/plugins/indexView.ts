@@ -22,7 +22,6 @@ export class IndexPlugin extends Plugin {
       location: "mainPanel",
       icon: Database,
       order: 55,
-      advanced: true,
       methods: ["open", "refresh", "showArtifact", "showTx", "sync", "rebuild", "doctor", "verify", "query"],
       events: ["updated"]
     });

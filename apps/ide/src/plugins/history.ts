@@ -26,7 +26,6 @@ export class HistoryPlugin extends Plugin {
       location: "mainPanel",
       icon: HistoryIcon,
       order: 40,
-      advanced: true,
       methods: ["open", "refresh", "show"],
       events: ["updated"]
     });
