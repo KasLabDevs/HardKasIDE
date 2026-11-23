@@ -99,7 +99,8 @@ export function IconRail() {
   ].sort((a, b) => (a.plugin.profile.order ?? 100) - (b.plugin.profile.order ?? 100));
   const workspace = entries.filter((e) => !isAdvanced(e.plugin) && isWorkspace(e.plugin));
   const hardkas = entries.filter((e) => !isAdvanced(e.plugin) && !isWorkspace(e.plugin));
-  const advanced = entries.filter((e) => isAdvanced(e.plugin));
+  // Under More: the side panels (Plugins) before the editor-area views (history, lineage, index).
+  const advanced = [...entries.filter((e) => isAdvanced(e.plugin) && !e.tab), ...entries.filter((e) => isAdvanced(e.plugin) && e.tab)];
   const showAdvanced = more || advanced.some((a) => a.state.isActive);
 
   const renderBottomPlugin = (plugin: Plugin, FallbackIcon: typeof Sparkles) => {
@@ -142,8 +143,9 @@ export function IconRail() {
       {hardkas.map((e) => renderPlugin(e.plugin, e.state, e.tab))}
       {advanced.length > 0 && (
         <>
-          <div className="w-5 border-t border-border my-1" role="separator" />
+          {/* The chevron closes the HardKas block; the line below it opens the views it hides. */}
           <RailToggle on={showAdvanced} onClick={toggleMore} onLabel="Fewer views" offLabel={`More views (${advanced.map((a) => a.plugin.profile.displayName).join(", ")})`} icon={showAdvanced ? <ChevronUp size={17} /> : <ChevronDown size={17} />} />
+          {showAdvanced && <div className="w-5 border-t border-border my-1" role="separator" />}
           {showAdvanced && advanced.map((e) => renderPlugin(e.plugin, e.state, e.tab))}
         </>
       )}
