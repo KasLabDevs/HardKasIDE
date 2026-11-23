@@ -1,3 +1,6 @@
+import type { DiagnosticFix } from "@/store/diagnostics";
+import { lintSilverSource } from "./silverLinter";
+
 export interface SilverCompileSummary {
   file?: string;
   ok: boolean;
@@ -33,6 +36,7 @@ export interface SilverSourceDiagnostic {
   code: string;
   message: string;
   hint?: string;
+  fixes?: DiagnosticFix[];
 }
 
 /**
@@ -83,34 +87,21 @@ export function parseSilverDiagnostics(
   compileResult?: SilverCompileSummary | null,
   auditFindings?: Array<{ severity: string; rule: string; message: string; line?: number }>
 ): SilverSourceDiagnostic[] {
-  const diagnostics: SilverSourceDiagnostic[] = [];
   const lines = source ? source.split(/\r?\n/) : [];
+  // 1. Instant client-side syntax, scope, arity & covenant diagnostics (exact token spans + quick fixes)
+  const staticDiags = lintSilverSource(file, source).map<SilverSourceDiagnostic>((d) => ({
+    file: d.file,
+    line: d.line,
+    column: d.column,
+    endColumn: d.endColumn,
+    severity: d.severity,
+    code: d.code ?? "SIL-LINT",
+    message: d.message,
+    hint: d.hint,
+    fixes: d.fixes
+  }));
 
-  // 1. Pragma version check
-  if (source.trim().length > 0) {
-    const ver = analyzeSilverVersion(source);
-    if (ver.status === "missing") {
-      diagnostics.push({
-        file,
-        line: 1,
-        column: 1,
-        severity: "warning",
-        code: "SIL-PRAGMA-001",
-        message: ver.message,
-        hint: `Add 'pragma silverscript ^0.1.0;' on line 1.`
-      });
-    } else if (ver.status === "mismatch") {
-      diagnostics.push({
-        file,
-        line: ver.pragmaLine,
-        column: 1,
-        severity: "warning",
-        code: "SIL-PRAGMA-002",
-        message: ver.message,
-        hint: `Change pragma to 'pragma silverscript ^0.1.0;' for silverc v${SILVER_TOOLCHAIN.silvercVersion}.`
-      });
-    }
-  }
+  const compilerDiags: SilverSourceDiagnostic[] = [];
 
   // 2. Parse explicit `silverc` compiler errors or locate semantic compiler errors accurately
   if (compileResult && !compileResult.ok) {
@@ -118,11 +109,11 @@ export function parseSilverDiagnostics(
     const explicitDiagnostics = parseExplicitLineDiagnostics(file, rawMsg, lines);
 
     if (explicitDiagnostics.length > 0) {
-      diagnostics.push(...explicitDiagnostics);
+      compilerDiags.push(...explicitDiagnostics);
     } else {
       const mapped = mapSilvercErrorToSource(rawMsg, lines);
       for (const hit of mapped) {
-        diagnostics.push({
+        compilerDiags.push({
           file,
           line: hit.line,
           column: hit.column,
@@ -136,59 +127,17 @@ export function parseSilverDiagnostics(
     }
   }
 
-  // 3. Static `.sil` line-by-line syntax & covenant linting so errors are always caught with exact line numbers
-  if (lines.length > 0) {
-    let braceDepth = 0;
-    let lastOpenBraceLine = 1;
-    for (let i = 0; i < lines.length; i++) {
-      const rawLine = lines[i];
-      const clean = rawLine.replace(/\/\/.*$/, "").trim();
-      if (!clean) continue;
-
-      for (const ch of clean) {
-        if (ch === "{") {
-          braceDepth++;
-          lastOpenBraceLine = i + 1;
-        } else if (ch === "}") {
-          braceDepth--;
-        }
-      }
-
-      // Check for statements missing semicolon inside functions
-      if (
-        /^(require\s*\(|int\s+\w+\s*=|byte\[\d*\]\s+\w+\s*=|bytes\s+\w+\s*=|pubkey\s+\w+\s*=|bool\s+\w+\s*=)/.test(clean) &&
-        !clean.endsWith(";") &&
-        // A statement that goes on to the next line (open parenthesis) is not missing its ';'.
-        (clean.match(/\(/g) ?? []).length === (clean.match(/\)/g) ?? []).length
-      ) {
-        const alreadyReported = diagnostics.some((d) => d.line === i + 1 && d.severity === "error");
-        if (!alreadyReported) {
-          diagnostics.push({
-            file,
-            line: i + 1,
-            column: rawLine.length,
-            severity: "error",
-            code: "SIL-SYNTAX-SEMI",
-            message: `Missing ';' at end of SilverScript statement on line ${i + 1}.`,
-            hint: "Every 'require(...)' and variable declaration in SilverScript must end with ';'."
-          });
-        }
-      }
-    }
-
-    if (braceDepth !== 0) {
-      diagnostics.push({
-        file,
-        line: braceDepth > 0 ? lastOpenBraceLine : lines.length,
-        column: 1,
-        severity: "error",
-        code: "SIL-SYNTAX-BRACE",
-        message: braceDepth > 0 ? `Unclosed '{' block starting at line ${lastOpenBraceLine}.` : "Unexpected closing '}' brace."
-      });
-    }
+  // Merge: prefer compiler diagnostics when an error is already mapped to the same line by SIL-SYNTAX-SEMI, keep exact fixes
+  const diagnostics: SilverSourceDiagnostic[] = [];
+  for (const cd of compilerDiags) diagnostics.push(cd);
+  for (const sd of staticDiags) {
+    const sameLineCompilerErr =
+      sd.severity === "error" &&
+      compilerDiags.some((cd) => cd.line === sd.line && cd.severity === "error" && sd.code === "SIL-SYNTAX-SEMI");
+    if (!sameLineCompilerErr) diagnostics.push(sd);
   }
 
-  // 4. Merge any audit findings with line mapping
+  // 3. Merge any audit findings with line mapping
   if (auditFindings) {
     for (const f of auditFindings) {
       let line = f.line ?? 1;
@@ -200,6 +149,7 @@ export function parseSilverDiagnostics(
         file,
         line,
         column: 1,
+        endColumn: Math.max(2, (lines[line - 1] ?? "").length + 1),
         severity: f.severity === "high" || f.severity === "error" ? "error" : f.severity === "info" ? "info" : "warning",
         code: f.rule.toUpperCase(),
         message: f.message
@@ -332,11 +282,15 @@ function parseExplicitLineDiagnostics(file: string, rawText: string, lines: stri
       const key = `${lineNum}:${colNum}:${msg}`;
       if (seen.has(key)) continue;
       seen.add(key);
+      const lineStr = lines[lineNum - 1] ?? "";
+      const restOfLine = lineStr.slice(Math.max(0, colNum - 1));
+      const tokenMatch = /^[A-Za-z0-9_.[\]]+/.exec(restOfLine);
+      const endCol = tokenMatch ? colNum + tokenMatch[0].length : Math.min(lineStr.length + 1, colNum + 6);
       out.push({
         file,
         line: lineNum,
         column: colNum,
-        endColumn: colNum + 12,
+        endColumn: endCol,
         severity: "error",
         code: "SILVERC-ERR",
         message: msg

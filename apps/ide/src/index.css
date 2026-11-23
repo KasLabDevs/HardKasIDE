@@ -213,6 +213,38 @@ a:focus-visible {
   background: color-mix(in srgb, var(--warn) 20%, transparent);
 }
 
+/* Eclipse-style diagnostic marks in the editor gutter and error line highlights. */
+.hk-diag-error,
+.hk-diag-error-fix,
+.hk-diag-warn,
+.hk-diag-warn-fix {
+  width: 14px !important;
+  height: 14px !important;
+  margin: 3px 0 0 3px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 13px 13px;
+  cursor: pointer;
+}
+.hk-diag-error {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.5' fill='%23ef4444'/%3E%3Cpath d='M5.3 5.3l5.4 5.4M10.7 5.3l-5.4 5.4' stroke='%23fff' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+.hk-diag-error-fix {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M7.5 1.5a4 4 0 0 0-2.3 7.3c.5.4.8 1 .8 1.6v.6h3v-.6c0-.6.3-1.2.8-1.6a4 4 0 0 0-2.3-7.3z' fill='%23facc15' stroke='%23a16207' stroke-width='0.8'/%3E%3Crect x='6.2' y='11.8' width='2.6' height='1.6' rx='0.6' fill='%2394a3b8'/%3E%3Ccircle cx='12.2' cy='12.2' r='3.4' fill='%23ef4444' stroke='%230b0f14' stroke-width='0.8'/%3E%3Cpath d='M10.9 10.9l2.6 2.6M13.5 10.9l-2.6 2.6' stroke='%23fff' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+.hk-diag-warn {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.8L14.5 13.5H1.5Z' fill='%23f59e0b' stroke='%2378350f' stroke-width='0.7' stroke-linejoin='round'/%3E%3Cpath d='M8 6.1v3.8' stroke='%23111827' stroke-width='1.6' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='11.6' r='0.9' fill='%23111827'/%3E%3C/svg%3E");
+}
+.hk-diag-warn-fix {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M7.5 1.5a4 4 0 0 0-2.3 7.3c.5.4.8 1 .8 1.6v.6h3v-.6c0-.6.3-1.2.8-1.6a4 4 0 0 0-2.3-7.3z' fill='%23facc15' stroke='%23a16207' stroke-width='0.8'/%3E%3Cpath d='M12.2 8.8l3.3 5.8H8.9Z' fill='%23f59e0b' stroke='%230b0f14' stroke-width='0.7' stroke-linejoin='round'/%3E%3Cpath d='M12.2 10.8v1.9' stroke='%23111827' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+.hk-line-error {
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+}
+.hk-line-warn {
+  background: color-mix(in srgb, var(--warn) 5%, transparent);
+}
+
 /* Title bar: the drag region of a desktop shell (Electron/Tauri/installed PWA); controls stay clickable. */
 @layer components {
   .titlebar {

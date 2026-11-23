@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FileIcon } from "@/components/FileIcon";
 import { Editor } from "@/editor/Editor";
 import { useEngine, useEngineVersion } from "@/engine/context";
+import { normalizeDiagPath, useDiagnostics } from "@/store/diagnostics";
 import { useIde, VIEW_PREFIX, type OpenFile } from "@/store/ide";
 import { confirmDialog } from "@/utils/dialog";
 import { openDetachedWindow } from "@/utils/detach";
@@ -26,6 +27,7 @@ export function MainArea() {
   const activeFile = useIde((s) => s.activeFile);
   const closeFiles = useIde((s) => s.closeFiles);
   const setActiveFile = useIde((s) => s.setActiveFile);
+  const countsByFile = useDiagnostics((s) => s.countsByFile);
   const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null);
 
   const active = openFiles.find((f) => f.path === activeFile);
@@ -80,6 +82,7 @@ export function MainArea() {
             const isView = f.kind === "view";
             const dirty = !isView && f.content !== f.savedContent;
             const isActive = f.path === activeFile;
+            const diagCount = !isView ? countsByFile[normalizeDiagPath(f.path)] : undefined;
             const label = isView ? (f.title ?? f.path) : f.path.split("/").pop();
             const selectTab = () => (isView ? setActiveFile(f.path) : void engine.call("fileManager", "open", f.path));
             const handleClose = (e: React.MouseEvent) => {
@@ -124,7 +127,18 @@ export function MainArea() {
                 })() : (
                   <FileIcon name={f.path} size={13} />
                 )}
-                <span className="truncate leading-[1.4]">{label}</span>
+                <span className={clsx("truncate leading-[1.4]", diagCount?.errors ? "text-error" : diagCount?.warnings ? "text-warn" : undefined)}>{label}</span>
+                {diagCount && (diagCount.errors > 0 || diagCount.warnings > 0) && (
+                  <span
+                    className={clsx(
+                      "text-[10px] font-mono tabular-nums px-1 rounded leading-tight shrink-0",
+                      diagCount.errors > 0 ? "bg-error/15 text-error" : "bg-warn/15 text-warn"
+                    )}
+                    title={`${diagCount.errors} error(s), ${diagCount.warnings} warning(s)`}
+                  >
+                    {diagCount.errors > 0 ? diagCount.errors : diagCount.warnings}
+                  </span>
+                )}
                 {dirty && <span className="w-1.5 h-1.5 rounded-full bg-warn shrink-0" title="Unsaved changes" aria-label="Unsaved changes" />}
                 <button
                   type="button"

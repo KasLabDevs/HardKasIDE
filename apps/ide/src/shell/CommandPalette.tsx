@@ -9,6 +9,7 @@ import type { EditorPlugin } from "@/plugins/editor";
 import type { EnvironmentPlugin } from "@/plugins/environment";
 import type { LineagePlugin } from "@/plugins/lineage";
 import { DEFAULT_ZOOM, useIde } from "@/store/ide";
+import { useScripts } from "@/store/scripts";
 import { useUpdates } from "@/store/updates";
 import { extractDocumentSymbols } from "@/utils/symbols";
 import { SymbolIcon } from "./Breadcrumbs";
@@ -59,6 +60,7 @@ export function CommandPalette() {
   const openFiles = useIde((s) => s.openFiles);
   const recentFiles = useIde((s) => s.recentFiles);
   const tree = useIde((s) => s.tree);
+  const scriptPackages = useScripts((s) => s.packages);
   const [catalogItems, setCatalogItems] = useState<PaletteItem[]>([]);
 
   const activeTextDoc = useMemo(
@@ -122,6 +124,8 @@ export function CommandPalette() {
       { id: "outline", kind: "command", title: "Toggle Outline", run: () => ide().setOutlineOpen(!ide().outlineOpen) },
       { id: "layout:reset", kind: "command", title: "Layout: reset panels to their default places", hint: "undo any docking", run: () => ide().resetLayout() },
       { id: "run", kind: "command", title: "Open Deploy & Run", run: () => ide().setActiveSidePlugin("deployRun") },
+      { id: "scripts", kind: "command", title: "Open Scripts (package.json launcher)", run: () => ide().revealPlugin("scripts", "Scripts") },
+      { id: "scripts:stop", kind: "command", title: "Scripts: stop all running scripts", run: () => useScripts.getState().stopAllScripts() },
       { id: "servers", kind: "command", title: "Open Servers (node & accounts)", run: () => ide().setActiveSidePlugin("environment") },
       { id: "accounts", kind: "command", title: "Open Accounts (keys & balances)", run: () => ide().setActiveSidePlugin("accounts") },
       { id: "assistant", kind: "command", title: "Open Assistant (chat about Kaspa & SilverScript)", hint: "grounded in docs.kaspa.org", run: () => ide().revealPlugin("assistant", "Assistant") },
@@ -152,9 +156,20 @@ export function CommandPalette() {
           void useUpdates.getState().check(true);
         }
       },
+      ...scriptPackages.flatMap((pkg) =>
+        pkg.scripts.map<PaletteItem>((script) => ({
+          id: `script:${pkg.id}:${script.name}`,
+          kind: "command",
+          title: `Script: ${pkg.relDir === "." ? pkg.name : pkg.relDir} › ${script.name}`,
+          hint: `${script.cliPreview} · ${script.command}`,
+          run: () => {
+            useScripts.getState().launchScript(pkg, script);
+          }
+        }))
+      ),
       ...catalogItems
     ];
-  }, [engine, activeFile, catalogItems]);
+  }, [engine, activeFile, catalogItems, scriptPackages]);
 
   const parsed = useMemo(() => parsePaletteQuery(query), [query]);
 

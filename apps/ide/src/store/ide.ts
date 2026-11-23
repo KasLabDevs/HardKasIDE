@@ -416,15 +416,31 @@ export function languageForPath(path: string): string {
       return "silverscript";
     case "ts":
     case "mts":
-      return "typescript";
+    case "cts":
     case "tsx":
       return "typescript";
     case "js":
     case "mjs":
     case "cjs":
+    case "jsx":
       return "javascript";
+    case "html":
+    case "htm":
+    case "svg":
+    case "vue":
+    case "svelte":
+      return "html";
+    case "css":
+      return "css";
+    case "scss":
+      return "scss";
+    case "less":
+      return "less";
     case "json":
+    case "jsonc":
       return "json";
+    case "sql":
+      return "sql";
     case "md":
       return "markdown";
     case "yaml":

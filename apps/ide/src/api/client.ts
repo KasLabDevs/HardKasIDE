@@ -116,6 +116,26 @@ export interface FrontendStackOption {
   description: string;
 }
 
+export type PackageManager = "pnpm" | "npm" | "yarn" | "bun";
+export type ScriptKind = "launch" | "deploy" | "test" | "build" | "other";
+
+export interface PackageScriptEntry {
+  name: string;
+  command: string;
+  kind: ScriptKind;
+  manager: PackageManager;
+  cliPreview: string;
+}
+
+export interface WorkspacePackageScripts {
+  id: string;
+  name: string;
+  relDir: string;
+  manifestPath: string;
+  manager: PackageManager;
+  scripts: PackageScriptEntry[];
+}
+
 /** Assistant settings as the browser sees them: the API key itself never leaves the server. */
 export interface AssistantConfigView {
   provider: "opencode" | "anthropic" | "openai";
@@ -278,7 +298,9 @@ export const api = {
     search: (body: WorkspaceSearchOptions) =>
       request<WorkspaceSearchResponse>("/api/fs/search", { method: "POST", body: JSON.stringify(body) }),
     replace: (body: WorkspaceSearchOptions & { replacement: string; targetFiles?: string[] }) =>
-      request<{ replacedFiles: number; replacedMatches: number }>("/api/fs/replace", { method: "POST", body: JSON.stringify(body) })
+      request<{ replacedFiles: number; replacedMatches: number }>("/api/fs/replace", { method: "POST", body: JSON.stringify(body) }),
+    intellisense: () =>
+      request<{ sourceFiles: Array<{ path: string; content: string }>; typeDefs: Array<{ path: string; content: string }>; truncated: boolean }>("/api/fs/intellisense")
   },
   devkeys: {
     /** Aliases with a keystore in .hardkas/dev-accounts (alice…erin). */
@@ -558,5 +580,9 @@ export const api = {
           raw?: unknown;
         };
       }>("/api/silver/check", { method: "POST", body: JSON.stringify(body) }).then((r) => r.check)
+  },
+  scripts: () => request<{ root: string; packages: WorkspacePackageScripts[] }>("/api/scripts"),
+  terminal: {
+    stop: (id: string) => request<{ stopped: boolean }>(`/api/terminal/${encodeURIComponent(id)}/stop`, { method: "POST" })
   }
 };

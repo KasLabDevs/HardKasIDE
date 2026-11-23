@@ -1,25 +1,49 @@
 import clsx from "clsx";
-import { FolderOpen } from "lucide-react";
+import { AlertTriangle, FolderOpen, XCircle } from "lucide-react";
+import { useDiagnostics } from "@/store/diagnostics";
 import { cliMismatch, useEnv } from "@/store/env";
 import { useEditorCursor } from "@/store/editorCursor";
 import { useIde } from "@/store/ide";
+import { useScripts } from "@/store/scripts";
 import { isTextFile, openPalette } from "./actions";
 
 export function StatusBar({ borderless = false }: { borderless?: boolean } = {}) {
   const workspace = useIde((s) => s.workspace);
+  const setTerminalOpen = useIde((s) => s.setTerminalOpen);
   const activeFile = useIde((s) => s.activeFile);
   const status = useIde((s) => s.statusMessage);
   const cli = useEnv((s) => s.cli);
+  const diagTotals = useDiagnostics((s) => s.totals);
+  const setActiveBottomTab = useScripts((s) => s.setActiveBottomTab);
   const cursorFile = useEditorCursor((s) => s.file);
   const line = useEditorCursor((s) => s.line);
   const column = useEditorCursor((s) => s.column);
   const showCursor = isTextFile(activeFile) && cursorFile === activeFile;
+
+  const openProblems = () => {
+    setTerminalOpen(true);
+    setActiveBottomTab({ kind: "problems" });
+  };
 
   return (
     <footer className={clsx("h-[1.45rem] shrink-0 bg-bg-panel flex items-center gap-2.5 px-2.5 text-[12px] text-fg-muted select-none overflow-hidden", !borderless && "border-t border-border")}>
       <span className="flex items-center gap-1.5 text-fg shrink-0 max-w-[180px] truncate" title={workspace?.root ?? ""}>
         <FolderOpen size={12} className="shrink-0" /> <span className="truncate">{workspace?.name ?? "no workspace"}</span>
       </span>
+      <button
+        type="button"
+        onClick={openProblems}
+        className="shrink-0 flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-bg-hover cursor-pointer tabular-nums transition-colors"
+        title="Show Problems panel"
+        aria-label={`Problems: ${diagTotals.errors} errors, ${diagTotals.warnings} warnings`}
+      >
+        <span className={clsx("inline-flex items-center gap-0.5", diagTotals.errors > 0 && "text-error font-medium")}>
+          <XCircle size={11} /> {diagTotals.errors}
+        </span>
+        <span className={clsx("inline-flex items-center gap-0.5", diagTotals.warnings > 0 && "text-warn font-medium")}>
+          <AlertTriangle size={11} /> {diagTotals.warnings}
+        </span>
+      </button>
       {activeFile && (
         <span className="truncate min-w-0 max-w-[260px] font-mono text-[12px]" title={activeFile}>
           {activeFile}

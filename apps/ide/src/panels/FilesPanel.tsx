@@ -30,6 +30,7 @@ import { useEngine } from "@/engine/context";
 import type { CompilerPlugin } from "@/plugins/compiler";
 import type { SilverPlugin } from "@/plugins/silver";
 import { EclipseTypeBadge, openNewArtifactWizard } from "@/shell/NewArtifactDialog";
+import { folderDiagCounts, normalizeDiagPath, useDiagnostics } from "@/store/diagnostics";
 import { useIde } from "@/store/ide";
 import { copyText } from "@/utils/clipboard";
 import { confirmDialog, promptDialog } from "@/utils/dialog";
@@ -231,11 +232,13 @@ function Node({
 }) {
   const engine = useEngine();
   const activeFile = useIde((s) => s.activeFile);
+  const countsByFile = useDiagnostics((s) => s.countsByFile);
   const internal = isInternal(node);
   const locked = node.locked === true;
   const [open, setOpen] = useState(depth < 1 && !internal);
   const isDir = node.type === "dir";
   const isActive = node.path === activeFile;
+  const diag = isDir ? folderDiagCounts(countsByFile, node.path) : countsByFile[normalizeDiagPath(node.path)];
   const note = hardkasNote(node.path, locked);
   // A folder the tree did not read (node_modules and what is under it): its children are fetched when it opens.
   const lazy = isDir && !locked && node.children === undefined;
@@ -323,7 +326,18 @@ function Node({
         ) : (
           <FileIcon name={node.name} size={15} />
         )}
-        <span className="truncate flex-1">{node.name}</span>
+        <span className={clsx("truncate flex-1", diag && diag.errors > 0 ? "text-error" : diag && diag.warnings > 0 ? "text-warn" : undefined)}>{node.name}</span>
+        {diag && (diag.errors > 0 || diag.warnings > 0) && (
+          <span
+            className={clsx(
+              "text-[10px] font-mono tabular-nums px-1 rounded shrink-0",
+              diag.errors > 0 ? "bg-error/15 text-error" : "bg-warn/15 text-warn"
+            )}
+            title={`${diag.errors} error(s), ${diag.warnings} warning(s)`}
+          >
+            {diag.errors > 0 ? `×${diag.errors}` : `!${diag.warnings}`}
+          </span>
+        )}
         {note ? (
           <span className={clsx("text-[11px] shrink-0 truncate max-w-[45%]", locked ? "text-warn" : "text-fg-muted")}>{note.label}</span>
         ) : (

@@ -473,6 +473,227 @@ export async function replaceInWorkspace(
   return { replacedFiles, replacedMatches };
 }
 
+export interface IntelliSenseFile {
+  path: string;
+  content: string;
+}
+
+export interface IntelliSenseContext {
+  sourceFiles: IntelliSenseFile[];
+  typeDefs: IntelliSenseFile[];
+  truncated: boolean;
+}
+
+const INTELLISENSE_SOURCE_EXTS = new Set([".sil", ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
+const INTELLISENSE_CONFIG_NAMES = new Set(["package.json", "tsconfig.json", "jsconfig.json"]);
+const INTELLISENSE_SKIP_DIRS = new Set(["node_modules", ".git", ".turbo", "dist", "build", "coverage", ".hardkas", ".next", ".svelte-kit", ".nuxt"]);
+
+/**
+ * Collects workspace source files (`.sil`, `.ts`/`.tsx`/`.js`/`.jsx`, `constructor-args.json`, `tsconfig.json`)
+ * plus `.d.ts` declarations for declared dependencies in `node_modules`, keeping strict secret filtering and caps.
+ */
+export async function readIntelliSenseContext(): Promise<IntelliSenseContext> {
+  const root = getRoot();
+  if (!root) throw new FsError(409, "NO_WORKSPACE", "No workspace is open");
+  const rootReal = await fs.realpath(root).catch(() => root);
+
+  const sourceFiles: IntelliSenseFile[] = [];
+  const typeDefs: IntelliSenseFile[] = [];
+  const pkgRoots = new Set<string>();
+  const depsWanted = new Set<string>();
+  let sourceBytes = 0;
+  let typeBytes = 0;
+  let truncated = false;
+
+  const MAX_SOURCE_FILES = 220;
+  const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
+  const MAX_FILE_BYTES = 180 * 1024;
+  // Declarations are bigger than sources: @types/node alone is 2.5 MB (fs.d.ts ~200 KB), a bundled SDK index.d.ts
+  // 270 KB. A file left out makes the editor say the module does not exist, so the type budget is generous.
+  const MAX_DTS_FILE_BYTES = 2 * 1024 * 1024;
+  const MAX_TYPE_FILES = 1500;
+  const MAX_TYPE_BYTES = 12 * 1024 * 1024;
+
+  const isSourceRelevant = (name: string): boolean => {
+    const lower = name.toLowerCase();
+    if (INTELLISENSE_CONFIG_NAMES.has(lower)) return true;
+    if (lower.endsWith(".constructor-args.json") || lower.endsWith(".spend-args.json")) return true;
+    return INTELLISENSE_SOURCE_EXTS.has(path.posix.extname(lower));
+  };
+
+  async function walkSource(current: string, depth: number): Promise<void> {
+    if (depth > 7 || sourceFiles.length >= MAX_SOURCE_FILES || sourceBytes >= MAX_SOURCE_BYTES) {
+      truncated = true;
+      return;
+    }
+    const entries = await fs.readdir(current, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (sourceFiles.length >= MAX_SOURCE_FILES || sourceBytes >= MAX_SOURCE_BYTES) {
+        truncated = true;
+        return;
+      }
+      if (entry.isSymbolicLink()) continue;
+      const abs = path.join(current, entry.name);
+      const rel = toRelative(abs);
+      if (entry.isDirectory()) {
+        if (!INTELLISENSE_SKIP_DIRS.has(entry.name)) await walkSource(abs, depth + 1);
+        continue;
+      }
+      if (!isSourceRelevant(entry.name) || !visible(rel, "agent")) continue;
+      const stat = await fs.stat(abs).catch(() => null);
+      if (!stat || stat.size > MAX_FILE_BYTES) continue;
+      const content = await fs.readFile(abs, "utf8").catch(() => null);
+      if (content === null) continue;
+      sourceFiles.push({ path: rel, content });
+      sourceBytes += Buffer.byteLength(content, "utf8");
+
+      if (entry.name.toLowerCase() === "package.json") {
+        pkgRoots.add(path.dirname(abs));
+        try {
+          const parsed = JSON.parse(content) as Record<string, unknown>;
+          for (const field of ["dependencies", "devDependencies", "peerDependencies"] as const) {
+            const map = parsed[field];
+            if (map && typeof map === "object") {
+              for (const name of Object.keys(map as Record<string, unknown>)) {
+                depsWanted.add(name);
+                if (!name.startsWith("@")) depsWanted.add(`@types/${name}`);
+              }
+            }
+          }
+        } catch {
+          // ignore malformed package.json
+        }
+      }
+    }
+  }
+
+  await walkSource(root, 0);
+
+  // Also check transitive @hardkas/* and @types/react packages installed in workspace node_modules
+  if (depsWanted.has("react") || depsWanted.has("react-dom")) {
+    depsWanted.add("@types/react");
+    depsWanted.add("@types/react-dom");
+    depsWanted.add("csstype");
+  }
+
+  const visitedPkgDirs = new Set<string>();
+  const addedTypePaths = new Set<string>();
+  const pkgQueue = Array.from(depsWanted);
+
+  /**
+   * `as`: the path the editor sees the file under. A package pnpm keeps only in `.pnpm/…/node_modules/<dep>` (a
+   * dependency of a dependency) is presented as `node_modules/<dep>/…`, where the editor's module resolution looks.
+   */
+  const pushTypeFile = async (absFile: string, as?: string): Promise<string | null> => {
+    if (typeDefs.length >= MAX_TYPE_FILES || typeBytes >= MAX_TYPE_BYTES) {
+      truncated = true;
+      return null;
+    }
+    const real = await realPathOf(absFile).catch(() => absFile);
+    const realRel = path.relative(rootReal, real);
+    if (realRel.startsWith("..") || path.isAbsolute(realRel)) return null;
+    const rel = as ?? toRelative(absFile);
+    if (addedTypePaths.has(rel) || !visible(rel, "agent")) return null;
+    const stat = await fs.stat(absFile).catch(() => null);
+    const limit = /\.d\.[cm]?ts$/i.test(absFile) ? MAX_DTS_FILE_BYTES : MAX_FILE_BYTES;
+    if (!stat || !stat.isFile() || stat.size > limit) return null;
+    const content = await fs.readFile(absFile, "utf8").catch(() => null);
+    if (content === null) return null;
+    addedTypePaths.add(rel);
+    typeDefs.push({ path: rel, content });
+    typeBytes += Buffer.byteLength(content, "utf8");
+    return content;
+  };
+
+  /** `asDir`: where the package is presented to the editor (see pushTypeFile), when it is not where it was found. */
+  async function walkDts(dir: string, depth: number, asDir?: string): Promise<void> {
+    if (depth > 4 || typeDefs.length >= MAX_TYPE_FILES || typeBytes >= MAX_TYPE_BYTES) return;
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (typeDefs.length >= MAX_TYPE_FILES || typeBytes >= MAX_TYPE_BYTES) return;
+      if (entry.isSymbolicLink()) continue;
+      const abs = path.join(dir, entry.name);
+      const as = asDir ? `${asDir}/${entry.name}` : undefined;
+      if (entry.isDirectory()) {
+        if (entry.name !== "node_modules" && entry.name !== ".git") await walkDts(abs, depth + 1, as);
+      } else if (/\.d\.[cm]?ts$/i.test(entry.name)) {
+        await pushTypeFile(abs, as);
+      }
+    }
+  }
+
+  const nmSearchRoots = Array.from(pkgRoots).map((dir) => path.join(dir, "node_modules"));
+  if (!nmSearchRoots.includes(path.join(root, "node_modules"))) nmSearchRoots.unshift(path.join(root, "node_modules"));
+  // pnpm keeps a package's own dependencies beside it in `.pnpm/<pkg>@<v>/node_modules`, not at the top: where to
+  // look for a dependency queued by a package found there.
+  const extraRootsFor = new Map<string, string[]>();
+  const foundPkgs = new Set<string>();
+
+  while (pkgQueue.length > 0 && typeDefs.length < MAX_TYPE_FILES && typeBytes < MAX_TYPE_BYTES) {
+    const pkgName = pkgQueue.shift()!;
+    const roots = [...nmSearchRoots, ...(extraRootsFor.get(pkgName) ?? [])];
+    for (const nmRoot of roots) {
+      const pkgDir = path.join(nmRoot, ...pkgName.split("/"));
+      if (visitedPkgDirs.has(pkgDir)) continue;
+      const hoisted = nmSearchRoots.includes(nmRoot);
+      const asDir = hoisted ? undefined : `node_modules/${pkgName}`;
+      const pkgJsonText = await pushTypeFile(path.join(pkgDir, "package.json"), asDir ? `${asDir}/package.json` : undefined);
+      if (!pkgJsonText) continue;
+      visitedPkgDirs.add(pkgDir);
+      foundPkgs.add(pkgName);
+
+      let declared = new Set<string>();
+      try {
+        const parsed = JSON.parse(pkgJsonText) as Record<string, unknown>;
+        for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+          const deps = parsed[field];
+          if (deps && typeof deps === "object") for (const d of Object.keys(deps)) declared.add(d);
+        }
+      } catch {
+        declared = new Set();
+      }
+      const before = typeDefs.length;
+      await walkDts(pkgDir, 0, asDir);
+
+      // The packages this one's types import (`export * from "@trystero-p2p/nostr"`, `import("@hardkas/core")`),
+      // and for @hardkas/* every @hardkas dependency. Under pnpm they sit beside this package's real folder.
+      const wanted = new Set<string>();
+      if (pkgName.startsWith("@hardkas/")) for (const d of declared) if (d.startsWith("@hardkas/")) wanted.add(d);
+      for (const td of typeDefs.slice(before)) {
+        for (const spec of importedPackages(td.content)) if (declared.has(spec) && spec !== pkgName) wanted.add(spec);
+      }
+      if (wanted.size > 0) {
+        const real = await fs.realpath(pkgDir).catch(() => pkgDir);
+        const siblingRoot = pkgName.startsWith("@") ? path.dirname(path.dirname(real)) : path.dirname(real);
+        for (const dep of wanted) {
+          extraRootsFor.set(dep, [...(extraRootsFor.get(dep) ?? []), siblingRoot]);
+          // Queued again when an earlier pass looked only at the top and did not find it.
+          if (!depsWanted.has(dep) || (!foundPkgs.has(dep) && !pkgQueue.includes(dep))) {
+            depsWanted.add(dep);
+            pkgQueue.push(dep);
+          }
+        }
+      }
+      break; // one copy of a package is enough
+    }
+  }
+
+  return { sourceFiles, typeDefs, truncated };
+}
+
+/** The package names a type file imports or re-exports (`from "x"`, `import("x")`, `/// <reference types="x" />`). */
+export function importedPackages(dts: string): Set<string> {
+  const out = new Set<string>();
+  const re = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|<reference\s+types\s*=\s*)["']([^"'./][^"']*)["']/g;
+  for (const m of dts.matchAll(re)) {
+    const spec = m[1];
+    if (spec.startsWith("node:")) continue;
+    const parts = spec.split("/");
+    out.add(spec.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0]);
+  }
+  return out;
+}
+
 export class FsError extends Error {
   constructor(
     public status: number,

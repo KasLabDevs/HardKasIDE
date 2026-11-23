@@ -19,7 +19,8 @@ import { getCliCatalog } from "./cliCatalog.js";
 import { ensureHardkasConfig, FRONTEND_STACKS, type FrontendStackId, type StarterContractSpec } from "./frontendScaffold.js";
 import { checkSilverSource, cliInfo, createProject, getJob, killJob, listJobs, PROJECT_TEMPLATES, startJob, subscribe, waitForJob } from "./runner.js";
 import { checkUpdates } from "./updates.js";
-import { closeTerminal, defaultShell, listTerminals, openTerminal } from "./terminal.js";
+import { discoverWorkspaceScripts } from "./scripts.js";
+import { closeTerminal, defaultShell, listTerminals, openScriptTerminal, openTerminal, stopTerminal } from "./terminal.js";
 import { readIdeSettings, thirdPartyExtensionsEnabled, writeIdeSettings } from "./ideSettings.js";
 import { currentView, runnerInfo, sendCommand, startSession, stopSession, type DebugCommand, type StartRequest } from "./silverDebug.js";
 import { examplesDir, fetchText, installNpmPlugin, listExamples, loadRegistry, pluginsRoot, readStatic, searchNpmPlugins } from "./plugins.js";
@@ -173,6 +174,11 @@ app.get("/api/fs/find", async (c) => {
   const limitRaw = Number(c.req.query("limit") ?? 20);
   const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 2000) : 20;
   return c.json({ ok: true, files: await wsfs.findBySuffix(dir, suffix, limit) });
+});
+
+app.get("/api/fs/intellisense", async (c) => {
+  const ctx = await wsfs.readIntelliSenseContext();
+  return c.json({ ok: true, ...ctx });
 });
 
 app.put("/api/fs/file", async (c) => {
@@ -345,9 +351,21 @@ app.post("/api/project/create", async (c) => {
   return c.json({ ok: true, job: summarize(job), dest });
 });
 
-// ---------------------------------------------------------------- real terminals (PTY over WebSocket)
+// ---------------------------------------------------------------- workspace scripts & real terminals (PTY over WebSocket)
+
+app.get("/api/scripts", async (c) => {
+  const root = getRoot();
+  if (!root) throw new WorkspaceError(409, "NO_WORKSPACE", "No workspace is open");
+  const packages = await discoverWorkspaceScripts(root);
+  return c.json({ ok: true, root, packages });
+});
 
 app.get("/api/terminal", (c) => c.json({ ok: true, shell: defaultShell().file, terminals: listTerminals() }));
+
+app.post("/api/terminal/:id/stop", (c) => {
+  const stopped = stopTerminal(c.req.param("id"), true);
+  return c.json({ ok: true, stopped });
+});
 
 app.get(
   "/api/terminal/ws",
@@ -356,26 +374,61 @@ app.get(
     const cols = Math.min(Math.max(Number(c.req.query("cols") ?? 100) || 100, 10), 500);
     const rows = Math.min(Math.max(Number(c.req.query("rows") ?? 30) || 30, 5), 200);
     const rawCwd = c.req.query("cwd") || undefined;
+    const scriptName = c.req.query("script") || undefined;
+    const pkgDir = c.req.query("pkgDir") || undefined;
+    const jsonMode = c.req.query("events") === "json";
     let session: ReturnType<typeof openTerminal> | null = null;
+    let closed = false;
+
     return {
-      onOpen(_event, ws) {
+      async onOpen(_event, ws) {
+        const sendData = (text: string) => {
+          if (closed) return;
+          // Callers using `events=json` parse control/data frames without risking text/banner ambiguity.
+          ws.send(jsonMode ? JSON.stringify({ type: "data", data: text }) : text);
+        };
+        const sendCtrl = (payload: Record<string, unknown>, fallbackText?: string) => {
+          if (closed) return;
+          if (jsonMode) ws.send(JSON.stringify(payload));
+          else if (fallbackText) ws.send(fallbackText);
+        };
         if (!allowedOrigin) {
-          ws.send("\r\n[ide-server] forbidden WebSocket origin\r\n");
+          sendCtrl({ type: "error", message: "forbidden WebSocket origin" }, "\r\n[ide-server] forbidden WebSocket origin\r\n");
           ws.close();
           return;
         }
         try {
-          const cwd = resolveSafeCwd(rawCwd);
-          session = openTerminal({ cwd, cols, rows });
+          if (scriptName) {
+            session = await openScriptTerminal({ pkgDir, script: scriptName, cols, rows });
+          } else {
+            const cwd = resolveSafeCwd(rawCwd);
+            session = openTerminal({ cwd, cols, rows });
+          }
         } catch (error) {
-          ws.send(`\r\n[ide-server] could not start a shell: ${error instanceof Error ? error.message : String(error)}\r\n`);
+          const msg = error instanceof Error ? error.message : String(error);
+          sendCtrl({ type: "error", message: msg }, `\r\n[ide-server] could not start terminal: ${msg}\r\n`);
           ws.close();
           return;
         }
-        ws.send(`\x1b[2m[hardkas-ide] ${session.shell} in ${session.cwd}\x1b[0m\r\n`);
-        session.pty.onData((data) => ws.send(data));
-        session.pty.onExit(({ exitCode }) => {
-          ws.send(`\r\n\x1b[2m[process exited with code ${exitCode}]\x1b[0m\r\n`);
+        if (closed) {
+          closeTerminal(session.id);
+          session = null;
+          return;
+        }
+        sendCtrl({
+          type: "ready",
+          id: session.id,
+          shell: session.shell,
+          cwd: session.cwd,
+          commandLine: session.commandLine ?? session.shell
+        });
+        sendData(`\x1b[2m[hardkas-ide] ${session.commandLine ?? session.shell} in ${session.cwd}\x1b[0m\r\n`);
+        const activeSession = session;
+        activeSession.pty.onData((data) => sendData(data));
+        activeSession.pty.onExit(({ exitCode }) => {
+          const label = activeSession.stopped ? "[stopped by user]" : `[process exited with code ${exitCode}]`;
+          sendData(`\r\n\x1b[2m${label}\x1b[0m\r\n`);
+          sendCtrl({ type: "exit", exitCode, stopped: activeSession.stopped });
           ws.close();
         });
       },
@@ -390,6 +443,7 @@ app.get(
           return;
         }
         if (msg.type === "input" && typeof msg.data === "string") session.pty.write(msg.data);
+        else if (msg.type === "stop") stopTerminal(session.id, true);
         else if (msg.type === "resize" && msg.cols && msg.rows) {
           const safeCols = Math.min(Math.max(Math.floor(msg.cols), 10), 500);
           const safeRows = Math.min(Math.max(Math.floor(msg.rows), 5), 200);
@@ -397,10 +451,12 @@ app.get(
         }
       },
       onClose() {
+        closed = true;
         if (session) closeTerminal(session.id);
         session = null;
       },
       onError() {
+        closed = true;
         if (session) closeTerminal(session.id);
         session = null;
       }
