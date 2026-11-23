@@ -291,14 +291,23 @@ export function parseSilArtifact(
       runtime_state?: { fields?: Array<{ name: string; type?: { kind?: string } }> };
       cov_decl_to_abi?: Record<string, string>;
       compiled?: { bytecode?: number[]; state_span?: { offset?: number; len?: number } };
-      entries?: Record<string, { dispatch_tag?: string; params?: Array<{ name: string; type?: { kind?: string } }> }>;
+      entries?: Record<string, { dispatch_tag?: string; params?: Array<{ name: string; type?: { kind?: string; name?: string; item?: { kind?: string; name?: string } } }> }>;
     }
   >;
+  // A covenant entry's next-state parameters are typed `{kind:"struct",name:"State"}` (one) or
+  // `{kind:"dynamic_array", item:{kind:"struct",name:"State"}}` (several, 1:N): named "State" / "State[]" here, so
+  // the forms can tell them from the arguments a person types (the engine fills them from the continuations).
+  const kindOf = (t: { kind?: string; name?: string; item?: { kind?: string; name?: string } } | undefined): string => {
+    if (!t) return "bytes";
+    if (t.kind === "struct" && t.name === "State") return "State";
+    if (t.kind === "dynamic_array" && t.item?.kind === "struct" && t.item.name === "State") return "State[]";
+    return t.kind ?? "bytes";
+  };
   for (const [name, c] of Object.entries(cs)) {
     const entries: SilEntry[] = Object.entries(c.entries ?? {}).map(([en, e]) => ({
       name: en,
       dispatchTag: e.dispatch_tag,
-      params: (e.params ?? []).map((p) => ({ name: p.name, kind: p.type?.kind ?? "bytes" }))
+      params: (e.params ?? []).map((p) => ({ name: p.name, kind: kindOf(p.type) }))
     }));
     const meta = contracts?.find((x) => x.name === name);
     const cDecl = outline?.contracts.find((x) => x.name === name);

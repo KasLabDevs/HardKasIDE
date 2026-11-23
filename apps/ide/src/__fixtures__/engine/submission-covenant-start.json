@@ -1,0 +1,53 @@
+{
+  "schema": "hardkas.txSubmission.v1",
+  "hardkasVersion": "0.13.0-rc.3",
+  "version": "1.0.0-alpha",
+  "hashVersion": 5,
+  "networkId": "simnet",
+  "mode": "localnet",
+  "createdAt": "2026-11-23T01:38:14.228Z",
+  "execution": {
+    "mode": "localnet",
+    "domain": "kaspa-l1",
+    "network": "simnet"
+  },
+  "signedArtifactId": "c02ceed25d7c873223a0e616b0ab1de730830f2d7b1fe07280bf13e5724cab25",
+  "txId": "ffea1559bdb6d336597a4688362ea59846caecce1a208340448548a4bbc48475",
+  "submitResult": {
+    "accepted": true,
+    "transactionId": "ffea1559bdb6d336597a4688362ea59846caecce1a208340448548a4bbc48475"
+  },
+  "submitPoint": {
+    "virtualDaaScore": "22671",
+    "sinkHash": "ed754ae153fbf8ce54b84500386b2749b0281d15ecbb5f3ebb89850b1a2e6353",
+    "sinkBlueScore": "21017"
+  },
+  "fee": {
+    "status": "derived",
+    "method": "inputs-minus-outputs",
+    "inputsSompi": "9897159800",
+    "outputsSompi": "9896951500",
+    "feeSompi": "208300",
+    "inputCount": 1,
+    "outputCount": 2,
+    "planArtifactId": "7fbecf9a4b9892b392c1d8efa0ebe95b3804bda67fea1ddeb1085fd531b6186e"
+  },
+  "submittedAt": "2026-11-23T01:38:14.228Z",
+  "rpcUrl": "ws://127.0.0.1:18210",
+  "workflowId": "wf_b97641700c4fe1a2",
+  "assumptionLevel": "local-dev",
+  "preflight": {
+    "observedAtDaaScore": "22671",
+    "inputs": 1,
+    "scope": "observer-local",
+    "guarantee": "local-orchestration-only: outpoints spent by transactions in the observer's mempool at the observation point were excluded; absence from that mempool does not prove absence of a competing spend on the network"
+  },
+  "lineage": {
+    "artifactId": "b2cec200f1202a6c244b27c2e094dd8803ae93266c9ad8b0862ea60a74ba6841",
+    "lineageId": "7fbecf9a4b9892b392c1d8efa0ebe95b3804bda67fea1ddeb1085fd531b6186e",
+    "parentArtifactId": "c02ceed25d7c873223a0e616b0ab1de730830f2d7b1fe07280bf13e5724cab25",
+    "rootArtifactId": "7fbecf9a4b9892b392c1d8efa0ebe95b3804bda67fea1ddeb1085fd531b6186e",
+    "sequence": 3
+  },
+  "contentHash": "b2cec200f1202a6c244b27c2e094dd8803ae93266c9ad8b0862ea60a74ba6841"
+}

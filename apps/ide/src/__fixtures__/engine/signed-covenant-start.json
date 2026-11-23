@@ -1,0 +1,40 @@
+{
+  "schema": "hardkas.signedTx",
+  "hardkasVersion": "0.13.0-rc.3",
+  "version": "1.0.0-alpha",
+  "hashVersion": 5,
+  "status": "signed",
+  "createdAt": "2026-11-23T01:38:14.138Z",
+  "txId": "ffea1559bdb6d336597a4688362ea59846caecce1a208340448548a4bbc48475",
+  "sourcePlanId": "plan-7fbecf9a4b9892b3",
+  "networkId": "simnet",
+  "mode": "localnet",
+  "from": {
+    "address": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn"
+  },
+  "to": {
+    "address": "kaspasim:pqmrmqnt9mekakv4dduzru0avqdz2hw4ztkpgfslscvq622ckq44u4yexxzla"
+  },
+  "amountSompi": "200000000",
+  "txVersion": 1,
+  "signedTransaction": {
+    "format": "hex",
+    "payload": "{\"version\":1,\"inputs\":[{\"previousOutpoint\":{\"transactionId\":\"e7680a6b98775c97bf0a27748a7ec2056792038d93189202dd3e01226ba672b8\",\"index\":1},\"signatureScript\":\"4172571ac970ff39b9627a137a57bb77041ed1f0ce5576906e0d280d740f03bac81e598549efdd8e6993e66f09483e0da555e6e9a80a39e0249b95190f28c36d3101\",\"sequence\":0,\"sigOpCount\":0,\"computeBudget\":10}],\"outputs\":[{\"amount\":\"200000000\",\"scriptPublicKey\":{\"version\":0,\"scriptPublicKey\":\"aa20363d826b2ef36ed9956b7821f1fd601a255dd512ec14261f86180d2958b02b5e87\"},\"covenant\":{\"authorizingInput\":0,\"covenantId\":\"cef7b6af0c84742487931edbf3b2394000c7eb6396fb1c1c2141b077add3da20\"}},{\"amount\":\"9696951500\",\"scriptPublicKey\":{\"version\":0,\"scriptPublicKey\":\"203e1b1470f13a8d64128fd6b101a762190808ff3a4df0b7a8adfc23287290cffbac\"}}],\"lockTime\":0,\"subnetworkId\":\"0000000000000000000000000000000000000000\",\"gas\":0,\"storageMass\":20002,\"payload\":\"\"}"
+  },
+  "lineage": {
+    "artifactId": "c02ceed25d7c873223a0e616b0ab1de730830f2d7b1fe07280bf13e5724cab25",
+    "lineageId": "7fbecf9a4b9892b392c1d8efa0ebe95b3804bda67fea1ddeb1085fd531b6186e",
+    "parentArtifactId": "7fbecf9a4b9892b392c1d8efa0ebe95b3804bda67fea1ddeb1085fd531b6186e",
+    "rootArtifactId": "7fbecf9a4b9892b392c1d8efa0ebe95b3804bda67fea1ddeb1085fd531b6186e",
+    "sequence": 2
+  },
+  "execution": {
+    "mode": "localnet",
+    "domain": "kaspa-l1",
+    "network": "simnet"
+  },
+  "workflowId": "wf_b97641700c4fe1a2",
+  "assumptionLevel": "local-dev",
+  "signedId": "signed-c02ceed25d7c8732",
+  "contentHash": "c02ceed25d7c873223a0e616b0ab1de730830f2d7b1fe07280bf13e5724cab25"
+}

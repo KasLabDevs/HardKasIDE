@@ -318,6 +318,7 @@ function CovenantChainCard({
                 compileRecordPath: head.compileRecordPath,
                 contract: head.contract,
                 abi: head.abi,
+                constructorArgs: engineChain?.contract?.constructorArgs,
                 tip:
                   engineChain && engineChain.tip.length > 0
                     ? engineChain.tip.map((t) => ({ outpoint: t.outpoint, amountSompi: t.amountSompi, declaredState: t.declaredState }))

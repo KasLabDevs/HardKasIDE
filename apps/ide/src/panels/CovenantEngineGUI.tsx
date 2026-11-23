@@ -312,6 +312,8 @@ export interface AdvanceTarget {
   compileRecordPath?: string;
   contract?: string;
   abi?: SilContractAbi;
+  /** The constructor arguments the chain's plans record for the contract: the ones `advance` needs again. */
+  constructorArgs?: unknown[];
   /** The outputs the chain lives in, by this workspace's records. */
   tip: Array<{ outpoint: string; amountSompi: string; declaredState?: DeclaredState }>;
 }
@@ -351,7 +353,8 @@ export function CovenantAdvanceForm({ target }: { target: AdvanceTarget }) {
   const [delegateArgs, setDelegateArgs] = useState<string[]>([]);
   const [funder, setFunder] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [ctorJson, setCtorJson] = useState("");
+  // the compile record keeps only a digest of the constructor arguments: the engine's plans of the chain record them
+  const [ctorJson, setCtorJson] = useState(() => (target.constructorArgs?.length ? JSON.stringify(target.constructorArgs) : ""));
   const [fee, setFee] = useState("");
   const [maxFee, setMaxFee] = useState("");
   const [budget, setBudget] = useState("");
@@ -609,7 +612,7 @@ export function CovenantAdvanceForm({ target }: { target: AdvanceTarget }) {
                 <input aria-label="Advance compute budget" className="input font-mono text-[12px]" placeholder="certified / estimate" value={budget} onChange={(e) => setBudget(e.target.value)} />
               </Labelled>
             </div>
-            <Labelled label="--constructor-args JSON" hint="Empty: proven from the contract's initial State.">
+            <Labelled label="--constructor-args JSON" hint={target.constructorArgs?.length ? "From the chain's plan records. Empty: proven from the contract's initial State." : "Empty: proven from the contract's initial State; a parameter no State field holds (a bound, a key) must be given."}>
               <input aria-label="Advance constructor args" className="input font-mono text-[12px]" value={ctorJson} onChange={(e) => setCtorJson(e.target.value)} />
             </Labelled>
           </div>
@@ -762,6 +765,7 @@ export function EngineCovenantCard({ chain, defaultOpen }: { chain: EngineCovena
                 compileRecordPath: chain.contract?.compileRecordPath,
                 contract: chain.contract?.contract,
                 abi,
+                constructorArgs: chain.contract?.constructorArgs,
                 tip: chain.tip.map((t) => ({ outpoint: t.outpoint, amountSompi: t.amountSompi, declaredState: t.declaredState }))
               }}
             />

@@ -1,0 +1,60 @@
+{
+  "schema": "hardkas.txSubmission.v1",
+  "hardkasVersion": "0.13.0-rc.3",
+  "version": "1.0.0-alpha",
+  "hashVersion": 5,
+  "networkId": "simnet",
+  "mode": "localnet",
+  "createdAt": "2026-11-22T23:13:46.773Z",
+  "execution": {
+    "mode": "localnet",
+    "domain": "kaspa-l1",
+    "network": "simnet"
+  },
+  "signedArtifactId": "bf5ca9cce1f474c6cb298036607e18a6584391821c5659f6313ab06b8d1201bb",
+  "txId": "73abc5ff2db34b025f7d0915b5ec912be7adc75f3b3f4b95c30c50bd63cfcc59",
+  "submitResult": {
+    "accepted": true,
+    "transactionId": "73abc5ff2db34b025f7d0915b5ec912be7adc75f3b3f4b95c30c50bd63cfcc59"
+  },
+  "submitPoint": {
+    "virtualDaaScore": "11127",
+    "sinkHash": "de9cc4e5427869e08ecc03ebcac8485bab121ef9d49c37db034ba2e752848d6a",
+    "sinkBlueScore": "10396"
+  },
+  "fee": {
+    "status": "derived",
+    "method": "inputs-minus-outputs",
+    "inputsSompi": "100000000",
+    "outputsSompi": "98231400",
+    "feeSompi": "1768600",
+    "inputCount": 1,
+    "outputCount": 2,
+    "planArtifactId": "1734a7bc64f96c855397c1617571bb9d808013a7cbac0a62b406611b4be191b1"
+  },
+  "submittedAt": "2026-11-22T23:13:46.773Z",
+  "rpcUrl": "ws://127.0.0.1:18210",
+  "workflowId": "wf_b4bdeccbbd62a3ee",
+  "assumptionLevel": "local-dev",
+  "covenantSpends": [
+    {
+      "outpoint": "e7680a6b98775c97bf0a27748a7ec2056792038d93189202dd3e01226ba672b8:0",
+      "covenantId": "9f60666516ff77c5e2a1d7d4164104d15f20c08879f0fc725680ceb2801d6aa6",
+      "address": "kaspasim:pr3q0wg37fmwjf8y6wg76v3d84hhpsx9s7g6ty4jv7n750mpwppjzmy0wze4z"
+    }
+  ],
+  "preflight": {
+    "observedAtDaaScore": "11129",
+    "inputs": 1,
+    "scope": "observer-local",
+    "guarantee": "local-orchestration-only: outpoints spent by transactions in the observer's mempool at the observation point were excluded; absence from that mempool does not prove absence of a competing spend on the network"
+  },
+  "lineage": {
+    "artifactId": "b1e328a799ce6b36a52345c578e35c722748dbee5aa76027af512de864359325",
+    "lineageId": "1734a7bc64f96c855397c1617571bb9d808013a7cbac0a62b406611b4be191b1",
+    "parentArtifactId": "bf5ca9cce1f474c6cb298036607e18a6584391821c5659f6313ab06b8d1201bb",
+    "rootArtifactId": "1734a7bc64f96c855397c1617571bb9d808013a7cbac0a62b406611b4be191b1",
+    "sequence": 3
+  },
+  "contentHash": "b1e328a799ce6b36a52345c578e35c722748dbee5aa76027af512de864359325"
+}
