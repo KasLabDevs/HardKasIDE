@@ -10,12 +10,18 @@
  *     with a message, instead of reaching the CLI.
  */
 
-export type FieldKind = "text" | "path" | "json" | "select" | "flag";
+/** `account`: one of the workspace's accounts, by name (a text field when the workspace has none). */
+export type FieldKind = "text" | "path" | "json" | "select" | "flag" | "account";
 
 export interface FieldSpec {
   id: string;
   label: string;
   kind: FieldKind;
+  /**
+   * `account`: the command signs with this account's key. The card refuses to run it for an encrypted account (the
+   * IDE never takes a password) and shows the command to run in a terminal instead; development accounts need none.
+   */
+  signs?: boolean;
   /** `arg`: a positional argument. `option`: `flag value` (or just `flag` for a `flag` field). */
   as: "arg" | "option";
   /** The option's name, "--tests". Required for `option`. */
@@ -33,9 +39,12 @@ export interface FieldSpec {
   initial?: string;
   /** `text`: a long value (hex, a script): shown in a taller box. */
   multiline?: boolean;
-  /** A positional that takes several values: the text is split at commas and spaces, one argument each. */
+  /** A positional or option that takes several values: the text is split at commas and spaces, one argument each. */
   list?: boolean;
 }
+
+/** The words of a `list` field, one argument each. */
+export const splitList = (text: string): string[] => text.split(/[\s,]+/).filter(Boolean);
 
 export interface CommandSpec {
   id: string;
@@ -119,10 +128,9 @@ export function buildCommand(spec: CommandSpec, values: Readonly<Record<string, 
       const bad = checkWord(f.label, raw, f.as === "arg");
       if (bad) return { ok: false, error: bad, fieldId: f.id };
     }
-    if (f.as === "arg") {
-      if (f.list) positional.push(...word.split(/[\s,]+/).filter(Boolean));
-      else positional.push(word);
-    } else if (f.flag) options.push(f.flag, word);
+    const words = f.list && f.kind !== "json" ? splitList(word) : [word];
+    if (f.as === "arg") positional.push(...words);
+    else if (f.flag) options.push(f.flag, ...words);
   }
   return { ok: true, args: [...spec.words, ...positional, ...options, "--json"], files };
 }
@@ -133,10 +141,25 @@ export function commandLine(args: ReadonlyArray<string>): string {
   return ["hardkas", ...args.filter((a) => a !== "--json").map(quote)].join(" ");
 }
 
-/** Starting values of a card: each field's `initial`, or its `sample` for JSON. */
-export function initialValues(spec: CommandSpec): Record<string, string> {
+/** Starting values of a card: each field's `initial`, or its `sample` for JSON. `preset` wins where it names a field. */
+export function initialValues(spec: CommandSpec, preset?: Readonly<Record<string, string>>): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const f of spec.fields) out[f.id] = f.initial ?? (f.kind === "json" ? (f.sample ?? "") : "");
+  for (const f of spec.fields) out[f.id] = preset?.[f.id] ?? f.initial ?? (f.kind === "json" ? (f.sample ?? "") : "");
+  return out;
+}
+
+/**
+ * The account fields of a card that sign and whose chosen account is encrypted: the IDE never takes a password, so
+ * the card does not run the command and says to run it in a terminal (where HardKAS asks for the password itself).
+ */
+export function encryptedSigners(spec: CommandSpec, values: Readonly<Record<string, string>>, accounts: ReadonlyArray<{ name: string; keystore: string }>): string[] {
+  const out: string[] = [];
+  for (const f of spec.fields) {
+    if (f.kind !== "account" || !f.signs) continue;
+    const name = (values[f.id] ?? "").trim();
+    const account = accounts.find((a) => a.name === name);
+    if (account && account.keystore === "encrypted") out.push(name);
+  }
   return out;
 }
 
