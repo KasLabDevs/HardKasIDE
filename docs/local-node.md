@@ -9,15 +9,15 @@ A private simnet has no network to mine for it. HardKas runs a CPU miner (`kaspa
 - A deploy or spend sent with the miner stopped reaches the mempool and **stays there**. `hardkas silver deploy/spend --wait` gives up after its timeout and, when it does, **writes no record** even though the transaction is still pending and confirms as soon as blocks come. The IDE passes `--timeout 600` for that reason.
 - A miner left running flat out (`--keep-miner`) finds blocks faster than the node accepts them. The miner log fills with `Block was not submitted: route is full`, and confirmations take minutes instead of seconds.
 
-The **Local node** card in the Servers view (and the top of Deploy & Run) says which of the two is happening and offers:
+By default the IDE handles this itself: **Mine automatically when something is sent** (the switch in the Local node card, on unless you turn it off, remembered per browser). Whenever a command that waits for a block starts on the local node (`--wait`: a deploy, a spend, a covenant or KCC-20 operation, an escrow funding or release; or `tx send`) while no miner runs, the IDE mines one burst (`hardkas localnet fund <first account> --amount 1 --stop-miner`: it stops by itself), one at a time, and says so in the Console. The first burst also creates the miner container.
+
+The **Local node** card in the Servers view (and the top of Deploy & Run) shows the state in one line and keeps the manual controls, for when the switch is off or you want blocks for a while:
 
 | action | what runs | when to use it |
 | --- | --- | --- |
-| **Mine a burst** | `hardkas localnet fund <first account> --amount 1 --stop-miner` | You sent a transaction and want it confirmed: mines until one more mature KAS reaches the account (a few minutes on a long chain), then stops. |
-| **Start miner** | `docker start hardkas-toccata-miner` | You want continuous blocks for a while (several deploys and spends in a row). Stop it afterwards. |
+| **Mine blocks now** | `hardkas localnet fund <first account> --amount 1 --stop-miner` | You sent something with auto-mining off and want it confirmed: mines until one more mature KAS reaches the account (a minute or two; longer on a long chain), then stops. |
+| **Keep mining** | `docker start hardkas-toccata-miner` | You want continuous blocks for a while (several deploys and spends in a row). Stop it afterwards. |
 | **Stop miner** | `docker stop -t 2 hardkas-toccata-miner` | The explorer's Blocks tab shows `route is full`, or you are done. |
-
-The miner container exists only after the first funding; before that the card says so and offers the burst (which creates it).
 
 The **Explorer** card (Blocks tab) shows the blocks the miner found, its rate, and how many blocks the node refused in the current log window.
 

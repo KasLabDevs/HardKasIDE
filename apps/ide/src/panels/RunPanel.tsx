@@ -126,7 +126,9 @@ export function RunPanel() {
   }
 
   return (
-    <div className="relative min-h-full flex flex-col text-xs">
+    // `@container` lets the card groups go to two columns when this panel is wide (a tab in the editor area, its
+    // default place) and stay one column in a side panel.
+    <div className="@container relative h-full min-h-full overflow-auto flex flex-col text-xs">
       {target === "localnet" && <NodeBusyCover label="The local node is changing…" />}
 
       <div role="tablist" aria-label="Deploy and run" onKeyDown={onKeyDown} className="sticky top-0 z-20 h-[30px] shrink-0 flex items-end px-1 gap-0.5 border-b border-border bg-bg-panel overflow-x-auto" data-testid="deploy-run-mode-bar">
@@ -157,7 +159,7 @@ export function RunPanel() {
         })}
       </div>
 
-      <div id="run-tabpanel" role="tabpanel" aria-labelledby={`run-tab-${tab}`} className="p-3 flex-1">
+      <div id="run-tabpanel" role="tabpanel" aria-labelledby={`run-tab-${tab}`} className="p-3 flex-1 w-full max-w-6xl mx-auto">
         {body}
       </div>
     </div>

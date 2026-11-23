@@ -50,6 +50,7 @@ export class EnvironmentPlugin extends Plugin {
     void this.refresh();
     this.offs.push(
       this.on("deployRun", "transactionExecuted", () => void this.refreshAccounts()),
+      this.on("console", "jobStarted", (job) => this.maybeAutoMine(job as { args?: string[] })),
       useIde.subscribe((s, prev) => {
         if (s.target !== prev.target) void this.refreshAccounts();
       })
@@ -670,6 +671,23 @@ export class EnvironmentPlugin extends Plugin {
       }
       await this.refreshAccounts();
     });
+  }
+
+  /**
+   * Auto-mining: a command that sends to the local node and waits for a block (`--wait`, or `tx send`) gets its
+   * blocks without anyone pressing a button. One burst (`localnet fund --amount 1 --stop-miner`) at a time; it
+   * stops by itself, so the node is never flooded. Off with the switch in the Local node card.
+   */
+  private maybeAutoMine(job: { args?: string[] }): void {
+    const args = job.args ?? [];
+    const env = useEnv.getState();
+    if (!env.autoMine || useIde.getState().target !== "localnet" || !env.node?.rpcReady) return;
+    if (env.minerBusy || env.nodeBusy || env.node.miner?.running) return;
+    const sends = args.includes("--wait") || (args[0] === "tx" && args[1] === "send");
+    if (!sends || args[0] === "localnet") return;
+    const account = env.accounts[0]?.name ?? "alice";
+    this.console().info(`Auto-mining: hardkas ${args.slice(0, 2).join(" ")} waits for a block, so a burst is mined to ${account}.`);
+    void this.mineBurst(account).catch(() => undefined); // the failure is in the store and the Console
   }
 
   private async minerOp(kind: "start" | "stop" | "burst", run: () => Promise<void>): Promise<void> {

@@ -25,6 +25,7 @@ export class LineagePlugin extends Plugin {
       location: "mainPanel",
       icon: GitBranch,
       order: 50,
+      advanced: true,
       methods: ["open", "refresh", "replay", "openArtifact"],
       events: ["updated", "artifactArrived"]
     });

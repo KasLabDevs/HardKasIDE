@@ -27,6 +27,8 @@ export interface PluginProfile {
   events?: string[];
   /** Order in the icon rail; lower first. */
   order?: number;
+  /** Shown in the rail only when "More" is expanded: a view most sessions never need (indexes, history, plugins). */
+  advanced?: boolean;
   /** Built into the IDE, or installed by the user (iframe). */
   kind?: "builtin" | "external";
   /** Cannot be deactivated (the IDE would not work without it). */

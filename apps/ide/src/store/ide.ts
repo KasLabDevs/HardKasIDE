@@ -109,8 +109,11 @@ export const VIEW_PREFIX = "view:";
 export type Dock = "left" | "leftBottom" | "right" | "main";
 const DOCKS_KEY = "hardkas-ide.docks";
 const HIDDEN_PANELS_KEY = "hardkas-ide.hidden-panels";
-/** Out-of-the-box placement: the Assistant chat lives on the right, like an editor's side panels. */
-const DEFAULT_DOCKS: Record<string, Dock> = { assistant: "right" };
+/**
+ * Out-of-the-box placement: the Assistant chat lives on the right, like an editor's side panels, and Deploy & Run
+ * opens as a tab in the editor area, where its forms have room (it was a 250 px column with six tabs).
+ */
+const DEFAULT_DOCKS: Record<string, Dock> = { assistant: "right", deployRun: "main" };
 
 function loadDocks(): Record<string, Dock> {
   try {
@@ -120,12 +123,17 @@ function loadDocks(): Record<string, Dock> {
   }
 }
 
+/** Until the user has shown or hidden a panel themselves, the Assistant stays collapsed: the rail button opens it. */
+const DEFAULT_HIDDEN_PANELS: Record<string, boolean> = { assistant: true };
+
 function loadHiddenPanels(): Record<string, boolean> {
   try {
-    const parsed = JSON.parse(localStorage.getItem(HIDDEN_PANELS_KEY) ?? "{}") as Record<string, boolean>;
-    return parsed && typeof parsed === "object" ? parsed : {};
+    const raw = localStorage.getItem(HIDDEN_PANELS_KEY);
+    if (raw === null) return { ...DEFAULT_HIDDEN_PANELS };
+    const parsed = JSON.parse(raw) as Record<string, boolean>;
+    return parsed && typeof parsed === "object" ? parsed : { ...DEFAULT_HIDDEN_PANELS };
   } catch {
-    return {};
+    return { ...DEFAULT_HIDDEN_PANELS };
   }
 }
 

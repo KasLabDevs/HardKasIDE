@@ -124,8 +124,7 @@ export function CommandCard({ spec, defaultOpen = false, preset, onOutcome }: { 
 
       {open && (
         <div id={bodyId} className="px-2.5 pb-2.5 space-y-2 border-t border-border/70 pt-2">
-          <p className="text-fg-muted leading-snug">{spec.summary}</p>
-          {spec.caveat && <p className="text-[12px] text-warn leading-snug">{spec.caveat}</p>}
+          <Summary text={spec.summary} caveat={spec.caveat} />
           {spec.offline && (
             <div className="flex items-center gap-1 text-[12px] text-fg-muted">
               <ShieldCheck size={12} className="text-ok shrink-0" /> Reads and checks only: sends nothing, signs nothing.
@@ -165,6 +164,34 @@ export function CommandCard({ spec, defaultOpen = false, preset, onOutcome }: { 
         </div>
       )}
     </section>
+  );
+}
+
+/** The first sentence of a text and the rest, so a card can say one line and keep the explanation behind "More". */
+export function splitSummary(text: string): { lead: string; rest: string } {
+  const m = /^(.*?[.!?])(\s+)(?=[A-Z`(])/s.exec(text);
+  if (!m) return { lead: text, rest: "" };
+  return { lead: m[1], rest: text.slice(m[0].length).trim() };
+}
+
+/** One line of summary; the rest of it (and HardKAS's caveat) behind a "More" toggle. */
+function Summary({ text, caveat }: { text: string; caveat?: string }) {
+  const [more, setMore] = useState(false);
+  const { lead, rest } = splitSummary(text);
+  const hasMore = rest.length > 0 || Boolean(caveat);
+  return (
+    <div className="space-y-1">
+      <p className="text-fg-muted leading-snug">
+        {lead}
+        {hasMore && (
+          <button type="button" onClick={() => setMore((m) => !m)} className="ml-1.5 text-accent hover:underline cursor-pointer" aria-expanded={more}>
+            {more ? "Less" : "More"}
+          </button>
+        )}
+      </p>
+      {more && rest && <p className="text-fg-muted leading-snug">{rest}</p>}
+      {more && caveat && <p className="text-[12px] text-warn leading-snug">{caveat}</p>}
+    </div>
   );
 }
 
@@ -354,11 +381,14 @@ export function CardGroup({ title, note, specs, openFirst = false }: { title: st
     <div className="space-y-2">
       <div>
         <div className="label !mb-0">{title}</div>
-        {note && <div className="text-fg-muted mt-0.5 leading-snug">{note}</div>}
+        {note && <Summary text={note} />}
       </div>
-      {specs.map((s, i) => (
-        <CommandCard key={s.id} spec={s} defaultOpen={openFirst && i === 0} />
-      ))}
+      {/* Two columns once the panel is wide (Deploy & Run as a tab in the editor area), one in a side panel. */}
+      <div className="grid gap-2 @3xl:grid-cols-2 items-start">
+        {specs.map((s, i) => (
+          <CommandCard key={s.id} spec={s} defaultOpen={openFirst && i === 0} />
+        ))}
+      </div>
     </div>
   );
 }

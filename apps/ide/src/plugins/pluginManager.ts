@@ -35,6 +35,7 @@ export class PluginManagerPlugin extends Plugin {
       location: "sidePanel",
       icon: Puzzle,
       order: 85,
+      advanced: true,
       required: true,
       methods: ["installFromUrl", "installManifest", "installFromNpm", "uninstall", "toggle"],
       events: ["installed", "uninstalled"]

@@ -1,6 +1,6 @@
 # Deploy & Run
 
-One panel, six tabs in the style of the editor's file tabs. Where it runs (simulator, local node, testnet) is chosen in the top bar; Payments says which one is active.
+One panel, six tabs in the style of the editor's file tabs. It opens as a **tab in the editor area** by default, where its forms have room and the cards sit in two columns; the Position controls on its tab move it to a side column if you prefer. Where it runs (simulator, local node, testnet) is chosen in the top bar; Payments says which one is active.
 
 | tab | what is in it |
 | --- | --- |
@@ -17,6 +17,7 @@ The last tab you used is remembered. Arrow keys, Home and End move between the t
 
 A card is one `hardkas` command as a form (`apps/ide/src/panels/run/cards.ts`). Press the button and the IDE runs the real command and reads the JSON it prints:
 
+- one line of summary, with the rest of the explanation (and HardKAS's own caveat) behind **More**;
 - a **verdict** when the command judges something (`STRUCTURALLY_VALID`, `REJECTED`, `valid`, `reproduced`, `ok`), green or red; plain information is left uncoloured;
 - the answer as **rows** (long values such as hex get their own line and a copy button; objects and lists fold);
 - the **exact command line**, to paste in a terminal.
