@@ -11,6 +11,13 @@ import { getRoot } from "./workspace.js";
  */
 
 const IGNORED_DIRS = new Set(["node_modules", ".git", ".turbo", "dist", "coverage"]);
+/**
+ * In the file tree: listed but not read (flagged `hidden`, no children), so the Explorer can show them on request and
+ * load them one level at a time (`readDir`). `.git` is never listed.
+ */
+const HIDDEN_DIRS = new Set(["node_modules", ".turbo", "dist", "coverage"]);
+/** One level of a folder read on demand stops here (a node_modules can hold thousands of entries). */
+const DIR_LIST_LIMIT = 2000;
 
 /** Who asks: the person in the IDE, or an AI agent (the MCP server marks its requests). */
 export type FsClient = "user" | "agent";
@@ -70,6 +77,10 @@ export interface TreeNode {
   path: string;
   type: "file" | "dir";
   children?: TreeNode[];
+  /** Build output or dependencies (node_modules, dist…): not read with the tree; `readDir` loads it on request. */
+  hidden?: true;
+  /** A key store (see secretPaths.ts): listed so people know it is there, never read. */
+  locked?: true;
 }
 
 export function resolveInRoot(relative: string): string {
@@ -99,24 +110,46 @@ export async function readTree(relative = ""): Promise<TreeNode[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true });
   const nodes: TreeNode[] = [];
   for (const entry of entries) {
-    if (entry.isDirectory() && IGNORED_DIRS.has(entry.name)) continue;
-    const abs = path.join(dir, entry.name);
-    const node: TreeNode = {
-      name: entry.name,
-      path: toRelative(abs),
-      type: entry.isDirectory() ? "dir" : "file"
-    };
+    if (entry.isDirectory() && IGNORED_DIRS.has(entry.name) && !HIDDEN_DIRS.has(entry.name)) continue;
+    const node = nodeOf(dir, entry);
     // A link (junction, symlink) is listed but never followed: it may point outside the project.
-    if (entry.isDirectory() && !entry.isSymbolicLink()) {
+    if (entry.isDirectory() && !entry.isSymbolicLink() && !node.hidden && !node.locked) {
       node.children = await readTree(node.path);
     }
     nodes.push(node);
   }
-  nodes.sort((a, b) => {
+  return sortNodes(nodes);
+}
+
+function nodeOf(dir: string, entry: import("node:fs").Dirent): TreeNode {
+  const node: TreeNode = { name: entry.name, path: toRelative(path.join(dir, entry.name)), type: entry.isDirectory() ? "dir" : "file" };
+  if (entry.isDirectory() && HIDDEN_DIRS.has(entry.name)) node.hidden = true;
+  if (isKeyStorePath(node.path)) node.locked = true;
+  return node;
+}
+
+function sortNodes(nodes: TreeNode[]): TreeNode[] {
+  return nodes.sort((a, b) => {
     if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
-  return nodes;
+}
+
+/**
+ * One level of a folder, for the Explorer to open a hidden folder (node_modules, dist…) or one below it without
+ * reading the whole subtree. Sub-folders come without children. Refuses what `safeTarget` refuses (outside the
+ * workspace, through a link, key stores); `.git` is never listed.
+ */
+export async function readDir(relative: string): Promise<{ nodes: TreeNode[]; truncated: boolean }> {
+  const dir = await safeTarget(relative);
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const nodes: TreeNode[] = [];
+  for (const entry of entries) {
+    if (entry.isDirectory() && entry.name === ".git") continue;
+    nodes.push(nodeOf(dir, entry));
+    if (nodes.length >= DIR_LIST_LIMIT) break;
+  }
+  return { nodes: sortNodes(nodes), truncated: entries.length > nodes.length };
 }
 
 /**

@@ -156,6 +156,9 @@ app.post("/api/workspace/close", (c) => {
 
 app.get("/api/fs/tree", async (c) => c.json({ ok: true, root: getRoot(), tree: await wsfs.readTree("") }));
 
+// One level of a folder, read on demand: what the Explorer shows when a hidden folder (node_modules, dist…) is opened.
+app.get("/api/fs/dir", async (c) => c.json({ ok: true, ...(await wsfs.readDir(c.req.query("path") ?? "")) }));
+
 app.get("/api/fs/file", async (c) => {
   const p = c.req.query("path");
   if (!p) return c.json({ ok: false, code: "BAD_REQUEST", message: "path is required" }, 400);

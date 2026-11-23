@@ -46,6 +46,10 @@ export interface TreeNode {
   path: string;
   type: "file" | "dir";
   children?: TreeNode[];
+  /** Build output or dependencies (node_modules, dist…): listed but not read; `api.fs.dir` loads it on request. */
+  hidden?: true;
+  /** A key store: listed so people know it is there, never opened. */
+  locked?: true;
 }
 
 export interface SearchMatchLine {
@@ -261,6 +265,8 @@ export const api = {
   },
   fs: {
     tree: () => request<{ root: string; tree: TreeNode[] }>("/api/fs/tree"),
+    /** One level of a folder (sub-folders without children): how the Explorer opens node_modules, dist… */
+    dir: (path: string) => request<{ nodes: TreeNode[]; truncated: boolean }>(`/api/fs/dir?path=${encodeURIComponent(path)}`),
     read: (path: string) => request<{ content: string }>(`/api/fs/file?path=${encodeURIComponent(path)}`).then((r) => r.content),
     /** Files under `dir` whose name ends with `suffix`, newest first; at most `limit` (the server's default is 20). */
     find: (dir: string, suffix: string, limit?: number) =>
