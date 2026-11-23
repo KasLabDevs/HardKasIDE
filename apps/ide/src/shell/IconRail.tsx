@@ -7,6 +7,8 @@ import { useIde, VIEW_PREFIX } from "@/store/ide";
 
 const PINNED_BOTTOM_PLUGINS = new Set(["assistant", "settings"]);
 const MORE_KEY = "hardkas-ide.rail-more";
+/** Plugins that belong with the files rather than with HardKas when their profile says no `group` (external ones, older ones). */
+const WORKSPACE_PLUGINS = new Set(["files", "scripts", "tests"]);
 
 function loadMore(): boolean {
   try {
@@ -17,9 +19,10 @@ function loadMore(): boolean {
 }
 
 /**
- * The rail shows the views a session needs every day; the ones a profile marks `advanced` (indexes, history,
- * plugins) sit behind a "More" toggle, so a first look at the IDE is seven icons, not fourteen. An advanced view
- * that is open shows its icon regardless, so nothing lit can hide.
+ * The rail in three blocks: what any editor has (Explorer, Scripts, Tests), then HardKas (node, accounts, compiler,
+ * Deploy & Run, the graphs), then "More" for the views a profile marks `advanced` (indexes, history, plugins), so a
+ * first look at the IDE is a handful of icons, not fourteen. An advanced view that is open shows its icon
+ * regardless, so nothing lit can hide. Side panels and editor-area views sit together in their block, by `order`.
  */
 export function IconRail() {
   const engine = useEngine();
@@ -88,12 +91,15 @@ export function IconRail() {
   const mainViewState = (p: Plugin) => ({ isActive: activeFile === `${VIEW_PREFIX}${p.profile.name}`, where: "", toggle: () => openView(p.profile.name, p.profile.displayName) });
 
   const isAdvanced = (p: Plugin) => p.profile.advanced === true;
-  const coreSide = sidePlugins.filter((p) => !isAdvanced(p));
-  const coreMain = mainViews.filter((p) => !isAdvanced(p));
-  const advanced: Array<{ plugin: Plugin; state: ReturnType<typeof sideToggleState> }> = [
-    ...sidePlugins.filter(isAdvanced).map((plugin) => ({ plugin, state: sideToggleState(plugin) })),
-    ...mainViews.filter(isAdvanced).map((plugin) => ({ plugin, state: mainViewState(plugin) }))
-  ];
+  const isWorkspace = (p: Plugin) => (p.profile.group ?? (WORKSPACE_PLUGINS.has(p.profile.name) ? "workspace" : "hardkas")) === "workspace";
+  type Entry = { plugin: Plugin; state: { isActive: boolean; where: string; toggle: () => void }; tab: boolean };
+  const entries: Entry[] = [
+    ...sidePlugins.map((plugin) => ({ plugin, state: sideToggleState(plugin), tab: (docks[plugin.profile.name] ?? "left") === "main" })),
+    ...mainViews.map((plugin) => ({ plugin, state: mainViewState(plugin), tab: true }))
+  ].sort((a, b) => (a.plugin.profile.order ?? 100) - (b.plugin.profile.order ?? 100));
+  const workspace = entries.filter((e) => !isAdvanced(e.plugin) && isWorkspace(e.plugin));
+  const hardkas = entries.filter((e) => !isAdvanced(e.plugin) && !isWorkspace(e.plugin));
+  const advanced = entries.filter((e) => isAdvanced(e.plugin));
   const showAdvanced = more || advanced.some((a) => a.state.isActive);
 
   const renderBottomPlugin = (plugin: Plugin, FallbackIcon: typeof Sparkles) => {
@@ -131,14 +137,14 @@ export function IconRail() {
 
   return (
     <nav aria-label="Workbench navigation" className="w-10 shrink-0 bg-bg-panel flex flex-col items-center py-1.5 gap-0.5 select-none overflow-y-auto overflow-x-hidden">
-      {coreSide.map((p) => renderPlugin(p, sideToggleState(p), (docks[p.profile.name] ?? "left") === "main"))}
-      {coreMain.length > 0 && <div className="w-5 border-t border-border my-1" role="separator" />}
-      {coreMain.map((p) => renderPlugin(p, mainViewState(p), true))}
+      {workspace.map((e) => renderPlugin(e.plugin, e.state, e.tab))}
+      {workspace.length > 0 && hardkas.length > 0 && <div className="w-5 border-t border-border my-1" role="separator" aria-label="HardKas" title="HardKas: node, accounts, compiler, Deploy & Run, graphs" />}
+      {hardkas.map((e) => renderPlugin(e.plugin, e.state, e.tab))}
       {advanced.length > 0 && (
         <>
           <div className="w-5 border-t border-border my-1" role="separator" />
           <RailToggle on={showAdvanced} onClick={toggleMore} onLabel="Fewer views" offLabel={`More views (${advanced.map((a) => a.plugin.profile.displayName).join(", ")})`} icon={showAdvanced ? <ChevronUp size={17} /> : <ChevronDown size={17} />} />
-          {showAdvanced && advanced.map(({ plugin, state }) => renderPlugin(plugin, state, plugin.profile.location === "mainPanel" || (docks[plugin.profile.name] ?? "left") === "main"))}
+          {showAdvanced && advanced.map((e) => renderPlugin(e.plugin, e.state, e.tab))}
         </>
       )}
       {/* layout toggles and workspace settings, pinned to the bottom of the rail */}

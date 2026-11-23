@@ -158,6 +158,7 @@ export class TestsPlugin extends Plugin {
       location: "sidePanel",
       icon: FlaskConical,
       order: 60,
+      group: "workspace",
       methods: ["open", "run", "runFile", "openTest"],
       events: ["runFinished"]
     });
