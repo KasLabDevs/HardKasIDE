@@ -292,6 +292,41 @@ export const api = {
       request<{ job: JobSummary }>("/api/run", { method: "POST", body: JSON.stringify({ args, ...options }) }).then((r) => r.job),
     get: (id: string) => request<{ job: JobDetail }>(`/api/jobs/${id}`).then((r) => r.job),
     list: () => request<{ jobs: JobSummary[] }>("/api/jobs").then((r) => r.jobs),
+    /** Stops a running job (its process is killed); `killed` is false when it had already ended. */
+    kill: (id: string, options?: { keepalive?: boolean }) =>
+      request<{ killed: boolean; job: JobSummary }>(`/api/jobs/${id}`, { method: "DELETE", keepalive: options?.keepalive }),
+    /**
+     * Opens a job's SSE stream and hands every stdout/stderr chunk to `onEvent` as it arrives (for a long-lived
+     * command such as `hardkas watch`). `done` settles when the job ends; `close()` just stops listening.
+     */
+    open: (
+      id: string,
+      onEvent: (type: "stdout" | "stderr" | "error", data: string) => void
+    ): { done: Promise<{ status: JobSummary["status"]; exitCode: number | null; result: unknown }>; close(): void } => {
+      const source = new EventSource(`/api/jobs/${id}/stream`);
+      let closed = false;
+      const done = new Promise<{ status: JobSummary["status"]; exitCode: number | null; result: unknown }>((resolve, reject) => {
+        for (const type of ["stdout", "stderr", "error"] as const) {
+          source.addEventListener(type, (e) => onEvent(type, (e as MessageEvent).data as string));
+        }
+        source.addEventListener("done", (e) => {
+          source.close();
+          resolve(JSON.parse((e as MessageEvent).data as string));
+        });
+        source.onerror = () => {
+          source.close();
+          if (!closed) reject(new Error("job stream closed unexpectedly"));
+        };
+      });
+      done.catch(() => {});
+      return {
+        done,
+        close: () => {
+          closed = true;
+          source.close();
+        }
+      };
+    },
     /** Follows a job over SSE. Resolves with the final status/result when it ends. */
     follow: (
       id: string,

@@ -1,6 +1,8 @@
 import { create } from "zustand";
+import type { HistoryView } from "@/utils/nodeHistory";
+import type { LiveUtxo, LiveUtxoSet, WatchBalance, WatchEvent } from "@/utils/watchLines";
 
-/** Live view of the local node: DAG, mempool, blocks the miner found, and the UTXOs of one address. */
+/** Live view of the local node: DAG, mempool, blocks the miner found, the UTXOs and the history of one address. */
 
 export interface DagInfo {
   networkId: string;
@@ -33,21 +35,36 @@ export interface MinerInfo {
   blocks: MinedBlock[];
 }
 
-export interface UtxoRow {
-  txId: string;
-  index: number;
-  amountSompi: string;
-  daa: number;
-  coinbase: boolean;
+/** A UTXO as `hardkas rpc utxos` lists it, or as `hardkas watch` reports it (then without a DAA score). */
+export type UtxoRow = LiveUtxo;
+
+export interface UtxoView extends LiveUtxoSet {
+  /** `rpc`: one `hardkas rpc utxos` reading; `watch`: kept live by `hardkas watch`. */
+  source: "rpc" | "watch";
+  loadedAt: number;
 }
 
-export interface UtxoView {
+export interface WatchFeedItem {
+  at: string;
+  kind: WatchEvent["event"];
+  text: string;
+  txid?: string;
+}
+
+export interface WatchState {
   address: string;
-  totalSompi: string;
-  count: number;
-  /** The biggest ones first, capped for the screen. */
-  rows: UtxoRow[];
-  loadedAt: number;
+  jobId: string | null;
+  /** starting: the job runs but no snapshot yet; live: the snapshot arrived; stopped / failed: the job ended. */
+  status: "starting" | "live" | "stopped" | "failed";
+  network?: string;
+  balance?: WatchBalance;
+  /** Newest last, capped. */
+  feed: WatchFeedItem[];
+  events: number;
+  startedAt: number;
+  /** Why it ended, when it did (the watch's own `end` reason, "node stopped", "toggle off", …). */
+  endReason?: string;
+  error?: string;
 }
 
 interface ExplorerState {
@@ -59,6 +76,13 @@ interface ExplorerState {
   utxos: UtxoView | null;
   utxosBusy: boolean;
   utxosError: string | null;
+  /** The current page of `hardkas history` for one address. */
+  history: HistoryView | null;
+  historyBusy: boolean;
+  historyError: string | null;
+  /** The cursors of the pages before the current one (the first page has none), so "previous" can go back. */
+  historyTrail: Array<string | undefined>;
+  watch: WatchState | null;
   busy: boolean;
   error: string | null;
   updatedAt: number | null;
@@ -75,10 +99,15 @@ export const useExplorer = create<ExplorerState>((set) => ({
   utxos: null,
   utxosBusy: false,
   utxosError: null,
+  history: null,
+  historyBusy: false,
+  historyError: null,
+  historyTrail: [],
+  watch: null,
   busy: false,
   error: null,
   updatedAt: null,
   patch: (p) => set(p),
   pushDaa: (daa) => set((s) => ({ daaSamples: [...s.daaSamples, [Date.now(), daa] as [number, number]].slice(-40) })),
-  reset: () => set({ dag: null, daaSamples: [], mempool: null, miner: null, utxos: null, error: null, updatedAt: null })
+  reset: () => set({ dag: null, daaSamples: [], mempool: null, miner: null, utxos: null, history: null, historyError: null, historyTrail: [], watch: null, error: null, updatedAt: null })
 }));
