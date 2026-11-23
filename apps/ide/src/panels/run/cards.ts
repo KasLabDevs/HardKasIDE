@@ -3,8 +3,9 @@ import type { CommandSpec } from "./commandSpec";
 /**
  * The commands of Deploy & Run that are a form and an answer: each one is a `CommandSpec`, drawn by `CommandCard`.
  * The samples are real: `kcc20 encode-state` / `check` and `kcc dispatch` were run with exactly these inputs.
- * Nothing here signs with a real key or touches mainnet: `--address-network` offers testnet-10 only, because
- * HardKAS itself refuses mainnet while it is locked down.
+ * Nothing here takes a password or a private key, and nothing touches mainnet: `--address-network` and `--network` offer
+ * testnet-10 at most, because HardKAS itself refuses mainnet while it is locked down. The cards that sign (`kcc20 deploy`,
+ * `kcc20 transfer`) sign with the workspace's development accounts, which need no password.
  */
 
 const ZERO32 = "00".repeat(32);
@@ -207,6 +208,105 @@ export const KCC20_CARDS: ReadonlyArray<CommandSpec> = [
     fields: [
       { id: "prefix", label: "Prefix (hex)", kind: "text", as: "option", flag: "--prefix", initial: "20", multiline: true },
       { id: "suffix", label: "Suffix (hex)", kind: "text", as: "option", flag: "--suffix", initial: "ac", multiline: true }
+    ]
+  }
+];
+
+// ---- KCC20 on the node (HardKAS 0.13: `kcc20 deploy | transfer | balance`, experimental) ------------------------
+
+/**
+ * The seven constructor arguments the reference KCC20.sil is compiled with (argent-lang/kcc20-reference): all zero.
+ * A `bytes` value is a list of bytes here, as `silver compile --args` reads it (a hex string is "not a byte array").
+ */
+const ZERO_BYTES32 = Array.from({ length: 32 }, () => 0);
+const KCC20_ZERO_CTOR_SAMPLE = JSON.stringify(
+  [
+    { kind: "bytes", value: ZERO_BYTES32 },
+    { kind: "int", value: 0 },
+    { kind: "bytes", value: ZERO_BYTES32 },
+    { kind: "byte", value: 0 },
+    { kind: "byte", value: 0 },
+    { kind: "bytes", value: ZERO_BYTES32 },
+    { kind: "bytes", value: ZERO_BYTES32 }
+  ]
+);
+
+/** HardKAS's own limitation (docs/status/limitations.md, "Covenants and KCC-20"). */
+const KCC20_CAVEAT =
+  "A token's outputs are found through this workspace's records of the covenant (a node cannot be asked by covenant id): a transfer made by another workspace is not seen, only its effect. Balances count only outputs the node lists unspent and whose state commits to their address.";
+
+const WAIT = { id: "wait", label: "Wait for confirmation", kind: "flag" as const, as: "option" as const, flag: "--wait", initial: "true", hint: "Blocks confirm only while the miner runs: use Mine a burst in Servers." };
+// 600 like the covenant forms: a burst's miner can take a minute or two to find its first block, and the CLI's default
+// 120 s gave SILVER_CONFIRMATION_TIMEOUT on a transfer the node then confirmed (nothing lost: the record says so).
+const TIMEOUT = { id: "timeout", label: "Confirmation timeout (s)", kind: "text" as const, as: "option" as const, flag: "--timeout", initial: "600", hint: "The CLI's own default is 120." };
+const YES = { id: "yes", label: "Confirm the broadcast (--yes)", kind: "flag" as const, as: "option" as const, flag: "--yes", hint: "Needed on testnet-10; simnet needs no confirmation. Without it HardKAS refuses (NOT EXECUTED) and sends nothing." };
+const FEE = { id: "fee", label: "Fee (sompi)", kind: "text" as const, as: "option" as const, flag: "--fee", placeholder: "the node's floor" };
+const COVENANT_ID = { id: "covenant", label: "Token covenant id", kind: "text" as const, as: "option" as const, flag: "--covenant", required: true, placeholder: "64 hex characters, from the deploy's answer" };
+const KCC20_ARTIFACT = { id: "artifact", label: "Program artifact (kcc20.json)", kind: "path" as const, as: "option" as const, flag: "--artifact", suggest: "kcc20.*\\.json$", hint: "Empty: KCC-20's default configuration." };
+
+export const KCC20_NODE_CARDS: ReadonlyArray<CommandSpec> = [
+  {
+    id: "kcc20-deploy",
+    title: "Deploy a token",
+    summary: "A covenant genesis of the token program (its compile record, e.g. the reference KCC20.sil compiled by silver compile) with one token output per initial holder, all one covenant id; planned, checked, signed and sent by the SDK's v1 engine.",
+    words: ["kcc20", "deploy"],
+    experimental: true,
+    sends: true,
+    caveat: KCC20_CAVEAT,
+    action: "Deploy",
+    fields: [
+      { id: "record", label: "Compile record of the program", required: true, placeholder: ".hardkas/artifacts/silver/silverCompile-….json", ...jsonFile },
+      { id: "from", label: "Funding account", kind: "account", as: "option", flag: "--from", required: true, hint: "Pays the token outputs' KAS and the fee, gets the change." },
+      { id: "holder", label: "Initial holders", kind: "text", as: "option", flag: "--holder", required: true, list: true, placeholder: "alice=1000, bob=500", hint: "<owner>=<amount>, in output order: an account of this workspace, a P2PK address or a 32-byte x-only public key; the amount an exact integer." },
+      { id: "kas", label: "KAS locked in each token output", kind: "text", as: "option", flag: "--kas", placeholder: "10" },
+      { id: "constructorArgs", label: "Constructor arguments (JSON)", kind: "json", as: "option", flag: "--constructor-args", sample: KCC20_ZERO_CTOR_SAMPLE, hint: "What the program was compiled with. This sample is the reference KCC20.sil's seven zero arguments; clear it to let HardKAS prove them from the initial State." },
+      { id: "extensionCommitment", label: "Extension commitment (hex)", kind: "text", as: "option", flag: "--extension-commitment", placeholder: "32 bytes; empty: zero" },
+      KCC20_ARTIFACT,
+      { id: "contract", label: "Contract", kind: "text", as: "option", flag: "--contract", placeholder: "KCC20", hint: "Only when the record has several." },
+      FEE,
+      { id: "network", label: "Network", kind: "select", as: "option", flag: "--network", choices: NETWORKS, hint: "Empty: the workspace's. Mainnet is refused before anything is read." },
+      WAIT,
+      TIMEOUT,
+      YES
+    ]
+  },
+  {
+    id: "kcc20-transfer",
+    title: "Transfer tokens",
+    summary: "Spends the sender's token outputs to the recipients, the change back to the sender, through the program's transfer (the leader) and transfer_delegator (the other inputs). Checked against the KCC-20 rules before anything is signed; the token's program on the node is the final judge.",
+    words: ["kcc20", "transfer"],
+    experimental: true,
+    sends: true,
+    caveat: KCC20_CAVEAT,
+    action: "Transfer",
+    fields: [
+      COVENANT_ID,
+      { id: "from", label: "Sender", kind: "account", as: "option", flag: "--from", required: true, hint: "Whose token outputs are spent and who signs them; the change in tokens goes back to it." },
+      { id: "to", label: "Recipients", kind: "text", as: "option", flag: "--to", required: true, list: true, placeholder: "bob=600, carol=300", hint: "<owner>=<amount>, in output order." },
+      { id: "input", label: "Token outputs to spend", kind: "text", as: "option", flag: "--input", list: true, placeholder: "txid:index, …", hint: "Empty: the sender's live outputs, largest first, as few as cover the amounts." },
+      { id: "funder", label: "Fee paid by", kind: "account", as: "option", flag: "--funder", hint: "Empty: the sender's token change keeps what the fee leaves, else the sender's own KAS coins." },
+      KCC20_ARTIFACT,
+      FEE,
+      { id: "maxFee", label: "Fee limit (sompi)", kind: "text", as: "option", flag: "--max-fee" },
+      { id: "computeBudget", label: "Compute budget per token input", kind: "text", as: "option", flag: "--compute-budget", placeholder: "estimate" },
+      { id: "network", label: "Network", kind: "select", as: "option", flag: "--network", choices: NETWORKS, hint: "Empty: the workspace's. Mainnet is refused before anything is read." },
+      WAIT,
+      TIMEOUT,
+      YES
+    ]
+  },
+  {
+    id: "kcc20-balance",
+    title: "Read balances",
+    summary: "A holder's live token outputs (or every holder's), from this workspace's records of the token's covenant, each listed unspent at the node with its covenant id and its state checked against its address. Asks the node, signs nothing.",
+    words: ["kcc20", "balance"],
+    experimental: true,
+    caveat: KCC20_CAVEAT,
+    action: "Read",
+    fields: [
+      { id: "holder", label: "Holder", kind: "account", as: "arg", hint: "Empty: every holder." },
+      COVENANT_ID,
+      { id: "network", label: "Network", kind: "select", as: "option", flag: "--network", choices: NETWORKS, hint: "Empty: the workspace's." }
     ]
   }
 ];
@@ -580,7 +680,7 @@ export const ESCROW_CARDS: ReadonlyArray<CommandSpec> = [
     action: "Release",
     fields: [
       ESCROW_ID,
-      { id: "signatures", label: "Signed request files", kind: "text", as: "option", flag: "--signatures", list: true, placeholder: "a.request.json, b.request.json", hint: "From signers in other workspaces, separated by commas. Empty when everyone signed here." },
+      { id: "signatures", label: "Signed request files", kind: "text", as: "option", flag: "--signatures", list: true, variadic: true, placeholder: "a.request.json, b.request.json", hint: "From signers in other workspaces, separated by commas. Empty when everyone signed here." },
       { id: "wait", label: "Wait until a chain block accepts it (120 s)", kind: "flag", as: "option", flag: "--wait", hint: "Needs blocks: mine a burst or start the miner while it waits." },
       ESCROW_NETWORK
     ]
@@ -595,4 +695,4 @@ export const ESCROW_CARDS: ReadonlyArray<CommandSpec> = [
   }
 ];
 
-export const ALL_CARDS: ReadonlyArray<CommandSpec> = [...SILVER_CARDS, ...COVENANT_CARDS, ...KCC20_CARDS, ...ZK_CARDS, ...TX_CARDS, ...PSKT_CARDS, ...ESCROW_CARDS];
+export const ALL_CARDS: ReadonlyArray<CommandSpec> = [...SILVER_CARDS, ...COVENANT_CARDS, ...KCC20_CARDS, ...KCC20_NODE_CARDS, ...ZK_CARDS, ...TX_CARDS, ...PSKT_CARDS, ...ESCROW_CARDS];

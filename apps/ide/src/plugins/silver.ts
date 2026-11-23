@@ -3,9 +3,10 @@ import { Plugin } from "@/engine/engine";
 import { parseSilArtifact, useSilver, type CompiledRecord, type CovenantRecord, type DeployRecord, type RecordProblem, type SpendRecord } from "@/store/silver";
 import { useIde } from "@/store/ide";
 import { pubkeyFromAddress } from "@/utils/kaspaAddress";
+import { groupEngineCovenants, parseEnginePlan, parseEngineSigned, parseEngineSubmission, type EngineCovenantChain, type EnginePlanRecord, type EngineSignedRecord, type EngineSubmissionRecord } from "@/utils/engineCovenants";
 import { markSpent, markSupersededCovenants, newestFirst, parseCompileRecord, parseCovenantRecord, parseDeployRecord, parseJsonRecord, parseSpendRecord } from "@/utils/silverRecords";
 import type { CompilationResult } from "./compiler";
-import type { ConsolePlugin } from "./console";
+import type { ConsolePlugin, RunResult } from "./console";
 
 /**
  * SilverScript contracts on the canonical localnet (the "Deploy & Run" flow for
@@ -16,9 +17,16 @@ import type { ConsolePlugin } from "./console";
  *   hardkas silver spend  <deployRecord>  --entry <name> --to <addr> --args <file> --wait --timeout 600 --json
  *   hardkas silver covenant genesis <compileRecord> --from <acct> --amount <kas> [--contract] --wait --timeout 600 --json
  *   hardkas silver covenant transition <covenantRecord> --policy <name> --constructor-args <file> --state-map <file> --next-state <file> [--args <file>] --emit-args <file> --wait --timeout 600 --json
+ *
+ * HardKAS 0.13 (the SDK's v1 engine; several outputs, 1:N, N:M, termination):
+ *   hardkas silver covenant start <compileRecord> --from <acct> --output <state-file>=<kas>… [--constructor-args <file>] --wait --timeout 600 --json
+ *   hardkas silver covenant advance <compileRecord> --covenant <id> --policy <name> --input txid:index… --next <state-file>=<kas>… [--pay …] [--terminate] [--args <file>] [--delegate-args <file>…] [--funder <acct>] --wait --timeout 600 --json
+ * Those two write no silverCovenant record: their covenants are read from the engine's plan, signed and submission records.
  */
 /** Seconds `--wait` may take before the CLI gives up (and leaves no record). */
 const CONFIRM_TIMEOUT_S = "600";
+/** How many record files of one folder are read; the engine writes one per transaction. */
+const RECORD_LIMIT = 500;
 
 export class SilverPlugin extends Plugin {
   private offs: Array<() => void> = [];
@@ -37,10 +45,12 @@ export class SilverPlugin extends Plugin {
         "loadDeployRecord",
         "covenantGenesis",
         "covenantTransition",
+        "covenantStart",
+        "covenantAdvance",
         "loadCovenantRecord",
         "readCachedConstructorArgs"
       ],
-      events: ["deployed", "spent", "covenantCreated", "covenantTransitioned", "deploymentsChanged"]
+      events: ["deployed", "spent", "covenantCreated", "covenantTransitioned", "covenantStarted", "covenantAdvanced", "deploymentsChanged"]
     });
   }
 
@@ -88,7 +98,7 @@ export class SilverPlugin extends Plugin {
   async refreshDeployments(): Promise<DeployRecord[]> {
     const store = useSilver.getState();
     try {
-      const files = await api.fs.find(".hardkas/artifacts/silver", ".json");
+      const files = await api.fs.find(".hardkas/artifacts/silver", ".json", RECORD_LIMIT);
       const problems: RecordProblem[] = [];
       const note = (recordPath: string, list: string[]) => {
         if (list.length > 0) problems.push({ recordPath, problems: list });
@@ -158,12 +168,15 @@ export class SilverPlugin extends Plugin {
         )
       ).filter((c): c is CovenantRecord => c !== null);
 
+      const engineCovenants = await this.readEngineCovenants(note);
+
       const list = newestFirst(markSpent(deploys, spends));
       const covenantList = newestFirst(markSupersededCovenants(covenantsRaw));
       useSilver.setState({
         deployments: list,
         spends: newestFirst(spends),
         covenants: covenantList,
+        engineCovenants,
         recordProblems: problems
       });
       this.reportProblems(problems);
@@ -173,6 +186,42 @@ export class SilverPlugin extends Plugin {
       store.setError(e instanceof Error ? e.message : String(e));
       return [];
     }
+  }
+
+  /**
+   * The covenants the v1 engine made (`silver covenant start | advance`, `kcc20 deploy | transfer`), from its plan,
+   * signed and submission records. v0 payments share those folders and are skipped quietly (txVersion 0); anything
+   * else that does not read is a problem, reported like the silver records'.
+   */
+  private async readEngineCovenants(note: (recordPath: string, problems: string[]) => void): Promise<EngineCovenantChain[]> {
+    const read = async <T>(dir: string, prefix: RegExp, parse: (path: string, raw: Record<string, unknown>) => { record: T | null; problems: string[] }): Promise<T[]> => {
+      const files = (await api.fs.find(dir, ".json", RECORD_LIMIT).catch(() => [] as string[])).filter((f) => prefix.test(f));
+      const out = await Promise.all(
+        files.map(async (f) => {
+          try {
+            const { raw, problem } = parseJsonRecord(await api.fs.read(f));
+            if (!raw) {
+              note(f, [problem ?? "unreadable"]);
+              return null;
+            }
+            const parsed = parse(f, raw);
+            // a v0 payment is not a problem, only not an engine record
+            const silent = parsed.record === null && parsed.problems.length === 1 && /^txVersion/.test(parsed.problems[0]);
+            if (!silent) note(f, parsed.problems);
+            return parsed.record;
+          } catch {
+            return null;
+          }
+        })
+      );
+      return out.filter((r): r is Awaited<T> => r !== null);
+    };
+    const [plans, signed, submissions] = await Promise.all([
+      read<EnginePlanRecord>(".hardkas/artifacts/plans", /txPlan-/, parseEnginePlan),
+      read<EngineSignedRecord>(".hardkas/artifacts/signed", /signedTx-/, parseEngineSigned),
+      read<EngineSubmissionRecord>(".hardkas/artifacts/receipts", /txSubmission-/, parseEngineSubmission)
+    ]);
+    return groupEngineCovenants(plans, signed, submissions);
   }
 
   private reportedProblems = new Set<string>();
@@ -408,6 +457,147 @@ export class SilverPlugin extends Plugin {
       await Promise.all(
         [ctorPath, stateMapPath, nextStatePath, emitArgsPath, entryArgsPath].map((p) => api.fs.remove(p).catch(() => undefined))
       );
+      useSilver.getState().setBusy(null);
+    }
+  }
+
+  /**
+   * `silver covenant start`: a covenant with one or more outputs, each in its own state (HardKAS 0.13, v1 engine).
+   * The states go to scratch files (JSON never travels on the command line). Returns the CLI's own answer
+   * (schema hardkas.silverCovenantStart.v1) with the exact arguments it was given.
+   */
+  async covenantStart(input: {
+    compileRecordPath: string;
+    from: string;
+    /** In output order: the KAS of each output and, for every output or none, its state `{field: {kind, value}}` as JSON text. */
+    outputs: Array<{ kas: string; stateJson?: string }>;
+    constructorArgsJson?: string;
+    contract?: string;
+    computeBudget?: string;
+    feeSompi?: string;
+  }): Promise<{ args: string[]; run: RunResult }> {
+    const store = useSilver.getState();
+    store.setBusy("covenant:start");
+    store.setError(null);
+    const stamp = Date.now().toString(36);
+    const written: string[] = [];
+    try {
+      const args = ["silver", "covenant", "start", input.compileRecordPath, "--from", input.from];
+      const withState = input.outputs.filter((o) => o.stateJson?.trim()).length;
+      if (withState !== 0 && withState !== input.outputs.length) throw new Error("Every output holds a state, or none does (each then holds the record's own).");
+      for (const [k, o] of input.outputs.entries()) {
+        if (!/^\d+(\.\d+)?$/.test(o.kas.trim())) throw new Error(`Output ${k + 1}: the amount is KAS as a decimal number.`);
+        if (o.stateJson?.trim()) {
+          const file = `.hardkas/ide/scratch/covenant-start-${stamp}-output-${k}.json`;
+          await api.fs.write(file, `${JSON.stringify(JSON.parse(o.stateJson), null, 2)}\n`);
+          written.push(file);
+          args.push("--output", `${file}=${o.kas.trim()}`);
+        } else args.push("--output", o.kas.trim());
+      }
+      if (input.constructorArgsJson?.trim()) {
+        const file = `.hardkas/ide/scratch/covenant-start-${stamp}-ctor.json`;
+        await api.fs.write(file, `${JSON.stringify(JSON.parse(input.constructorArgsJson), null, 2)}\n`);
+        written.push(file);
+        args.push("--constructor-args", file);
+      }
+      if (input.contract) args.push("--contract", input.contract);
+      if (input.computeBudget?.trim()) args.push("--compute-budget", input.computeBudget.trim());
+      if (input.feeSompi?.trim()) args.push("--fee", input.feeSompi.trim());
+      args.push("--wait", "--timeout", CONFIRM_TIMEOUT_S, "--json");
+
+      const run = await this.console().runHardkas(args);
+      await this.refreshDeployments();
+      await this.call("fileManager", "refresh").catch(() => undefined);
+      void this.call("environment", "refreshAccounts").catch(() => undefined);
+      const raw = run.result as Record<string, unknown> | null;
+      if (run.status === "succeeded" && raw && typeof raw.covenantId === "string") this.emit("covenantStarted", raw);
+      return { args, run };
+    } catch (e) {
+      store.setError(e instanceof Error ? e.message : String(e));
+      throw e;
+    } finally {
+      useSilver.getState().setBusy(null);
+    }
+  }
+
+  /**
+   * `silver covenant advance`: any transition the declaration allows (1:N, N:M with a leader and delegates, termination),
+   * from the covenant's compile record and id (HardKAS 0.13, v1 engine). Returns the CLI's own answer
+   * (schema hardkas.silverCovenantAdvance.v1) with the exact arguments it was given.
+   */
+  async covenantAdvance(input: {
+    compileRecordPath: string;
+    covenantId: string;
+    policy: string;
+    /** Leader first: "txid:index", each with an optional state as JSON text (else the one this workspace's records declare). */
+    inputs: Array<{ outpoint: string; stateJson?: string }>;
+    /** In output order; `kas` empty for the one that keeps what the others and the fee leave. Empty with `terminate`. */
+    continuations: Array<{ stateJson: string; kas?: string }>;
+    payments?: Array<{ to: string; kas: string }>;
+    terminate?: boolean;
+    /** The leader entry's arguments other than its next states, as a JSON list. */
+    argsJson?: string;
+    /** One JSON list per delegate input, in input order. */
+    delegateArgsJson?: string[];
+    funder?: string;
+    constructorArgsJson?: string;
+    contract?: string;
+    computeBudget?: string;
+    feeSompi?: string;
+    maxFeeSompi?: string;
+  }): Promise<{ args: string[]; run: RunResult }> {
+    const store = useSilver.getState();
+    store.setBusy(`covenant:advance:${input.covenantId.slice(0, 12)}`);
+    store.setError(null);
+    const stamp = Date.now().toString(36);
+    const scratch = async (name: string, json: string): Promise<string> => {
+      const file = `.hardkas/ide/scratch/covenant-advance-${stamp}-${name}.json`;
+      await api.fs.write(file, `${JSON.stringify(JSON.parse(json), null, 2)}\n`);
+      return file;
+    };
+    try {
+      if (!/^[0-9a-fA-F]{64}$/.test(input.covenantId)) throw new Error("The covenant id is 32 bytes of hex.");
+      if (input.inputs.length === 0) throw new Error("Choose at least one covenant input (the leader first).");
+      if (!input.terminate && input.continuations.length === 0) throw new Error("Give at least one continuation, or end the covenant.");
+      if (input.terminate && input.continuations.length > 0) throw new Error("A termination has no continuation.");
+      const args = ["silver", "covenant", "advance", input.compileRecordPath, "--covenant", input.covenantId.toLowerCase(), "--policy", input.policy];
+      for (const [i, inp] of input.inputs.entries()) {
+        if (!/^[0-9a-fA-F]{64}:\d+$/.test(inp.outpoint.trim())) throw new Error(`Input ${i + 1}: an outpoint is "txid:index".`);
+        args.push("--input", inp.stateJson?.trim() ? `${inp.outpoint.trim()}=${await scratch(`input-${i}`, inp.stateJson)}` : inp.outpoint.trim());
+      }
+      for (const [k, c] of input.continuations.entries()) {
+        const file = await scratch(`next-${k}`, c.stateJson);
+        if (c.kas?.trim()) {
+          if (!/^\d+(\.\d+)?$/.test(c.kas.trim())) throw new Error(`Continuation ${k + 1}: the amount is KAS as a decimal number.`);
+          args.push("--next", `${file}=${c.kas.trim()}`);
+        } else args.push("--next", file);
+      }
+      for (const p of input.payments ?? []) {
+        if (!p.to.trim() || !/^\d+(\.\d+)?$/.test(p.kas.trim())) throw new Error("A payment is an address or account and an amount in KAS.");
+        args.push("--pay", `${p.to.trim()}=${p.kas.trim()}`);
+      }
+      if (input.terminate) args.push("--terminate");
+      if (input.argsJson?.trim() && input.argsJson.trim() !== "[]") args.push("--args", await scratch("args", input.argsJson));
+      for (const [i, d] of (input.delegateArgsJson ?? []).entries()) args.push("--delegate-args", await scratch(`delegate-${i}`, d.trim() || "[]"));
+      if (input.funder?.trim()) args.push("--funder", input.funder.trim());
+      if (input.constructorArgsJson?.trim()) args.push("--constructor-args", await scratch("ctor", input.constructorArgsJson));
+      if (input.contract) args.push("--contract", input.contract);
+      if (input.computeBudget?.trim()) args.push("--compute-budget", input.computeBudget.trim());
+      if (input.feeSompi?.trim()) args.push("--fee", input.feeSompi.trim());
+      if (input.maxFeeSompi?.trim()) args.push("--max-fee", input.maxFeeSompi.trim());
+      args.push("--wait", "--timeout", CONFIRM_TIMEOUT_S, "--json");
+
+      const run = await this.console().runHardkas(args);
+      await this.refreshDeployments();
+      await this.call("fileManager", "refresh").catch(() => undefined);
+      void this.call("environment", "refreshAccounts").catch(() => undefined);
+      const raw = run.result as Record<string, unknown> | null;
+      if (run.status === "succeeded" && raw && typeof raw.txId === "string") this.emit("covenantAdvanced", raw);
+      return { args, run };
+    } catch (e) {
+      store.setError(e instanceof Error ? e.message : String(e));
+      throw e;
+    } finally {
       useSilver.getState().setBusy(null);
     }
   }

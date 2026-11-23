@@ -166,7 +166,10 @@ app.get("/api/fs/find", async (c) => {
   const dir = c.req.query("dir") ?? "";
   const suffix = c.req.query("suffix");
   if (!suffix) return c.json({ ok: false, code: "BAD_REQUEST", message: "suffix is required" }, 400);
-  return c.json({ ok: true, files: await wsfs.findBySuffix(dir, suffix) });
+  // `limit`: how many of the newest files (default 20; the engine's artifact folders hold one file per transaction)
+  const limitRaw = Number(c.req.query("limit") ?? 20);
+  const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 2000) : 20;
+  return c.json({ ok: true, files: await wsfs.findBySuffix(dir, suffix, limit) });
 });
 
 app.put("/api/fs/file", async (c) => {

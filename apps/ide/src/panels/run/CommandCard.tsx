@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronRight, Copy, KeyRound, Loader2, Play, ShieldCheck, XCircle } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronRight, Copy, KeyRound, Loader2, Play, Send, ShieldCheck, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { ConsolePlugin } from "@/plugins/console";
@@ -11,6 +11,7 @@ import { useSilver } from "@/store/silver";
 import { copyText } from "@/utils/clipboard";
 import { buildCommand, commandLine, encryptedSigners, failureText, initialValues, readVerdict, resultRows, type CommandSpec, type FieldSpec, type ResultRow, type Verdict } from "./commandSpec";
 
+/** What one run of a command came to: its verdict, its rows, the exact command line, and why it failed when it did. */
 export interface Outcome {
   verdict: Verdict;
   label?: string;
@@ -20,6 +21,24 @@ export interface Outcome {
   raw: unknown;
   /** The command exited 0 and gave no bad verdict. */
   ok: boolean;
+}
+
+/** The outcome of a finished run (`console.runHardkas`), read the way every card reads it. */
+export function outcomeOf(args: ReadonlyArray<string>, res: { status: string; exitCode: number | null; result: unknown; stderr?: string }): Outcome {
+  const succeeded = res.status === "succeeded";
+  const { verdict, label } = readVerdict(res.result, succeeded);
+  const failed = verdict === "bad" || !succeeded;
+  return {
+    verdict,
+    label,
+    // A refusal (exit 1 with a verdict) still carries its facts: show them, plus why.
+    rows: resultRows(res.result),
+    line: commandLine(args),
+    // An error envelope ({ ok: false, code, message }) or no answer at all: say it as a sentence above the rows.
+    failure: failed && (res.result == null || (res.result as { ok?: unknown }).ok === false) ? failureText(res.result, res.stderr, res.exitCode) : undefined,
+    raw: res.result,
+    ok: !failed
+  };
 }
 
 /**
@@ -75,22 +94,10 @@ export function CommandCard({ spec, defaultOpen = false, preset, onOutcome }: { 
       const fm = engine.get<FileManagerPlugin>("fileManager");
       for (const f of built.files) await fm.writeFile(f.path, f.content);
       const res = await engine.get<ConsolePlugin>("console").runHardkas(built.args);
-      const succeeded = res.status === "succeeded";
-      const { verdict, label } = readVerdict(res.result, succeeded);
-      const failed = verdict === "bad" || !succeeded;
-      const outcome: Outcome = {
-        verdict,
-        label,
-        // A refusal (exit 1 with a verdict) still carries its facts: show them, plus why.
-        rows: resultRows(res.result),
-        line: commandLine(built.args),
-        // An error envelope ({ ok: false, code, message }) or no answer at all: say it as a sentence above the rows.
-        failure: failed && (res.result == null || (res.result as { ok?: unknown }).ok === false) ? failureText(res.result, res.stderr, res.exitCode) : undefined,
-        raw: res.result,
-        ok: !failed
-      };
+      const outcome = outcomeOf(built.args, res);
       setOutcome(outcome);
       onOutcome?.(outcome);
+      if (spec.sends) void engine.call("silverContracts", "refreshDeployments").catch(() => undefined);
     } catch (e) {
       setProblem({ text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -111,15 +118,22 @@ export function CommandCard({ spec, defaultOpen = false, preset, onOutcome }: { 
         {open ? <ChevronDown size={12} className="shrink-0 text-fg-muted" /> : <ChevronRight size={12} className="shrink-0 text-fg-muted" />}
         <span className="font-semibold text-fg truncate">{spec.title}</span>
         {spec.alpha && <span className="shrink-0 rounded-full border border-warn/40 px-1.5 text-[12px] text-warn">alpha</span>}
+        {spec.experimental && <ExperimentalBadge />}
         {outcome && <VerdictDot verdict={outcome.verdict} />}
       </button>
 
       {open && (
         <div id={bodyId} className="px-2.5 pb-2.5 space-y-2 border-t border-border/70 pt-2">
           <p className="text-fg-muted leading-snug">{spec.summary}</p>
+          {spec.caveat && <p className="text-[12px] text-warn leading-snug">{spec.caveat}</p>}
           {spec.offline && (
             <div className="flex items-center gap-1 text-[12px] text-fg-muted">
               <ShieldCheck size={12} className="text-ok shrink-0" /> Reads and checks only: sends nothing, signs nothing.
+            </div>
+          )}
+          {spec.sends && (
+            <div className="flex items-center gap-1 text-[12px] text-fg-muted">
+              <Send size={12} className="text-accent shrink-0" /> Signs with the named development account and sends to the node. No password is taken here.
             </div>
           )}
 
@@ -151,6 +165,15 @@ export function CommandCard({ spec, defaultOpen = false, preset, onOutcome }: { 
         </div>
       )}
     </section>
+  );
+}
+
+/** HardKAS labels the command experimental: said the same way everywhere. */
+export function ExperimentalBadge({ title }: { title?: string }) {
+  return (
+    <span className="shrink-0 rounded-full border border-warn/40 px-1.5 text-[12px] text-warn" title={title}>
+      experimental
+    </span>
   );
 }
 
@@ -214,10 +237,11 @@ function Field({
           ))}
         </select>
       ) : field.kind === "account" && accounts.length > 0 ? (
-        // The workspace's accounts by name. A starting value that is not one of them stays visible as such: the
-        // command gets exactly what is shown, and HardKAS says ACCOUNT_NOT_FOUND if it has to.
+        // The workspace's accounts by name (the development accounts the node seeded need no password). A starting
+        // value that is not one of them stays visible as such: the command gets exactly what is shown, and HardKAS
+        // says ACCOUNT_NOT_FOUND if it has to.
         <select {...common} value={value} onChange={(e) => onChange(e.target.value)}>
-          {!field.required && <option value="">(none)</option>}
+          <option value="">{field.required ? "choose an account" : "(none)"}</option>
           {value && !accounts.some((a) => a.name === value) && <option value={value}>{value} (not an account of this workspace)</option>}
           {accounts.map((a) => (
             <option key={a.name} value={a.name}>
@@ -237,7 +261,7 @@ function Field({
         />
       ) : (
         <>
-          <input {...common} list={field.kind === "path" ? listId : undefined} spellCheck={false} autoComplete="off" value={value} placeholder={field.placeholder} onChange={(e) => onChange(e.target.value)} />
+          <input {...common} list={field.kind === "path" ? listId : undefined} spellCheck={false} autoComplete="off" value={value} placeholder={field.kind === "account" ? "account name (no accounts loaded yet)" : field.placeholder} onChange={(e) => onChange(e.target.value)} />
           {field.kind === "path" && (
             <datalist id={listId}>
               {suggestions.map((p) => (
@@ -252,7 +276,8 @@ function Field({
   );
 }
 
-function Answer({ outcome }: { outcome: Outcome }) {
+/** The answer of a run: its verdict, its rows (long values copyable, objects folded) and the exact command line. */
+export function Answer({ outcome }: { outcome: Outcome }) {
   const [copied, setCopied] = useState<string | null>(null);
   const copy = async (key: string, text: string) => {
     if (await copyText(text)) {

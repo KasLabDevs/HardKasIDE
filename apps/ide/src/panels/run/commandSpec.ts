@@ -10,7 +10,7 @@
  *     with a message, instead of reaching the CLI.
  */
 
-/** `account`: one of the workspace's accounts, by name (a text field when the workspace has none). */
+/** `account`: one of the workspace's accounts by name (a select over the accounts; a text field when none is loaded). */
 export type FieldKind = "text" | "path" | "json" | "select" | "flag" | "account";
 
 export interface FieldSpec {
@@ -39,8 +39,14 @@ export interface FieldSpec {
   initial?: string;
   /** `text`: a long value (hex, a script): shown in a taller box. */
   multiline?: boolean;
-  /** A positional or option that takes several values: the text is split at commas and spaces, one argument each. */
+  /**
+   * Several values: the text is split at commas and spaces. A positional gives one argument each; an option is repeated
+   * (`--to alice=5 --to bob=3`), the way HardKAS's repeatable options (`<spec>`, "repeatable") are given, unless it is
+   * `variadic`.
+   */
   list?: boolean;
+  /** A `list` option declared `<files...>` by HardKAS: the flag once, then every value (`--signatures a.json b.json`). */
+  variadic?: boolean;
 }
 
 /** The words of a `list` field, one argument each. */
@@ -56,6 +62,12 @@ export interface CommandSpec {
   fields: ReadonlyArray<FieldSpec>;
   /** HardKAS itself labels this command alpha: the card says so. */
   alpha?: boolean;
+  /** HardKAS itself labels this command experimental: the card says so, and `caveat` carries HardKAS's own limitation. */
+  experimental?: boolean;
+  /** One sentence from HardKAS's own status documents on what the command does not prove. Shown under the summary. */
+  caveat?: string;
+  /** The command signs with a local key and sends to the node: the card says so (nothing here takes a password). */
+  sends?: boolean;
   /** Label of the run button. */
   action?: string;
   /** The command never sends anything and never needs a node: it reads, decodes, checks. Shown as a small badge. */
@@ -130,7 +142,8 @@ export function buildCommand(spec: CommandSpec, values: Readonly<Record<string, 
     }
     const words = f.list && f.kind !== "json" ? splitList(word) : [word];
     if (f.as === "arg") positional.push(...words);
-    else if (f.flag) options.push(f.flag, ...words);
+    else if (f.flag && f.variadic) options.push(f.flag, ...words);
+    else if (f.flag) for (const w of words) options.push(f.flag, w);
   }
   return { ok: true, args: [...spec.words, ...positional, ...options, "--json"], files };
 }
@@ -175,8 +188,10 @@ export type Verdict = "ok" | "bad" | "info";
 export function readVerdict(result: unknown, succeeded: boolean): { verdict: Verdict; label?: string } {
   const r = result && typeof result === "object" && !Array.isArray(result) ? (result as Record<string, unknown>) : undefined;
   if (r) {
-    if (typeof r.verdict === "string") {
-      const v = r.verdict;
+    // `kcc20 transfer` nests it: verdict: { verdict: "STRUCTURALLY_VALID", path, reason }
+    const nested = r.verdict && typeof r.verdict === "object" && typeof (r.verdict as { verdict?: unknown }).verdict === "string" ? (r.verdict as { verdict: string }).verdict : undefined;
+    if (typeof r.verdict === "string" || nested) {
+      const v = nested ?? (r.verdict as string);
       const good = /^(STRUCTURALLY_VALID|VALID|OK|PASS(ED)?|VERIFIED|MATCH(ES)?|ACCEPTED)$/i.test(v);
       const label = v.replace(/_/g, " ").toLowerCase();
       return { verdict: good ? "ok" : "bad", label };
