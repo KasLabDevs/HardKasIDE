@@ -805,6 +805,10 @@ app.post("/api/store/sql", async (c) => {
 });
 // ---------------------------------------------------------------- system checks (Docker, Node)
 
+// The Node the HardKas CLI runs on (the one on the PATH, which `npx`/the project's `node_modules/.bin` use); the CLI
+// requires this exact release (root package.json `engines`; `hardkas doctor` warns on another 24.x, fails elsewhere).
+const NODE_REQUIRED = "24.22.1";
+
 app.get("/api/system", async (c) => {
   const { execFile } = await import("node:child_process");
   const run = (cmd: string, args: string[]) =>
@@ -814,6 +818,7 @@ app.get("/api/system", async (c) => {
   const client = await run("docker", ["version", "--format", "{{.Client.Version}}"]);
   const server = client.ok ? await run("docker", ["version", "--format", "{{.Server.Version}}"]) : { ok: false, out: "", err: client.err };
   const installed = client.ok || !/not found|not recognized|ENOENT|no se reconoce/i.test(client.err);
+  const nodeOnPath = await run("node", ["--version"]);
   return c.json({
     ok: true,
     docker: {
@@ -824,6 +829,8 @@ app.get("/api/system", async (c) => {
       error: server.ok ? null : server.err.split("\n")[0]?.slice(0, 200) || null
     },
     node: process.version,
+    nodeOnPath: nodeOnPath.ok ? nodeOnPath.out.replace(/^v/, "") : null,
+    nodeRequired: NODE_REQUIRED,
     platform: process.platform
   });
 });
