@@ -122,9 +122,17 @@ export class LineagePlugin extends Plugin {
           ]);
           // The dev-server lists artifacts without a reading of them; the IDE server has one for each.
           const words = await api.store.lineage().catch(() => null);
-          const summaries = new Map((words?.artifacts ?? []).map((a) => [a.artifactId, a.summary]));
+          const metaById = new Map((words?.artifacts ?? []).map((a) => [a.artifactId, a]));
           store.setGraph(
-            (artifacts.artifacts ?? []).map((a) => (a.summary || !summaries.get(a.artifactId) ? a : { ...a, summary: summaries.get(a.artifactId) })),
+            (artifacts.artifacts ?? []).map((a) => {
+              const meta = metaById.get(a.artifactId);
+              if (!meta) return a;
+              return {
+                ...a,
+                ...(a.summary || !meta.summary ? {} : { summary: meta.summary }),
+                ...(a.keys || !meta.keys ? {} : { keys: meta.keys })
+              };
+            }),
             lineage.edges ?? []
           );
           store.setError(null);

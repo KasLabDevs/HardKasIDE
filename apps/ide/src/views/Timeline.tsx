@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { useEnv } from "@/store/env";
 import { shortSchema, type ArtifactRow } from "@/store/lineage";
 import { describeSummary } from "@/utils/artifactSummary";
+import { matchesArtifactFilter } from "@/utils/lineageFilter";
 import { LANE_COLORS, SCHEMA_STYLE } from "./lineageStyle";
 
 /**
@@ -133,10 +134,8 @@ export function Timeline({ artifacts, edges, fresh, replays, selected, filter, o
   const { rows, lanes } = useMemo(() => buildTimeline(artifacts, edges), [artifacts, edges]);
   const accounts = useEnv((s) => s.accounts);
   const width = PAD * 2 + Math.max(1, lanes) * LANE_W;
-  const q = filter.trim().toLowerCase();
-  // Matches what is on screen too: the kind chip ("submitted", "receipt"…), the id, tx and network.
   const words = (a: ArtifactRow) => (a.summary ? describeSummary(a.summary, accounts) : null);
-  const matches = (a: ArtifactRow) => !q || [words(a)?.title ?? "", words(a)?.detail ?? "", a.artifactId, a.txId ?? "", a.schema, SCHEMA_STYLE[shortSchema(a.schema)]?.label ?? "", shortSchema(a.schema), a.networkId ?? "", a.mode ?? ""].some((s) => s.toLowerCase().includes(q));
+  const matches = (a: ArtifactRow) => matchesArtifactFilter(a, filter, accounts, SCHEMA_STYLE[shortSchema(a.schema)]?.label ?? "");
 
   return (
     <div role="list" aria-label="Artifact history" className="min-w-[34rem]">

@@ -1,7 +1,7 @@
 import { Background, Controls, Handle, MiniMap, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import clsx from "clsx";
-import { FileJson, RefreshCw, ShieldCheck, Wifi, WifiOff } from "lucide-react";
+import { Check, Copy, FileJson, RefreshCw, ShieldCheck, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useEngine } from "@/engine/context";
 import type { ConsolePlugin } from "@/plugins/console";
@@ -9,6 +9,8 @@ import type { LineagePlugin } from "@/plugins/lineage";
 import { useEnv } from "@/store/env";
 import { shortSchema, useLineage, type ArtifactRow } from "@/store/lineage";
 import { describeSummary } from "@/utils/artifactSummary";
+import { copyText } from "@/utils/clipboard";
+import { collectArtifactKeys, matchesArtifactFilter } from "@/utils/lineageFilter";
 import { Timeline } from "./Timeline";
 import { SCHEMA_STYLE } from "./lineageStyle";
 
@@ -17,7 +19,7 @@ import { SCHEMA_STYLE } from "./lineageStyle";
  * nodes laid out left → right by depth. Fresh artifacts pulse for a few seconds.
  */
 
-type ArtifactNode = Node<{ row: ArtifactRow; fresh: boolean; replay?: string; selected: boolean }, "artifact">;
+type ArtifactNode = Node<{ row: ArtifactRow; fresh: boolean; replay?: string; selected: boolean; dim?: boolean }, "artifact">;
 
 const NODE_W = 220;
 const NODE_H = 64;
@@ -47,8 +49,10 @@ export function LineageView() {
   const error = useLineage((s) => s.error);
   const selected = useLineage((s) => s.selected);
   const select = useLineage((s) => s.select);
+  const accounts = useEnv((s) => s.accounts);
   const [mode, setModeState] = useState<Mode>(loadMode);
   const [filter, setFilter] = useState("");
+  const [onlyMatches, setOnlyMatches] = useState(true);
   const setMode = (m: Mode) => {
     setModeState(m);
     try {
@@ -62,7 +66,26 @@ export function LineageView() {
     if (artifacts.length === 0) void plugin.refresh();
   }, [plugin, artifacts.length]);
 
-  const { nodes, flowEdges } = useMemo(() => (mode === "flow" ? layout(artifacts, edges, fresh, replays, selected) : { nodes: [], flowEdges: [] }), [mode, artifacts, edges, fresh, replays, selected]);
+  const hasFilter = filter.trim().length > 0;
+  const matchedIds = useMemo(() => {
+    if (!hasFilter) return null;
+    const set = new Set<string>();
+    for (const a of artifacts) {
+      const styleLabel = SCHEMA_STYLE[shortSchema(a.schema)]?.label ?? "";
+      if (matchesArtifactFilter(a, filter, accounts, styleLabel)) set.add(a.artifactId);
+    }
+    return set;
+  }, [artifacts, filter, accounts, hasFilter]);
+
+  const timelineArtifacts = useMemo(() => {
+    if (!matchedIds || !onlyMatches) return artifacts;
+    return artifacts.filter((a) => matchedIds.has(a.artifactId));
+  }, [artifacts, matchedIds, onlyMatches]);
+
+  const { nodes, flowEdges } = useMemo(
+    () => (mode === "flow" ? layout(artifacts, edges, fresh, replays, selected, matchedIds) : { nodes: [], flowEdges: [] }),
+    [mode, artifacts, edges, fresh, replays, selected, matchedIds]
+  );
   const selectedRow = artifacts.find((a) => a.artifactId === selected) ?? null;
   const startDevServer = () => {
     void engine.get<ConsolePlugin>("console").runHardkas(["dev", "--headless"]);
@@ -93,9 +116,50 @@ export function LineageView() {
               Start dev-server
             </button>
           )}
-          {mode === "timeline" && (
-            <input aria-label="Filter artifacts" className="input !py-0.5 !w-44 ml-2" placeholder="filter: alice, deploy, a hash…" value={filter} onChange={(e) => setFilter(e.target.value)} />
-          )}
+          <div className="flex flex-wrap items-center gap-1 min-w-0 max-w-full ml-1">
+            <div className="relative flex items-center min-w-0 max-w-full">
+              <input
+                aria-label="Filter artifacts"
+                className={clsx("input !py-0.5 !w-52 max-w-full font-mono text-[11.5px]", hasFilter && "!pr-6")}
+                placeholder="filter: alice, 0x pubkey, address, hash…"
+                title="Filter by account alias (alice), full or partial Kaspa address (kaspa...), 32-byte hex public key (0x...), contract, schema, or hash"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+              {hasFilter && (
+                <button
+                  type="button"
+                  onClick={() => setFilter("")}
+                  className="absolute right-1 p-0.5 rounded text-fg-muted hover:text-fg cursor-pointer"
+                  aria-label="Clear filter"
+                  title="Clear filter"
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+            {hasFilter && matchedIds && (
+              <>
+                <span className="text-[11px] text-fg-muted tabular-nums whitespace-nowrap px-1">
+                  {matchedIds.size} / {artifacts.length}
+                </span>
+                {mode === "timeline" && (
+                  <button
+                    type="button"
+                    aria-pressed={onlyMatches}
+                    onClick={() => setOnlyMatches((v) => !v)}
+                    className={clsx(
+                      "px-2 py-0.5 rounded border text-[11px] cursor-pointer whitespace-nowrap",
+                      onlyMatches ? "border-accent/50 bg-accent/15 text-accent" : "border-border text-fg-muted hover:text-fg"
+                    )}
+                    title={onlyMatches ? "Showing matching rows only (click to show all rows with dimmed non-matches)" : "Showing all rows with dimmed non-matches"}
+                  >
+                    Matches only
+                  </button>
+                )}
+              </>
+            )}
+          </div>
           <div role="group" aria-label="Graph style" className="ml-auto flex rounded border border-border overflow-hidden">
             {(["timeline", "flow"] as const).map((m) => (
               <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)} className={clsx("px-2 py-0.5 cursor-pointer", mode === m ? "bg-bg-hover text-fg" : "text-fg-muted hover:text-fg")}>
@@ -120,6 +184,11 @@ export function LineageView() {
               </button>
             </div>
           )}
+          {loading && artifacts.length === 0 && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center gap-1.5 text-[12px] text-fg-muted pointer-events-none" role="status">
+              <RefreshCw size={13} className="animate-spin" /> Reading the project's artifacts…
+            </div>
+          )}
           {!loading && !error && artifacts.length === 0 && (
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 text-center pointer-events-none">
               <div className="rounded-lg border border-border bg-bg-elev/95 p-4 max-w-sm space-y-2 pointer-events-auto shadow-lg">
@@ -132,7 +201,26 @@ export function LineageView() {
           )}
           {mode === "timeline" ? (
             <div role="presentation" className="absolute inset-0 overflow-auto" onClick={(e) => e.target === e.currentTarget && select(null)}>
-              <Timeline artifacts={artifacts} edges={edges} fresh={fresh} replays={replays} selected={selected} filter={filter} onSelect={select} />
+              {hasFilter && matchedIds?.size === 0 ? (
+                <div className="p-6 text-center text-xs text-fg-muted space-y-2">
+                  <div>
+                    No artifacts matched <code className="font-mono text-fg">{filter.trim()}</code>.
+                  </div>
+                  <div className="text-[11px]">
+                    Supports account names (<code className="font-mono">alice</code>), Kaspa addresses (<code className="font-mono">kaspasim:...</code>), and hex public keys (<code className="font-mono">0x...</code>).
+                  </div>
+                </div>
+              ) : (
+                <Timeline
+                  artifacts={timelineArtifacts}
+                  edges={edges}
+                  fresh={fresh}
+                  replays={replays}
+                  selected={selected}
+                  filter={onlyMatches ? "" : filter}
+                  onSelect={select}
+                />
+              )}
             </div>
           ) : (
             <ReactFlow<ArtifactNode, Edge>
@@ -156,7 +244,7 @@ export function LineageView() {
           )}
         </div>
       </div>
-      {selectedRow && <Details row={selectedRow} plugin={plugin} replay={replays[selectedRow.artifactId]?.status} live={live} />}
+      {selectedRow && <Details row={selectedRow} plugin={plugin} replay={replays[selectedRow.artifactId]?.status} live={live} onFilter={setFilter} />}
     </div>
   );
 }
@@ -170,9 +258,10 @@ function ArtifactNodeView({ data }: NodeProps<ArtifactNode>) {
   return (
     <div
       className={clsx(
-        "rounded-md border bg-bg-elev text-[12px] px-2.5 py-1.5 w-[220px] shadow transition-shadow",
+        "rounded-md border bg-bg-elev text-[12px] px-2.5 py-1.5 w-[220px] shadow transition-all",
         data.selected ? "border-accent shadow-[0_0_0_2px_var(--accent)]" : "border-border",
-        data.fresh && "animate-pulse"
+        data.fresh && "animate-pulse",
+        data.dim && "opacity-25"
       )}
       style={{ borderLeftWidth: 4, borderLeftColor: style.color }}
     >
@@ -203,11 +292,19 @@ function ArtifactNodeView({ data }: NodeProps<ArtifactNode>) {
   );
 }
 
-function Details({ row, plugin, replay, live }: { row: ArtifactRow; plugin: LineagePlugin; replay?: string; live: boolean }) {
+function Details({ row, plugin, replay, live, onFilter }: { row: ArtifactRow; plugin: LineagePlugin; replay?: string; live: boolean; onFilter: (q: string) => void }) {
   const s = shortSchema(row.schema);
   const canReplay = s === "txReceipt" || s === "txSubmission" || s === "txPlan" || s === "signedTx";
   const accounts = useEnv((st) => st.accounts);
   const text = row.summary ? describeSummary(row.summary, accounts) : null;
+  const { addresses, pubkeys } = useMemo(() => collectArtifactKeys(row, accounts), [row, accounts]);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const handleCopy = async (value: string) => {
+    if (await copyText(value)) {
+      setCopiedKey(value);
+      setTimeout(() => setCopiedKey((cur) => (cur === value ? null : cur)), 1400);
+    }
+  };
   return (
     <aside className="w-72 shrink-0 border-l border-border bg-bg-panel p-3 text-xs space-y-3 overflow-auto">
       {text && (
@@ -232,6 +329,58 @@ function Details({ row, plugin, replay, live }: { row: ArtifactRow; plugin: Line
         {row.flowId && <Row k="flow" v={row.flowId} />}
         {replay && <Row k="replay" v={replay} />}
       </dl>
+      {(pubkeys.length > 0 || addresses.length > 0) && (
+        <div className="space-y-1.5">
+          <div className="label">Public Keys &amp; Addresses</div>
+          <div className="space-y-1">
+            {pubkeys.map((pk) => {
+              const value = `0x${pk}`;
+              return (
+                <div key={pk} className="flex items-center gap-1 rounded border border-border bg-bg px-1.5 py-1 text-[11px] font-mono min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => onFilter(value)}
+                    className="flex-1 min-w-0 truncate text-left text-accent hover:underline cursor-pointer"
+                    title={`Filter Lineage by pubkey ${value}`}
+                  >
+                    {value}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleCopy(value)}
+                    className="shrink-0 p-0.5 text-fg-muted hover:text-fg cursor-pointer"
+                    title="Copy public key"
+                    aria-label="Copy public key"
+                  >
+                    {copiedKey === value ? <Check size={11} className="text-ok" /> : <Copy size={11} />}
+                  </button>
+                </div>
+              );
+            })}
+            {addresses.map((addr) => (
+              <div key={addr} className="flex items-center gap-1 rounded border border-border bg-bg px-1.5 py-1 text-[11px] font-mono min-w-0">
+                <button
+                  type="button"
+                  onClick={() => onFilter(addr)}
+                  className="flex-1 min-w-0 truncate text-left text-fg hover:text-accent hover:underline cursor-pointer"
+                  title={`Filter Lineage by address ${addr}`}
+                >
+                  {addr}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleCopy(addr)}
+                  className="shrink-0 p-0.5 text-fg-muted hover:text-fg cursor-pointer"
+                  title="Copy address"
+                  aria-label="Copy address"
+                >
+                  {copiedKey === addr ? <Check size={11} className="text-ok" /> : <Copy size={11} />}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="flex gap-2">
         <button type="button" className="btn-ghost flex-1 justify-center" onClick={() => void plugin.openArtifact(row)} disabled={!row.path}>
           <FileJson size={13} /> Open JSON
@@ -263,7 +412,7 @@ function Row({ k, v }: { k: string; v: string }) {
 }
 
 /** Layered layout: each flow (root artifact) is a row; depth from the root sets the column. */
-function layout(artifacts: ArtifactRow[], edges: { source: string; target: string }[], fresh: Set<string>, replays: Record<string, { status: string }>, selected: string | null) {
+function layout(artifacts: ArtifactRow[], edges: { source: string; target: string }[], fresh: Set<string>, replays: Record<string, { status: string }>, selected: string | null, matchedIds: Set<string> | null) {
   const ids = new Set(artifacts.map((a) => a.artifactId));
   const parents = new Map<string, string[]>();
   const children = new Map<string, string[]>();
@@ -308,12 +457,12 @@ function layout(artifacts: ArtifactRow[], edges: { source: string; target: strin
   const nodes: ArtifactNode[] = [];
   for (const a of artifacts) {
     if (!depth.has(a.artifactId)) continue;
-    nodes.push(makeNode(a, depth.get(a.artifactId)! * (NODE_W + GAP_X), rowOf.get(a.artifactId)! * (NODE_H + GAP_Y), fresh, replays, selected));
+    nodes.push(makeNode(a, depth.get(a.artifactId)! * (NODE_W + GAP_X), rowOf.get(a.artifactId)! * (NODE_H + GAP_Y), fresh, replays, selected, matchedIds !== null && !matchedIds.has(a.artifactId)));
   }
   const perLine = 4;
   singles.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
   singles.forEach((a, i) => {
-    nodes.push(makeNode(a, (i % perLine) * (NODE_W + GAP_X), (row + 1 + Math.floor(i / perLine)) * (NODE_H + GAP_Y), fresh, replays, selected));
+    nodes.push(makeNode(a, (i % perLine) * (NODE_W + GAP_X), (row + 1 + Math.floor(i / perLine)) * (NODE_H + GAP_Y), fresh, replays, selected, matchedIds !== null && !matchedIds.has(a.artifactId)));
   });
   const flowEdges: Edge[] = [];
   for (const [child, ps] of parents) {
@@ -325,12 +474,12 @@ function layout(artifacts: ArtifactRow[], edges: { source: string; target: strin
   return { nodes, flowEdges };
 }
 
-function makeNode(a: ArtifactRow, x: number, y: number, fresh: Set<string>, replays: Record<string, { status: string }>, selected: string | null): ArtifactNode {
+function makeNode(a: ArtifactRow, x: number, y: number, fresh: Set<string>, replays: Record<string, { status: string }>, selected: string | null, dim = false): ArtifactNode {
   return {
     id: a.artifactId,
     type: "artifact",
     position: { x, y },
-    data: { row: a, fresh: fresh.has(a.artifactId), replay: replays[a.artifactId]?.status, selected: selected === a.artifactId },
+    data: { row: a, fresh: fresh.has(a.artifactId), replay: replays[a.artifactId]?.status, selected: selected === a.artifactId, dim },
     width: NODE_W,
     height: NODE_H
   };

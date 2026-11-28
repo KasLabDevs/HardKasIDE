@@ -31,7 +31,7 @@ export function extractDocumentSymbols(path: string, content: string): DocumentS
   if (lower.endsWith(".sil")) return extractSilSymbols(content);
   if (/\.(?:[cm]?[jt]sx?)$/.test(lower)) return extractScriptSymbols(content);
   if (lower.endsWith(".md") || lower.endsWith(".mdx")) return extractMarkdownSymbols(content);
-  if (lower.endsWith(".json")) return extractJsonTopKeys(content);
+  if (lower.endsWith(".json") || lower.endsWith(".jsonc")) return extractJsonTopKeys(content);
   return [];
 }
 

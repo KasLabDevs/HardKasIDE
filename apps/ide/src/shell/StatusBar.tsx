@@ -3,22 +3,28 @@ import { AlertTriangle, FolderOpen, XCircle } from "lucide-react";
 import { useDiagnostics } from "@/store/diagnostics";
 import { cliMismatch, useEnv } from "@/store/env";
 import { useEditorCursor } from "@/store/editorCursor";
-import { useIde } from "@/store/ide";
+import { envOf, useIde } from "@/store/ide";
 import { useScripts } from "@/store/scripts";
+import { EnvAccountsTrigger } from "./EnvAccountsTrigger";
+import { StatusEnvPill } from "./StatusEnvPill";
 import { isTextFile, openPalette } from "./actions";
 
 export function StatusBar({ borderless = false }: { borderless?: boolean } = {}) {
   const workspace = useIde((s) => s.workspace);
+  const target = useIde((s) => s.target);
   const setTerminalOpen = useIde((s) => s.setTerminalOpen);
   const activeFile = useIde((s) => s.activeFile);
   const status = useIde((s) => s.statusMessage);
   const cli = useEnv((s) => s.cli);
+  const node = useEnv((s) => s.node);
   const diagTotals = useDiagnostics((s) => s.totals);
   const setActiveBottomTab = useScripts((s) => s.setActiveBottomTab);
   const cursorFile = useEditorCursor((s) => s.file);
   const line = useEditorCursor((s) => s.line);
   const column = useEditorCursor((s) => s.column);
   const showCursor = isTextFile(activeFile) && cursorFile === activeFile;
+  const currentEnv = envOf(target);
+  const accountsReady = !currentEnv.needsNode || Boolean(node?.running && node?.rpcReady);
 
   const openProblems = () => {
     setTerminalOpen(true);
@@ -26,7 +32,7 @@ export function StatusBar({ borderless = false }: { borderless?: boolean } = {})
   };
 
   return (
-    <footer className={clsx("h-[1.45rem] shrink-0 bg-bg-panel flex items-center gap-2.5 px-2.5 text-[12px] text-fg-muted select-none overflow-hidden", !borderless && "border-t border-border")}>
+    <footer className={clsx("h-[1.45rem] shrink-0 bg-bg-panel flex items-center gap-2.5 px-2.5 text-[12px] text-fg-muted select-none overflow-visible relative z-30", !borderless && "border-t border-border")}>
       <span className="flex items-center gap-1.5 text-fg shrink-0 max-w-[180px] truncate" title={workspace?.root ?? ""}>
         <FolderOpen size={12} className="shrink-0" /> <span className="truncate">{workspace?.name ?? "no workspace"}</span>
       </span>
@@ -62,6 +68,8 @@ export function StatusBar({ borderless = false }: { borderless?: boolean } = {})
           Ln {line}, Col {column}
         </button>
       )}
+      <StatusEnvPill />
+      {accountsReady && <EnvAccountsTrigger />}
       <span
         className="shrink-0 hidden md:inline font-mono text-[12px] px-1.5 py-0.5 rounded bg-bg border border-border text-accent"
         title="Active SilverScript compiler & language spec version. Pin 'pragma silverscript ^0.1.0;' in your .sil contracts because the SilverScript API evolves rapidly."

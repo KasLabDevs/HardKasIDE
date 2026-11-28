@@ -56,6 +56,7 @@ export function FilesPanel() {
   const engine = useEngine();
   const tree = useIde((s) => s.tree);
   const workspace = useIde((s) => s.workspace);
+  const treeLoaded = useIde((s) => s.treeLoaded);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [collapseSeq, setCollapseSeq] = useState(0);
@@ -158,6 +159,7 @@ export function FilesPanel() {
         </button>
       </div>
       <div
+        key={workspace?.root ?? "no-workspace"}
         role="tree"
         aria-label="Workspace files"
         className="py-1 flex-1"
@@ -165,7 +167,12 @@ export function FilesPanel() {
           if (e.target === e.currentTarget) openRootContextMenu(e);
         }}
       >
-        {tree.length === 0 && (
+        {tree.length === 0 && !treeLoaded && workspace?.root && (
+          <div className="px-3 py-4 flex items-center justify-center gap-1.5 text-fg-muted" role="status">
+            <Loader2 size={13} className="animate-spin" /> Reading the project…
+          </div>
+        )}
+        {tree.length === 0 && (treeLoaded || !workspace?.root) && (
           <div className="px-3 py-4 text-center space-y-2 text-fg-muted">
             <div>Empty workspace.</div>
             <button type="button" className="btn-ghost w-full justify-center" onClick={() => openNewArtifactWizard()}>
@@ -235,7 +242,7 @@ function Node({
   const countsByFile = useDiagnostics((s) => s.countsByFile);
   const internal = isInternal(node);
   const locked = node.locked === true;
-  const [open, setOpen] = useState(depth < 1 && !internal);
+  const [open, setOpen] = useState(false);
   const isDir = node.type === "dir";
   const isActive = node.path === activeFile;
   const diag = isDir ? folderDiagCounts(countsByFile, node.path) : countsByFile[normalizeDiagPath(node.path)];

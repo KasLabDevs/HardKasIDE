@@ -1,20 +1,11 @@
 import { create } from "zustand";
-import type { AssistantConfigView } from "@/api/client";
+import type { AssistantAuthStatus, AssistantConfigView, AssistantKeyCommands, AssistantKeyState } from "@/api/client";
 
-/** Assistant chat state. History is kept in localStorage (browser only; the API key lives on the server). */
-
-export interface ChatTurn {
-  id: number;
-  role: "user" | "assistant";
-  content: string;
-  streaming?: boolean;
-  error?: string;
-}
-
-export interface AnswerMeta {
-  model: string;
-  docs: { mode: string; chars: number; stale: boolean } | null;
-}
+/**
+ * Unified Assistant conversation state (Claude Code / Gemini style):
+ * Ask (read-only) and Agent (autonomous tools) turns live together in a continuous thread
+ * persisted in localStorage; API keys always stay on ide-server.
+ */
 
 export interface AgentStep {
   id: string;
@@ -26,29 +17,68 @@ export interface AgentStep {
   error?: string;
 }
 
-export interface AgentRun {
-  goal: string;
-  steps: AgentStep[];
-  thoughts: string[];
-  summary: string | null;
-  running: boolean;
+export interface AssistantTurn {
+  id: number;
+  role: "user" | "assistant";
+  mode: "chat" | "agent";
+  content: string;
+  attachedFile?: string | null;
+  streaming?: boolean;
+  thoughts?: string[];
+  steps?: AgentStep[];
+  pendingConfirm?: { id: string; command: string } | null;
+  error?: string;
   ok?: boolean;
-  /** A terminal command waiting for the user's approval; the run is paused until it is answered. */
-  pendingConfirm: { id: string; command: string } | null;
+  startedAt?: number;
+  endedAt?: number;
 }
 
-const KEY = "hardkas-ide.assistant.chat";
+export interface AnswerMeta {
+  model: string;
+  docs: { mode: string; chars: number; stale: boolean } | null;
+}
+
+const KEY = "hardkas-ide.assistant.thread.v2";
 const MODE_KEY = "hardkas-ide.assistant.mode";
 const MAX_SAVED = 40;
 
-function load(): ChatTurn[] {
+function sanitizeStep(s: unknown): AgentStep | null {
+  if (!s || typeof s !== "object") return null;
+  const r = s as Record<string, unknown>;
+  if (typeof r.id !== "string" || typeof r.title !== "string" || typeof r.tool !== "string") return null;
+  const status = r.status === "succeeded" || r.status === "failed" ? r.status : "failed";
+  return {
+    id: r.id,
+    title: r.title,
+    tool: r.tool,
+    status,
+    input: r.input && typeof r.input === "object" && !Array.isArray(r.input) ? (r.input as Record<string, unknown>) : undefined,
+    output: typeof r.output === "string" ? r.output : undefined,
+    error: typeof r.error === "string" ? r.error : undefined
+  };
+}
+
+function load(): AssistantTurn[] {
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(KEY) ?? "[]");
     if (!Array.isArray(raw)) return [];
-    // A hand-edited or old-format history must not break the panel: keep only well-formed turns.
     return raw
-      .filter((t): t is ChatTurn => !!t && typeof t === "object" && (t.role === "user" || t.role === "assistant") && typeof t.content === "string")
-      .map((t, i) => ({ id: typeof t.id === "number" ? t.id : i, role: t.role, content: t.content, error: typeof t.error === "string" ? t.error : undefined, streaming: false }));
+      .filter((t): t is Record<string, unknown> => !!t && typeof t === "object" && (t.role === "user" || t.role === "assistant") && typeof t.content === "string")
+      .map((t, i) => ({
+        id: typeof t.id === "number" ? t.id : i + 1,
+        role: t.role as "user" | "assistant",
+        mode: t.mode === "agent" ? "agent" : "chat",
+        content: t.content as string,
+        attachedFile: typeof t.attachedFile === "string" ? t.attachedFile : undefined,
+        streaming: false,
+        thoughts: Array.isArray(t.thoughts) ? t.thoughts.filter((x): x is string => typeof x === "string") : undefined,
+        steps: Array.isArray(t.steps) ? t.steps.map(sanitizeStep).filter((x): x is AgentStep => x !== null) : undefined,
+        pendingConfirm: null,
+        error: typeof t.error === "string" ? t.error : undefined,
+        ok: typeof t.ok === "boolean" ? t.ok : undefined,
+        startedAt: typeof t.startedAt === "number" ? t.startedAt : undefined,
+        endedAt: typeof t.endedAt === "number" ? t.endedAt : undefined
+      }));
   } catch {
     return [];
   }
@@ -56,15 +86,20 @@ function load(): ChatTurn[] {
 
 function loadMode(): "chat" | "agent" {
   try {
-    return (localStorage.getItem(MODE_KEY) as "chat" | "agent") || "chat";
+    const saved = localStorage.getItem(MODE_KEY);
+    return saved === "chat" ? "chat" : "agent";
   } catch {
-    return "chat";
+    return "agent";
   }
 }
 
-function persist(turns: ChatTurn[]): void {
+function persist(turns: AssistantTurn[]): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(turns.filter((t) => !t.streaming).slice(-MAX_SAVED)));
+    const clean = turns
+      .filter((t) => !t.streaming)
+      .slice(-MAX_SAVED)
+      .map(({ pendingConfirm: _pc, ...rest }) => rest);
+    localStorage.setItem(KEY, JSON.stringify(clean));
   } catch {
     // storage unavailable: history lasts for the session only
   }
@@ -74,42 +109,50 @@ let seq = Date.now();
 
 interface AssistantState {
   mode: "chat" | "agent";
-  turns: ChatTurn[];
+  turns: AssistantTurn[];
   busy: boolean;
-  agentRun: AgentRun | null;
   config: AssistantConfigView | null;
+  auth: AssistantAuthStatus | null;
   defaults: Record<"opencode" | "anthropic" | "openai", { baseUrl: string; model: string }> | null;
+  keyCommands: AssistantKeyCommands | null;
+  keyStates: Record<"anthropic" | "openai", AssistantKeyState> | null;
   meta: AnswerMeta | null;
   includeFile: boolean;
   settingsOpen: boolean;
   setMode(m: "chat" | "agent"): void;
-  push(role: ChatTurn["role"], content: string, streaming?: boolean): number;
+  startTurnPair(mode: "chat" | "agent", prompt: string, attachedFile?: string | null): number;
   append(id: number, text: string): void;
-  finish(id: number, error?: string): void;
+  addThought(id: number, thought: string): void;
+  upsertStep(id: number, step: AgentStep): void;
+  setConfirm(id: number, confirm: { id: string; command: string } | null): void;
+  finishTurn(id: number, opts: { content?: string; error?: string; ok?: boolean }): void;
   clear(): void;
   setBusy(b: boolean): void;
-  setConfig(c: AssistantConfigView, defaults?: AssistantState["defaults"]): void;
+  setConfig(
+    c: AssistantConfigView,
+    defaults?: AssistantState["defaults"],
+    keyCommands?: AssistantState["keyCommands"],
+    keyStates?: AssistantState["keyStates"]
+  ): void;
+  setAuth(auth: AssistantAuthStatus | null): void;
   setMeta(m: AnswerMeta | null): void;
   setIncludeFile(v: boolean): void;
   setSettingsOpen(v: boolean): void;
-  startAgentRun(goal: string): void;
-  addAgentThought(thought: string): void;
-  upsertAgentStep(step: AgentStep): void;
-  setAgentConfirm(confirm: AgentRun["pendingConfirm"]): void;
-  finishAgentRun(summary: string, ok: boolean): void;
-  resetAgentRun(): void;
 }
 
 export const useAssistant = create<AssistantState>((set) => ({
   mode: loadMode(),
   turns: load(),
   busy: false,
-  agentRun: null,
   config: null,
+  auth: null,
   defaults: null,
+  keyCommands: null,
+  keyStates: null,
   meta: null,
   includeFile: true,
   settingsOpen: false,
+
   setMode: (mode) => {
     try {
       localStorage.setItem(MODE_KEY, mode);
@@ -118,60 +161,91 @@ export const useAssistant = create<AssistantState>((set) => ({
     }
     set({ mode });
   },
-  push: (role, content, streaming) => {
-    const id = ++seq;
+
+  startTurnPair: (mode, prompt, attachedFile) => {
+    const userId = ++seq;
+    const answerId = ++seq;
     set((s) => {
-      const turns = [...s.turns, { id, role, content, streaming }];
-      persist(turns);
-      return { turns };
+      const next: AssistantTurn[] = [
+        ...s.turns,
+        { id: userId, role: "user", mode, content: prompt, attachedFile: attachedFile ?? undefined },
+        {
+          id: answerId,
+          role: "assistant",
+          mode,
+          content: "",
+          streaming: true,
+          thoughts: mode === "agent" ? [] : undefined,
+          steps: mode === "agent" ? [] : undefined,
+          pendingConfirm: null,
+          startedAt: Date.now()
+        }
+      ];
+      return { turns: next, busy: true };
     });
-    return id;
+    return answerId;
   },
-  append: (id, text) => set((s) => ({ turns: s.turns.map((t) => (t.id === id ? { ...t, content: t.content + text } : t)) })),
-  finish: (id, error) =>
+
+  append: (id, text) =>
+    set((s) => ({
+      turns: s.turns.map((t) => (t.id === id ? { ...t, content: t.content + text } : t))
+    })),
+
+  addThought: (id, thought) =>
+    set((s) => ({
+      turns: s.turns.map((t) => (t.id === id ? { ...t, thoughts: [...(t.thoughts ?? []), thought] } : t))
+    })),
+
+  upsertStep: (id, step) =>
+    set((s) => ({
+      turns: s.turns.map((t) => {
+        if (t.id !== id) return t;
+        const steps = t.steps ?? [];
+        const idx = steps.findIndex((x) => x.id === step.id);
+        const nextSteps = idx >= 0 ? steps.map((x, i) => (i === idx ? { ...x, ...step } : x)) : [...steps, step];
+        return { ...t, steps: nextSteps };
+      })
+    })),
+
+  setConfirm: (id, confirm) =>
+    set((s) => ({
+      turns: s.turns.map((t) => (t.id === id ? { ...t, pendingConfirm: confirm } : t))
+    })),
+
+  finishTurn: (id, { content, error, ok }) =>
     set((s) => {
-      const turns = s.turns.map((t) => (t.id === id ? { ...t, streaming: false, error } : t));
+      const turns = s.turns.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              content: content !== undefined ? content : t.content,
+              streaming: false,
+              pendingConfirm: null,
+              error,
+              ok: ok ?? !error,
+              endedAt: Date.now()
+            }
+          : t
+      );
       persist(turns);
-      return { turns };
+      return { turns, busy: false };
     }),
+
   clear: () => {
     persist([]);
-    set({ turns: [], meta: null });
+    set({ turns: [], busy: false });
   },
+
   setBusy: (busy) => set({ busy }),
-  setConfig: (config, defaults) => set((s) => ({ config, defaults: defaults ?? s.defaults })),
+  setConfig: (config, defaults, keyCommands, keyStates) =>
+    set((s) => ({
+      config,
+      defaults: defaults ?? s.defaults,
+      keyCommands: keyCommands ?? s.keyCommands,
+      keyStates: keyStates ?? s.keyStates
+    })),
+  setAuth: (auth) => set({ auth }),
   setMeta: (meta) => set({ meta }),
   setIncludeFile: (includeFile) => set({ includeFile }),
-  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
-  startAgentRun: (goal) =>
-    set({
-      busy: true,
-      agentRun: { goal, steps: [], thoughts: [], summary: null, running: true, pendingConfirm: null }
-    }),
-  setAgentConfirm: (pendingConfirm) => set((s) => (s.agentRun ? { agentRun: { ...s.agentRun, pendingConfirm } } : {})),
-  addAgentThought: (thought) =>
-    set((s) => {
-      if (!s.agentRun) return {};
-      return {
-        agentRun: { ...s.agentRun, thoughts: [...s.agentRun.thoughts, thought] }
-      };
-    }),
-  upsertAgentStep: (step) =>
-    set((s) => {
-      if (!s.agentRun) return {};
-      const exists = s.agentRun.steps.some((st) => st.id === step.id);
-      const steps = exists
-        ? s.agentRun.steps.map((st) => (st.id === step.id ? { ...st, ...step } : st))
-        : [...s.agentRun.steps, step];
-      return { agentRun: { ...s.agentRun, steps } };
-    }),
-  finishAgentRun: (summary, ok) =>
-    set((s) => {
-      if (!s.agentRun) return { busy: false };
-      return {
-        busy: false,
-        agentRun: { ...s.agentRun, summary, ok, running: false, pendingConfirm: null }
-      };
-    }),
-  resetAgentRun: () => set({ agentRun: null, busy: false })
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen })
 }));

@@ -740,4 +740,31 @@ describe("listDevAccountAddresses", () => {
       realSim: "kaspasim:qfakereal"
     });
   });
+
+  it("derives canonical deterministic simnet dev keys when .hardkas/dev-accounts has not been created yet, while preserving guards", async () => {
+    const root = await makeWorkspace();
+    const alice = await revealDevAccountKey("alice", root);
+    const expectedAlice = crypto.createHash("sha256").update("hardkas-deterministic-simnet-seed-v1-0").digest("hex");
+    assert.equal(alice.privateKey, expectedAlice);
+    assert.equal(alice.network, "simnet");
+
+    const erin = await revealDevAccountKey("erin", root);
+    const expectedErin = crypto.createHash("sha256").update("hardkas-deterministic-simnet-seed-v1-4").digest("hex");
+    assert.equal(erin.privateKey, expectedErin);
+
+    // Non-canonical missing aliases stay 404.
+    await assertRefused(revealDevAccountKey("missing_custom", root), "NOT_FOUND", []);
+
+    // A non-dev-password keystore on disk still fails decryption instead of falling back.
+    await writeKeystore(
+      root,
+      "alice",
+      await buildKeystore({
+        payload: { privateKey: fakeKey(), network: "simnet" },
+        metadata: { network: "simnet" },
+        password: "other-password"
+      })
+    );
+    await assertRefused(revealDevAccountKey("alice", root), "DECRYPT_FAILED", [expectedAlice]);
+  });
 });

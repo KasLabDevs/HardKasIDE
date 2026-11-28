@@ -9,10 +9,11 @@ import type { EnvironmentPlugin } from "@/plugins/environment";
 import { useEnv } from "@/store/env";
 import { useIde } from "@/store/ide";
 import { useSilver } from "@/store/silver";
+import { GUIDE_EVENT, GUIDE_HIDDEN_KEY } from "./actions";
 import { HardKasMark } from "./Logo";
 import { openNewArtifactWizard } from "./NewArtifactDialog";
 
-const HIDDEN_KEY = "hardkas-ide.getting-started-hidden";
+const HIDDEN_KEY = GUIDE_HIDDEN_KEY;
 
 function loadHidden(): boolean {
   try {
@@ -156,6 +157,11 @@ function ToolRows({ report, busy, onFix, onRefresh }: { report: ToolsReport | nu
  */
 export function EmptyMainArea() {
   const [hidden, setHidden] = useState(loadHidden);
+  useEffect(() => {
+    const show = () => setHidden(false);
+    window.addEventListener(GUIDE_EVENT, show);
+    return () => window.removeEventListener(GUIDE_EVENT, show);
+  }, []);
   const setHiddenPersist = (h: boolean) => {
     setHidden(h);
     try {

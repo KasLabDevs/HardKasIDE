@@ -20,7 +20,7 @@ import * as ide from "./ide.js";
 const ALLOW_TESTNET = process.env.HARDKAS_MCP_ALLOW_TESTNET === "1";
 
 const server = new McpServer(
-  { name: "hardkas-ide", version: "0.3.0" },
+  { name: "hardkas-ide", version: "0.4.0" },
   {
     instructions: [
       "Tools for working on a HardKas (Kaspa) project through the HardKas IDE server.",

@@ -1,8 +1,9 @@
 import clsx from "clsx";
-import { ChevronRight, Eraser, Play, RefreshCw, RotateCw, Square, UserRound } from "lucide-react";
+import { Eraser, Loader2, Play, RefreshCw, RotateCw, Square } from "lucide-react";
+import { InfoTip } from "@/components/InfoTip";
 import { useEngine } from "@/engine/context";
 import type { EnvironmentPlugin } from "@/plugins/environment";
-import { cliMismatch, formatKas, useEnv } from "@/store/env";
+import { cliMismatch, useEnv } from "@/store/env";
 import { ENVIRONMENTS, envOf, useIde } from "@/store/ide";
 import { OpSteps } from "@/shell/NodeOpProgress";
 import { ExplorerCard } from "./ExplorerCard";
@@ -17,7 +18,6 @@ export function ServersPanel() {
   const docker = useEnv((s) => s.docker);
   const nodeBusy = useEnv((s) => s.nodeBusy);
   const setTarget = useIde((s) => s.setTarget);
-  const accounts = useEnv((s) => s.accounts);
   const error = useEnv((s) => s.error);
   const target = useIde((s) => s.target);
 
@@ -31,19 +31,23 @@ export function ServersPanel() {
     <div className="text-xs">
       {/* ------------------------------------------------------- environment */}
       <section className="border-b border-border">
-        <label htmlFor="servers-env-select" className="px-3 py-1.5 label mb-0">Environment</label>
-        <div className="px-3 pb-3 space-y-2">
+        <div className="flex items-center justify-between px-3 py-1.5">
+          <label htmlFor="servers-env-select" className="label mb-0">Environment</label>
+          <InfoTip label="Environment details">
+            <div>{current.description}</div>
+            <div>
+              HardKas CLI: <code>--target {current.id}</code> · <code>--network {current.networkId}</code>
+            </div>
+          </InfoTip>
+        </div>
+        <div className="px-3 pb-2.5">
           <select id="servers-env-select" className="input" value={target} onChange={(e) => setTarget(e.target.value as typeof target)}>
             {ENVIRONMENTS.map((e) => (
               <option key={e.id} value={e.id}>
-                {e.label} · network {e.networkId}
+                {e.label} · {e.networkId}
               </option>
             ))}
           </select>
-          <div className="text-fg-muted">{current.description}</div>
-          <div className="text-[12px] text-fg-muted">
-            HardKas names: <code>--target {current.id}</code> · <code>--network {current.networkId}</code>
-          </div>
         </div>
       </section>
 
@@ -53,26 +57,34 @@ export function ServersPanel() {
           <span className="label mb-0 flex items-center gap-2">
             <span className={clsx("w-2 h-2 rounded-full", dot)} /> Local node (Docker)
           </span>
-          <button type="button" onClick={() => void env.refreshNode()} className="p-0.5 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer" title="Refresh node status" aria-label="Refresh node status">
-            <RefreshCw size={13} className={nodeBusy ? "animate-spin" : ""} />
-          </button>
+          <div className="flex items-center gap-1">
+            <InfoTip label="Local node routing & details">
+              <div>
+                {target === "localnet"
+                  ? "Transactions are sent directly to this local node."
+                  : target === "simulator"
+                    ? "Transactions run in the in-memory Simulator; this node is only used when Environment is Local node."
+                    : "Transactions use the remote testnet node from hardkas.config.ts; this local node stays idle."}
+              </div>
+              {docker?.running && <div className="text-fg/80">Docker {docker.serverVersion} running.</div>}
+            </InfoTip>
+            <button type="button" onClick={() => void env.refreshNode()} className="p-0.5 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer" title="Refresh node status" aria-label="Refresh node status">
+              <RefreshCw size={13} className={nodeBusy ? "animate-spin" : ""} />
+            </button>
+          </div>
         </div>
         <div className="px-3 pb-3 space-y-2">
           {dockerMissing && (
             <div className="rounded border border-warn/50 bg-warn/10 p-2 space-y-1">
               <div className="text-warn font-semibold">{docker?.installed ? "Docker is installed but not running" : "Docker is not installed"}</div>
               <div className="text-fg-muted">
-                The local node is rusty-kaspad inside a Docker container.{" "}
-                {docker?.installed ? "Start Docker Desktop and refresh." : (
-                  <>
-                    Install{" "}
-                    <a className="text-accent hover:underline" href="https://www.docker.com/products/docker-desktop/" target="_blank" rel="noreferrer">
-                      Docker Desktop
-                    </a>{" "}
-                    and refresh.
-                  </>
+                Needs{" "}
+                {docker?.installed ? "Docker Desktop running." : (
+                  <a className="text-accent hover:underline" href="https://www.docker.com/products/docker-desktop/" target="_blank" rel="noreferrer">
+                    Docker Desktop
+                  </a>
                 )}{" "}
-                Until then, use the Simulator: it needs nothing.
+                Use Simulator meanwhile.
               </div>
               {docker?.error && (
                 <details className="text-[12px] text-fg-muted">
@@ -87,7 +99,6 @@ export function ServersPanel() {
               )}
             </div>
           )}
-          {docker?.running && <div className="text-[12px] text-fg-muted">Docker {docker.serverVersion} running</div>}
           <div className="rounded border border-border bg-bg-elev p-2 space-y-1">
             <div className="flex items-center justify-between">
               <span className="font-semibold text-fg">rusty-kaspad · {node?.network ?? "simnet"}</span>
@@ -95,10 +106,20 @@ export function ServersPanel() {
                 {node ? (node.rpcReady ? "ready" : node.running ? "starting" : "stopped") : "unknown"}
               </span>
             </div>
-            <Row k="profile" v={node?.profile ?? "toccata-v2"} />
-            <Row k="container" v={node?.containerName ?? "hardkas-kaspad-toccata-v2"} />
-            <Row k="version" v={node?.serverVersion ?? "2.1.0"} />
-            <Row k="rpc" v={node?.rpcUrl ?? "ws://127.0.0.1:18210"} />
+            {/* Before the first status arrives, say so: made-up defaults (a version, a container) read as facts. */}
+            {!node && !error && (
+              <div className="flex items-center gap-1.5 text-fg-muted" role="status">
+                <Loader2 size={12} className="animate-spin" /> Asking the local node for its status…
+              </div>
+            )}
+            {node && (
+              <>
+                <Row k="profile" v={node.profile || "—"} />
+                <Row k="container" v={node.containerName ?? "—"} />
+                <Row k="version" v={node.serverVersion ?? (node.running ? "—" : "not running")} />
+                <Row k="rpc" v={node.rpcUrl ?? "—"} />
+              </>
+            )}
             {node?.ports && <Row k="ports" v={`grpc ${node.ports.rpc ?? "?"} · borsh ${node.ports.borshRpc ?? "?"} · json ${node.ports.jsonRpc ?? "?"}`} />}
             {node?.virtualDaaScore && <Row k="DAA" v={node.virtualDaaScore} />}
             {typeof node?.isSynced === "boolean" && <Row k="synced" v={node.isSynced ? "yes" : "no (local simnet never syncs)"} />}
@@ -136,39 +157,11 @@ export function ServersPanel() {
           >
             <Eraser size={12} /> {nodeBusy === "reset" ? "Resetting…" : "Reset from scratch…"}
           </button>
-          <div className="text-fg-muted">
-            {target === "localnet"
-              ? "Transactions go to this node."
-              : target === "simulator"
-                ? "Transactions stay in the in-memory Simulator; this node is only used when the environment is Local node."
-                : "Transactions go to the remote testnet node in hardkas.config.ts; this local node is idle."}
-          </div>
           {error && <div role="alert" className="text-error break-words">{error}</div>}
         </div>
       </section>
 
       <ExplorerCard />
-
-
-      {/* -------------------------------------------------------- accounts */}
-      {/* The account list (keys, balances, fund, create) lives in the Accounts view; Servers only links to it. */}
-      <section className="px-3 py-2">
-        <button
-          type="button"
-          onClick={() => useIde.getState().revealPlugin("accounts", "Accounts")}
-          className="w-full flex items-center justify-between gap-2 rounded border border-border bg-bg-elev px-2 py-1.5 hover:border-accent/60 hover:bg-bg-hover cursor-pointer"
-          title="Open the Accounts view (keys, balances, fund, create)"
-        >
-          <span className="flex items-center gap-1.5 text-fg">
-            <UserRound size={13} className="text-accent" />
-            {accounts.length} account{accounts.length === 1 ? "" : "s"} · {accounts[0]?.balanceNetwork ?? current.networkId}
-          </span>
-          <span className="flex items-center gap-1 font-mono tabular-nums text-fg-muted">
-            {formatKas(accounts.reduce((sum, a) => sum + BigInt(a.balanceSompi ?? 0), 0n).toString())}
-            <ChevronRight size={12} />
-          </span>
-        </button>
-      </section>
     </div>
   );
 }

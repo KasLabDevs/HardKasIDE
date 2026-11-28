@@ -1,7 +1,11 @@
 import clsx from "clsx";
-import { AlertTriangle, CheckCircle2, Circle, Loader2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Circle, Loader2, RotateCw, ScrollText, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useEngine } from "@/engine/context";
 import { useEnv, type NodeOp } from "@/store/env";
+import { useIde } from "@/store/ide";
+import { useScripts } from "@/store/scripts";
+import { nodeErrorHint } from "@/utils/nodeErrorHint";
 
 /** Elapsed seconds since `since`, ticking while `active`. */
 function useElapsed(since: number, active: boolean): number {
@@ -56,6 +60,7 @@ export function NodeOpBanner() {
           {op.state === "running" && <div className="text-fg-muted">Please wait: the Accounts and Deploy & Run views unlock when the node is ready.</div>}
           {op.state === "done" && op.next && <div className="text-fg-muted">{op.next}</div>}
           {op.state === "error" && op.error && <div className="text-fg-muted break-words">{op.error}</div>}
+          {op.state === "error" && <NodeOpErrorHelp op={op} />}
           <OpSteps op={op} compact />
         </div>
         {op.state !== "running" && (
@@ -63,6 +68,44 @@ export function NodeOpBanner() {
             <X size={13} />
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+const RETRY: Record<NodeOp["kind"], { label: string; method: "startNode" | "stopNode" | "restartNode" } | null> = {
+  start: { label: "Try again", method: "startNode" },
+  restart: { label: "Try again", method: "restartNode" },
+  stop: { label: "Try again", method: "stopNode" },
+  reset: null // destructive: run it again on purpose from the Servers panel, never from a one-click retry
+};
+
+/** Under a failed node operation: the likely cause, what to do, and buttons to retry or read the full output. */
+function NodeOpErrorHelp({ op }: { op: NodeOp }) {
+  const engine = useEngine();
+  const hint = nodeErrorHint(op.error);
+  const retry = RETRY[op.kind];
+  const showConsole = () => {
+    useIde.getState().setTerminalOpen(true);
+    useScripts.getState().setActiveBottomTab({ kind: "console" });
+  };
+  return (
+    <div className="space-y-1.5">
+      {hint && (
+        <div className="rounded-[4px] border border-border bg-bg/60 px-2 py-1.5 space-y-0.5">
+          <div className="text-fg">{hint.cause}</div>
+          <div className="text-fg-muted">{hint.fix}</div>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-1.5">
+        {retry && (
+          <button type="button" onClick={() => void engine.call("environment", retry.method)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-accent text-accent-fg hover:opacity-90 cursor-pointer">
+            <RotateCw size={12} /> {retry.label}
+          </button>
+        )}
+        <button type="button" onClick={showConsole} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] border border-border text-fg hover:bg-bg-hover cursor-pointer">
+          <ScrollText size={12} /> Show Console
+        </button>
       </div>
     </div>
   );

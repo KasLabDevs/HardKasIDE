@@ -46,6 +46,7 @@ export function SqlTab() {
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [tables, setTables] = useState<TableInfo[]>([]);
+  const [tablesState, setTablesState] = useState<"loading" | "done" | "failed">("loading");
   const [history, setHistory] = useState<string[]>(() => {
     try {
       return JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]") as string[];
@@ -58,8 +59,11 @@ export function SqlTab() {
 
   useEffect(() => {
     storeGet<{ tables: TableInfo[] }>("schema")
-      .then((r) => setTables(r.tables))
-      .catch(() => undefined);
+      .then((r) => {
+        setTables(r.tables);
+        setTablesState("done");
+      })
+      .catch(() => setTablesState("failed"));
   }, []);
 
   const run = async () => {
@@ -100,6 +104,8 @@ export function SqlTab() {
     <div className="h-full flex min-w-0">
       <aside className="w-52 shrink-0 border-r border-border bg-bg-panel overflow-auto p-2 space-y-2">
         <div className="label">Tables</div>
+        {tablesState === "loading" && <div className="text-fg-muted" role="status">Reading the schema…</div>}
+        {tablesState === "failed" && <div className="text-fg-muted">The table list could not be read; queries still work.</div>}
         {tables.map((t) => (
           <details key={t.name} className="rounded">
             <summary className="cursor-pointer flex items-center gap-1 hover:text-accent" onClick={() => insert(t.name)} title="Click to put the name in the query">

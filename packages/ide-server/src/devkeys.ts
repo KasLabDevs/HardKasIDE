@@ -23,6 +23,18 @@ import { getRoot } from "./workspace.js";
 
 const DEV_ACCOUNTS_PASSWORD = "hardkas-local-dev";
 const KEYSTORE_TYPE = "hardkas.encryptedKeystore.v2";
+const CANONICAL_SIMNET_ALIASES = ["alice", "bob", "carol", "dave", "erin"] as const;
+const SIMNET_DETERMINISTIC_SEED = "hardkas-deterministic-simnet-seed-v1";
+
+/**
+ * Deterministic simnet private keys shared across local HardKas Docker nodes for alice..erin
+ * when a workspace has not written `.hardkas/dev-accounts/<alias>.json` itself yet.
+ */
+function deterministicSimnetKey(name: string): string | null {
+  const index = CANONICAL_SIMNET_ALIASES.indexOf(name as (typeof CANONICAL_SIMNET_ALIASES)[number]);
+  if (index === -1) return null;
+  return crypto.createHash("sha256").update(`${SIMNET_DETERMINISTIC_SEED}-${index}`).digest("hex");
+}
 
 interface EncryptedKeystoreV2 {
   version: string;
@@ -179,9 +191,20 @@ export async function revealDevAccountKey(name: string, root: string | null = ge
   // Otherwise check encrypted dev keystore (.hardkas/dev-accounts/<name>.json)
   const file = path.join(root, ".hardkas", "dev-accounts", `${name}.json`);
 
+  let rawText: string;
+  try {
+    rawText = await fs.readFile(file, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      const deterministic = deterministicSimnetKey(name);
+      if (deterministic) return { name, address: "", network: "simnet", privateKey: deterministic };
+    }
+    throw new FsError(404, "NOT_FOUND", `No dev keystore for '${name}' in .hardkas/dev-accounts`);
+  }
+
   let keystore: EncryptedKeystoreV2;
   try {
-    keystore = JSON.parse((await fs.readFile(file, "utf8")).replace(/^\uFEFF/, "")) as EncryptedKeystoreV2;
+    keystore = JSON.parse(rawText.replace(/^\uFEFF/, "")) as EncryptedKeystoreV2;
   } catch {
     throw new FsError(404, "NOT_FOUND", `No dev keystore for '${name}' in .hardkas/dev-accounts`);
   }

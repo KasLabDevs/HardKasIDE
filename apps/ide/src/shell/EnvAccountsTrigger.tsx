@@ -141,50 +141,30 @@ export function EnvAccountsTrigger() {
           setOpen(next);
         }}
         className={clsx(
-          "flex items-center gap-2 min-h-[24px] min-w-0 tabular-nums whitespace-nowrap cursor-pointer rounded px-1.5 py-0.5 transition-colors",
+          "flex items-center gap-1.5 px-1.5 py-0.5 tabular-nums whitespace-nowrap cursor-pointer rounded transition-colors",
           open ? "bg-bg-hover text-fg" : "hover:bg-bg-hover hover:text-fg"
         )}
-        title="Show account balances (click to pin, or open Accounts)"
+        title={
+          accounts.length > 0
+            ? `${accounts.length} accounts · ${summary.primaryName} ${summary.primaryCompact} · Click to pin balances`
+            : "Account balances (click to pin, or open Accounts)"
+        }
       >
         <Users size={11} className="opacity-70 shrink-0" />
-
-        {/* Compact summary for medium viewports (~1280px) so balances never get clipped */}
-        <span className="flex 2xl:hidden items-center gap-1.5 text-[12px]">
-          {accounts.length === 0 ? (
-            <span className="text-fg-muted">{accountsBusy ? "loading accounts…" : "accounts"}</span>
-          ) : (
-            <>
-              <span className="text-fg-muted">{accounts.length} accts</span>
-              <span className="text-fg-muted/40">·</span>
-              <span>
-                <span className="text-fg-muted">{summary.primaryName}</span>{" "}
-                <span className="text-fg font-medium">{summary.primaryCompact}</span>
-              </span>
-            </>
-          )}
+        <span className="text-[12px]">
+          {accounts.length === 0 ? (accountsBusy ? "…" : "accts") : `${accounts.length} accts`}
         </span>
-
-        {/* Full inline strip on wide screens (>=1536px) */}
-        <span className="hidden 2xl:flex items-center gap-2.5">
-          {accounts.map((a) => (
-            <span key={a.name} className="inline-flex items-baseline gap-1">
-              <span className="text-fg-muted">{a.name}</span>
-              <span className="text-fg">{formatKas(a.balanceSompi)}</span>
-            </span>
-          ))}
-          {accounts.length === 0 && <span className="text-fg-muted">{accountsBusy ? "loading accounts…" : "accounts"}</span>}
-        </span>
-
         <ChevronDown size={10} className={clsx("opacity-60 shrink-0 transition-transform", open && "rotate-180")} />
       </button>
 
       {open && (
-        <div
-          data-testid="envbar-accounts-popover"
-          role="dialog"
-          aria-label="Account balances"
-          className="absolute right-0 top-full mt-1 w-80 z-50 rounded-md border border-border bg-bg-panel shadow-xl p-2.5 text-[12px] space-y-2"
-        >
+        <div className="absolute right-0 bottom-full pb-1.5 z-50">
+          <div
+            data-testid="envbar-accounts-popover"
+            role="dialog"
+            aria-label="Account balances"
+            className="w-80 rounded-md border border-border bg-bg-panel shadow-xl p-2.5 text-[12px] space-y-2"
+          >
           <div className="flex items-center justify-between border-b border-border/70 pb-1.5">
             <div className="flex items-center gap-1.5">
               <Users size={12} className="text-accent" />
@@ -263,6 +243,7 @@ export function EnvAccountsTrigger() {
               ))}
             </div>
           )}
+          </div>
         </div>
       )}
     </div>

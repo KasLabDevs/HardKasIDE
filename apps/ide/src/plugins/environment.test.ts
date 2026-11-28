@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseNodeStatus } from "./environment";
+import { canExportSimnetKey, parseNodeStatus } from "./environment";
 
 // `hardkas localnet status --json` as HardKas 0.12.0-rc.29 prints it with the node up (trimmed).
 const statusUp = {
@@ -53,5 +53,22 @@ describe("parseNodeStatus", () => {
   it("treats an empty answer as a stopped node, with the defaults the Servers view shows", () => {
     const s = parseNodeStatus({});
     expect(s).toMatchObject({ profile: "toccata-v2", running: false, rpcReady: false, status: "STOPPED", network: "simnet", lastError: null });
+  });
+});
+
+describe("canExportSimnetKey", () => {
+  it("allows canonical simnet dev aliases on localnet even without workspace dev-accounts files", () => {
+    expect(canExportSimnetKey("alice", "kaspasim:qqlp", "simnet", false)).toBe(true);
+    expect(canExportSimnetKey("bob", "kaspa:sim_bob", "simnet", false)).toBe(true);
+    expect(canExportSimnetKey("erin", "", "simnet", false)).toBe(true);
+    expect(canExportSimnetKey("custom_real", "kaspasim:q1", "simnet", false)).toBe(false);
+    expect(canExportSimnetKey("custom_real", "kaspasim:q1", "simnet", true)).toBe(true);
+  });
+
+  it("refuses canonical names carrying a testnet/mainnet address or on non-simnet targets", () => {
+    expect(canExportSimnetKey("alice", "kaspatest:qfake", "simnet", false)).toBe(false);
+    expect(canExportSimnetKey("alice", "kaspa:qrealmainnet", "simnet", false)).toBe(false);
+    expect(canExportSimnetKey("alice", "kaspasim:qqlp", "simulated", false)).toBe(false);
+    expect(canExportSimnetKey("alice", "kaspatest:qfake", "testnet-10", false)).toBe(false);
   });
 });

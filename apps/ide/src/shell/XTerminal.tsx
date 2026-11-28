@@ -3,6 +3,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
+import { api } from "@/api/client";
 import { useIde } from "@/store/ide";
 import { useScripts, type TerminalTab } from "@/store/scripts";
 
@@ -112,6 +113,8 @@ export function XTerminal({ tab, visible }: Props) {
       rows: String(term.rows || 30),
       events: "json"
     });
+    const tabId = api.tabId();
+    if (tabId) params.set("tab", tabId);
     if (tab.scriptRun) {
       params.set("pkgDir", tab.scriptRun.pkgRelDir);
       params.set("script", tab.scriptRun.scriptName);

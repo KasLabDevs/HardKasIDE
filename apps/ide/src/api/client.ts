@@ -149,8 +149,75 @@ export interface AssistantConfigView {
   keySource?: "env" | "keychain" | "file" | null;
   /** The host the saved key may be sent to (it was saved for that Base URL); null when there is no key. */
   keyBoundTo?: string | null;
+  /** Whether OpenAI uses ChatGPT browser/device login ("oauth") or API key / local URL ("api"). */
+  openaiAuthMode?: "oauth" | "api";
   /** The user agreed that prompts and the files the agent reads go to OpenCode's hosted models. */
   opencodeConsent?: boolean;
+  /** Automatically fail over across OpenCode free models when a rate limit is hit. */
+  opencodeAutoFallback?: boolean;
+}
+
+export interface AssistantKeyState {
+  hasKey: boolean;
+  keyHint: string;
+  keySource: "env" | "keychain" | "file" | null;
+  keyBoundTo: string | null;
+}
+
+export interface AssistantKeyCommands {
+  anthropic: {
+    envVar: "ANTHROPIC_API_KEY";
+    baseUrlVar: "ANTHROPIC_BASE_URL";
+    command: string;
+    powershellCommand: string;
+    posixCommand: string;
+    liveDetection: boolean;
+  };
+}
+
+export interface AssistantAuthAccount {
+  target: string;
+  label: string;
+  credentialId?: string;
+  method?: string;
+}
+
+export interface RankedOpenCodeModel {
+  id: string;
+  shortId: string;
+  name: string;
+  rank: number;
+  tier: "frontier" | "strong" | "balanced" | "fast";
+  contextWindow?: number;
+  outputLimit?: number;
+  summary: string;
+  free: boolean;
+}
+
+export interface ModelCooldownInfo {
+  model: string;
+  limitedAt: number;
+  retryAt: number;
+  reason: string;
+}
+
+export interface AssistantAuthStatus {
+  installed: boolean;
+  accounts: AssistantAuthAccount[];
+  models: string[];
+  rankedFreeModels?: RankedOpenCodeModel[];
+  cooldowns?: ModelCooldownInfo[];
+}
+
+export interface AssistantAuthSession {
+  id: string;
+  target: "opencode" | "openai";
+  method: "device" | "chatgpt-browser" | "chatgpt-headless";
+  status: "starting" | "pending" | "succeeded" | "failed" | "cancelled";
+  url?: string;
+  code?: string;
+  error?: string;
+  startedAt: number;
 }
 
 /** Which `hardkas` the server runs and whether it is the version this IDE was tested with. */
@@ -254,11 +321,78 @@ export class IdeApiError extends Error {
   }
 }
 
+const TAB_ID_KEY = "hardkas.tabId";
+const TAB_ROOT_KEY = "hardkas.tabRoot";
+
+/** Returns a stable per-browser-tab identifier (persists across reloads, isolated between tabs/windows; detached Tauri/popup windows inherit `detachTab`). */
+export function getTabId(): string | null {
+  try {
+    if (typeof window === "undefined" || typeof window.sessionStorage === "undefined") return null;
+    const urlTab = typeof window.location?.search === "string"
+      ? new URLSearchParams(window.location.search).get("detachTab")?.trim()
+      : undefined;
+    let id = urlTab || window.sessionStorage.getItem(TAB_ID_KEY)?.trim();
+    if (!id) {
+      id = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    }
+    window.sessionStorage.setItem(TAB_ID_KEY, id);
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+export function getSavedTabWorkspace(): string | null {
+  try {
+    if (typeof window === "undefined" || typeof window.sessionStorage === "undefined") return null;
+    return window.sessionStorage.getItem(TAB_ROOT_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function setSavedTabWorkspace(root: string | null): void {
+  try {
+    if (typeof window === "undefined" || typeof window.sessionStorage === "undefined") return;
+    if (root) window.sessionStorage.setItem(TAB_ROOT_KEY, root);
+    else window.sessionStorage.removeItem(TAB_ROOT_KEY);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function tabHeaders(): Record<string, string> {
+  const id = getTabId();
+  return id ? { "x-hardkas-tab": id } : {};
+}
+
+export function withTabQuery(path: string): string {
+  const id = getTabId();
+  if (!id) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}tab=${encodeURIComponent(id)}`;
+}
+
+/** fetch failed before any HTTP answer: the IDE server is not running (or restarting). */
+export const SERVER_UNREACHABLE = "SERVER_UNREACHABLE";
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) }
-  });
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...init,
+      headers: { "content-type": "application/json", ...tabHeaders(), ...(init?.headers ?? {}) }
+    });
+  } catch (e) {
+    if ((e instanceof DOMException && e.name === "AbortError") || init?.signal?.aborted) throw e;
+    throw new IdeApiError(
+      SERVER_UNREACHABLE,
+      "The HardKas IDE server is not answering. If you started it from a terminal (pnpm dev:server), start it again; in the desktop app, reopen the app. Then reload this page.",
+      0
+    );
+  }
   const text = await response.text();
   let body: unknown = null;
   try {
@@ -274,6 +408,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  tabId: () => getTabId(),
   workspace: {
     get: () => request<{ workspace: WorkspaceInfo }>("/api/workspace").then((r) => r.workspace),
     recents: () => request<{ recents: RecentEntry[]; home: string }>("/api/workspace/recents"),
@@ -331,7 +466,7 @@ export const api = {
       id: string,
       onEvent: (type: "stdout" | "stderr" | "error", data: string) => void
     ): { done: Promise<{ status: JobSummary["status"]; exitCode: number | null; result: unknown }>; close(): void } => {
-      const source = new EventSource(`/api/jobs/${id}/stream`);
+      const source = new EventSource(withTabQuery(`/api/jobs/${id}/stream`));
       let closed = false;
       const done = new Promise<{ status: JobSummary["status"]; exitCode: number | null; result: unknown }>((resolve, reject) => {
         for (const type of ["stdout", "stderr", "error"] as const) {
@@ -361,7 +496,7 @@ export const api = {
       onEvent: (type: "stdout" | "stderr" | "error", data: string) => void
     ): Promise<{ status: JobSummary["status"]; exitCode: number | null; result: unknown }> =>
       new Promise((resolve, reject) => {
-        const source = new EventSource(`/api/jobs/${id}/stream`);
+        const source = new EventSource(withTabQuery(`/api/jobs/${id}/stream`));
         for (const type of ["stdout", "stderr", "error"] as const) {
           source.addEventListener(type, (e) => onEvent(type, (e as MessageEvent).data as string));
         }
@@ -405,6 +540,7 @@ export const api = {
           path?: string;
           integrityStatus?: string;
           summary?: import("@/utils/artifactSummary").ArtifactSummary;
+          keys?: string[];
           parentArtifactId?: string;
           flowId?: string;
         }>;
@@ -444,18 +580,50 @@ export const api = {
       }>(`/api/plugins/search?q=${encodeURIComponent(q)}`)
   },
   assistant: {
-    config: () => request<{ config: AssistantConfigView; defaults: Record<"opencode" | "anthropic" | "openai", { baseUrl: string; model: string }> }>("/api/assistant/config"),
+    config: () =>
+      request<{
+        config: AssistantConfigView;
+        defaults: Record<"opencode" | "anthropic" | "openai", { baseUrl: string; model: string }>;
+        keyCommands?: AssistantKeyCommands;
+        keyStates?: Record<"anthropic" | "openai", AssistantKeyState>;
+      }>("/api/assistant/config"),
     saveConfig: (patch: Partial<AssistantConfigView> & { apiKey?: string; clearKey?: boolean }) =>
-      request<{ config: AssistantConfigView }>("/api/assistant/config", { method: "PUT", body: JSON.stringify(patch) }).then((r) => r.config),
+      request<{
+        config: AssistantConfigView;
+        keyCommands?: AssistantKeyCommands;
+        keyStates?: Record<"anthropic" | "openai", AssistantKeyState>;
+      }>("/api/assistant/config", { method: "PUT", body: JSON.stringify(patch) }).then((r) => r.config),
     docs: (mode: "off" | "core" | "full") =>
       request<{ mode: string; chars: number; approxTokens: number; fetchedAt: number | null; stale: boolean; source: string }>(`/api/assistant/docs?mode=${mode}`),
+    authStatus: (refresh = false) =>
+      request<{ ok: true } & AssistantAuthStatus>(`/api/assistant/auth${refresh ? "?refresh=1" : ""}`),
+    startAuthLogin: (target: "opencode" | "openai", method?: "device" | "chatgpt-browser" | "chatgpt-headless") =>
+      request<{ ok: true; session: AssistantAuthSession }>("/api/assistant/auth/login", { method: "POST", body: JSON.stringify({ target, method }) }).then((r) => r.session),
+    pollAuthLogin: (id: string) =>
+      request<{ ok: true; session: AssistantAuthSession }>(`/api/assistant/auth/login/${encodeURIComponent(id)}`).then((r) => r.session),
+    cancelAuthLogin: (id: string) =>
+      request<{ ok: true }>(`/api/assistant/auth/login/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    logoutAuth: (target: "opencode" | "openai") =>
+      request<{ ok: true } & AssistantAuthStatus>("/api/assistant/auth/logout", { method: "POST", body: JSON.stringify({ target }) }),
+    clearCooldowns: (model?: string) =>
+      request<{ ok: true; cooldowns: ModelCooldownInfo[] }>("/api/assistant/cooldowns/clear", {
+        method: "POST",
+        body: JSON.stringify(model ? { model } : {})
+      }),
+    testConnection: (body: { provider: "anthropic" | "openai"; baseUrl?: string; apiKey?: string }) =>
+      request<{ ok: boolean; message: string; models?: string[] }>("/api/assistant/test", { method: "POST", body: JSON.stringify(body) }),
     /** Streams a chat answer; resolves when it ends. Events: meta, delta, error, done. */
     chat: async (
       body: { messages: Array<{ role: "user" | "assistant"; content: string }>; context?: unknown },
       signal: AbortSignal,
       onEvent: (event: string, data: Record<string, unknown>) => void
     ): Promise<void> => {
-      const res = await fetch("/api/assistant/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
+      const res = await fetch("/api/assistant/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...tabHeaders() },
+        body: JSON.stringify(body),
+        signal
+      });
       if (!res.ok || !res.body) throw new IdeApiError("HTTP_ERROR", `Assistant request failed (${res.status})`, res.status);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -488,11 +656,16 @@ export const api = {
       request<{ ok: true }>("/api/assistant/agent/confirm", { method: "POST", body: JSON.stringify({ id, approved, allForRun }) }),
     /** Streams an autonomous agent run; resolves when it ends. Events: step, thought, confirm, done, error. */
     agent: async (
-      body: { goal: string; context?: unknown },
+      body: { goal: string; history?: Array<{ role: "user" | "assistant"; content: string }>; context?: unknown },
       signal: AbortSignal,
       onEvent: (event: string, data: Record<string, unknown>) => void
     ): Promise<void> => {
-      const res = await fetch("/api/assistant/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
+      const res = await fetch("/api/assistant/agent", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...tabHeaders() },
+        body: JSON.stringify(body),
+        signal
+      });
       if (!res.ok || !res.body) throw new IdeApiError("HTTP_ERROR", `Agent request failed (${res.status})`, res.status);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();

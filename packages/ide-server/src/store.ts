@@ -2,6 +2,7 @@ import { promises as fs, existsSync } from "node:fs";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { summarizeArtifact, type ArtifactSummary } from "./artifactSummary.js";
+import { extractArtifactKeys } from "./kaspaAddress.js";
 import { getRoot } from "./workspace.js";
 
 /**
@@ -377,6 +378,8 @@ export interface StoreLineageArtifact {
   flowId?: string;
   /** What it says in words ("Deploy VaultGuard · 5 KAS"), read from the artifact's own JSON. */
   summary?: ArtifactSummary;
+  /** Bech32 addresses and x-only hex public keys referenced in the artifact JSON. */
+  keys?: string[];
 }
 
 export interface StoreLineageEdge {
@@ -430,9 +433,11 @@ function parseArtifactRecord(json: Record<string, unknown>, filePath?: string): 
     artifactId;
 
   const summary = summarizeArtifact(schema, json);
+  const keys = extractArtifactKeys(json);
   return {
     artifactId,
     ...(summary ? { summary } : {}),
+    ...(keys.length > 0 ? { keys } : {}),
     ...(contentHash ? { contentHash } : {}),
     schema,
     kind: str(json.kind) ?? schema,
@@ -517,6 +522,7 @@ export async function lineage(workspaceRoot?: string): Promise<StoreLineageResul
           byId.set(artifactId, {
             artifactId,
             ...(parsed?.summary ? { summary: parsed.summary } : {}),
+            ...(parsed?.keys ? { keys: parsed.keys } : {}),
             ...(str(r.content_hash) ?? parsed?.contentHash ? { contentHash: str(r.content_hash) ?? parsed?.contentHash } : {}),
             schema,
             kind,
@@ -574,6 +580,7 @@ export async function lineage(workspaceRoot?: string): Promise<StoreLineageResul
         if (!existing.parentArtifactId && diskRow.parentArtifactId) existing.parentArtifactId = diskRow.parentArtifactId;
         if (!existing.flowId && diskRow.flowId) existing.flowId = diskRow.flowId;
         if (!existing.summary && diskRow.summary) existing.summary = diskRow.summary;
+        if (!existing.keys && diskRow.keys) existing.keys = diskRow.keys;
       }
     }
   }

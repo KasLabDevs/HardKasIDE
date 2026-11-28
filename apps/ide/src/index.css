@@ -70,32 +70,42 @@ body {
   scrollbar-color: var(--border) transparent;
 }
 
-.btn-primary,
-.btn-ghost {
-  @apply inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-all duration-150 cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-accent/80 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
-}
-.btn-primary {
-  @apply bg-accent text-accent-fg hover:brightness-110 shadow-xs;
-}
-.btn-ghost {
-  @apply bg-transparent text-fg hover:bg-bg-hover border border-border hover:border-fg-muted/40;
-}
-.input {
-  @apply w-full rounded border border-border bg-bg px-2 py-1 text-xs text-fg outline-none transition-colors focus:border-accent focus-visible:ring-1 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed;
-}
-.label {
-  @apply block text-[12px] font-semibold uppercase tracking-wide text-fg-muted mb-1;
-}
-.panel-title {
-  @apply px-2.5 py-1 text-[12px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border select-none;
-}
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
+@layer components {
+  .btn-primary,
+  .btn-ghost {
+    @apply inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-all duration-150 cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-accent/80 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
+  }
+  .btn-primary {
+    @apply bg-accent text-accent-fg hover:brightness-110 shadow-xs;
+  }
+  .btn-ghost {
+    @apply bg-transparent text-fg hover:bg-bg-hover border border-border hover:border-fg-muted/40;
+  }
+  .input {
+    @apply w-full min-w-0 max-w-full rounded border border-border bg-bg px-2 py-1 text-xs text-fg outline-none transition-colors focus:border-accent focus-visible:ring-1 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .select {
+    @apply w-full min-w-0 max-w-full rounded border border-border bg-bg px-2 py-1 text-xs text-fg outline-none transition-colors focus:border-accent focus-visible:ring-1 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer;
+  }
+  .label {
+    @apply block text-[12px] font-semibold uppercase tracking-wide text-fg-muted mb-1;
+  }
+  .panel-title {
+    @apply px-2.5 py-1 text-[12px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border select-none;
+  }
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
 
-/* Header strip of a view that draws its own title: title left, small status right, wraps instead of overlapping. */
-.panel-header {
-  @apply flex flex-wrap items-center justify-between gap-x-2 px-2.5 py-1 text-[12px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border select-none;
+  /* Header strip of a view that draws its own title: title left, small status right, wraps instead of overlapping. */
+  .panel-header {
+    @apply flex flex-wrap items-center justify-between gap-x-2 px-2.5 py-1 text-[12px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border select-none;
+  }
+
+  /* Floating card surfaces & ergonomic split gutters between workbench panes */
+  .panel-card {
+    @apply rounded-[6px] border border-border overflow-hidden;
+  }
 }
 
 /* Click targets of at least 24px: icon-only buttons and tabs grow to it (the icon itself keeps its size). */
@@ -120,10 +130,6 @@ a:focus-visible {
   outline-offset: -1px;
 }
 
-/* Floating card surfaces & ergonomic split gutters between workbench panes */
-.panel-card {
-  @apply rounded-[6px] border border-border overflow-hidden;
-}
 .ide-split-h {
   width: 3px;
 }

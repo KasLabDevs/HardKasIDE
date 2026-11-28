@@ -152,4 +152,29 @@ describe("store.lineage fallback", () => {
     assert.equal(res.artifacts[0].artifactId, id);
     assert.equal(res.edges.length, 0);
   });
+
+  it("extracts Bech32 addresses, decoded x-only hex public keys, P2PK scripts, and deploy addresses", async () => {
+    const root = await makeWorkspace();
+    const planId = "f".repeat(64);
+    const aliceAddr = "kaspasim:qz7y5acr8m82cwhlhw3w7scsk9fyzc769smm26swmwwgju9h7d0jjhzv0rlt8";
+    const expectedPubkey = "bc4a77033eceac3affbba2ef4310b1524163da2c37b56a0edb9c8970b7f35f29";
+    const contractAddr = "kaspasim:ppsctkwgklkr0n8uzxghsszpw4fk4jzuklra70dlzz44fsf0tutm56s7rkrw4";
+
+    await fs.writeFile(
+      path.join(root, ".hardkas", "artifacts", "plans", `txPlan-${planId}.json`),
+      JSON.stringify({
+        schema: "hardkas.txPlan",
+        contentHash: planId,
+        from: { accountName: "alice", address: aliceAddr },
+        to: { address: contractAddr },
+        inputs: [{ scriptPublicKey: `000020${expectedPubkey}ac` }],
+        lineage: { artifactId: planId }
+      }),
+      "utf8"
+    );
+
+    const res = await lineage(root);
+    assert.equal(res.artifacts.length, 1);
+    assert.deepEqual(res.artifacts[0].keys, [aliceAddr, expectedPubkey, contractAddr]);
+  });
 });

@@ -15,6 +15,21 @@ export function openPalette(initialQuery?: unknown): void {
   window.dispatchEvent(new CustomEvent(PALETTE_EVENT, { detail: { initialQuery: seed } }));
 }
 
+/** The getting-started guide lives in the empty editor area; this key remembers that the user hid it. */
+export const GUIDE_HIDDEN_KEY = "hardkas-ide.getting-started-hidden";
+export const GUIDE_EVENT = "hardkas:show-guide";
+
+/** Brings the guide back: un-hides it and empties the editor area it lives in (unsaved files are asked about). */
+export async function showGettingStarted(): Promise<void> {
+  try {
+    localStorage.setItem(GUIDE_HIDDEN_KEY, "0");
+  } catch {
+    // not remembered: the event below still shows it now
+  }
+  window.dispatchEvent(new CustomEvent(GUIDE_EVENT));
+  await closeAllEditors();
+}
+
 export function isTextFile(path: string | null | undefined): path is string {
   return !!path && !path.startsWith("view:");
 }

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -47,10 +48,28 @@ export interface RecentEntry {
   openedAt: string;
 }
 
-let currentRoot: string | null = null;
+let globalRoot: string | null = null;
+let startupRoot: string | null = null;
+const tabContext = new AsyncLocalStorage<string | undefined>();
+const tabRoots = new Map<string, string | null>();
+
+/** Runs `fn` scoped to a specific browser tab / IDE window workspace session. */
+export function withWorkspaceTab<T>(tabId: string | undefined, fn: () => T): T {
+  const clean = tabId?.trim() || undefined;
+  return tabContext.run(clean, fn);
+}
+
+/** Returns the active IDE tab/window id if the current call is scoped to one. */
+export function currentWorkspaceTab(): string | undefined {
+  return tabContext.getStore();
+}
 
 export function getRoot(): string | null {
-  return currentRoot;
+  const tabId = tabContext.getStore();
+  if (tabId) {
+    return tabRoots.has(tabId) ? (tabRoots.get(tabId) ?? null) : startupRoot;
+  }
+  return globalRoot;
 }
 
 /** Path comparison key: Windows paths are case-insensitive. */
@@ -86,7 +105,7 @@ export async function trustFolder(dir: string): Promise<void> {
 }
 
 /** Throws UNTRUSTED_WORKSPACE when `dir` (default: the open workspace) is not trusted. */
-export async function requireTrusted(dir: string | null | undefined = currentRoot): Promise<void> {
+export async function requireTrusted(dir: string | null | undefined = getRoot()): Promise<void> {
   if (!dir) return;
   if (!(await isTrusted(dir))) {
     throw new WorkspaceError(
@@ -113,30 +132,33 @@ function refusedReason(dir: string): string | null {
 }
 
 export async function describeWorkspace(): Promise<WorkspaceInfo> {
-  if (!currentRoot) {
+  const root = getRoot();
+  if (!root) {
     return { root: null, name: null, hasConfig: false, configFile: null, hasHardkasDir: false, hasDevServerToken: false, trusted: false };
   }
   let configFile: string | null = null;
   for (const name of CONFIG_NAMES) {
-    if (await exists(path.join(currentRoot, name))) {
+    if (await exists(path.join(root, name))) {
       configFile = name;
       break;
     }
   }
   return {
-    root: currentRoot,
-    name: path.basename(currentRoot),
+    root,
+    name: path.basename(root),
     hasConfig: configFile !== null,
     configFile,
-    hasHardkasDir: await exists(path.join(currentRoot, ".hardkas")),
-    hasDevServerToken: await exists(path.join(currentRoot, ".hardkas", "dev-server-token")),
-    trusted: await isTrusted(currentRoot)
+    hasHardkasDir: await exists(path.join(root, ".hardkas")),
+    hasDevServerToken: await exists(path.join(root, ".hardkas", "dev-server-token")),
+    trusted: await isTrusted(root)
   };
 }
 
 export interface OpenOptions {
   /** Only folders that are HardKas projects (a hardkas.config.* or a package.json naming @hardkas/). Used for MCP. */
   requireProject?: boolean;
+  /** True only when pinned at server boot via --workspace / HARDKAS_IDE_WORKSPACE. */
+  startup?: boolean;
 }
 
 export async function openWorkspace(dir: string, options: OpenOptions = {}): Promise<WorkspaceInfo> {
@@ -160,9 +182,20 @@ export async function openWorkspace(dir: string, options: OpenOptions = {}): Pro
       // no package.json or unreadable
     }
   }
-  currentRoot = real;
+  const tabId = tabContext.getStore();
+  if (tabId) {
+    tabRoots.set(tabId, real);
+    globalRoot = real;
+  } else {
+    globalRoot = real;
+    if (options.startup) startupRoot = real;
+  }
   await addRecent(real);
   return describeWorkspace();
+}
+
+export async function initStartupWorkspace(dir: string): Promise<WorkspaceInfo> {
+  return openWorkspace(dir, { startup: true });
 }
 
 async function looksLikeProject(dir: string): Promise<boolean> {
@@ -175,7 +208,13 @@ async function looksLikeProject(dir: string): Promise<boolean> {
 }
 
 export function closeWorkspace(): void {
-  currentRoot = null;
+  const tabId = tabContext.getStore();
+  if (tabId) {
+    tabRoots.set(tabId, null);
+    return;
+  }
+  globalRoot = null;
+  startupRoot = null;
 }
 
 export async function listRecents(): Promise<RecentEntry[]> {
@@ -202,9 +241,10 @@ async function addRecent(dir: string): Promise<void> {
 /** Reads the dev-server bearer token written by `hardkas dev`, if any. */
 export async function readDevServerToken(): Promise<string | null> {
   if (process.env.HARDKAS_DEV_TOKEN) return process.env.HARDKAS_DEV_TOKEN;
-  if (!currentRoot) return null;
+  const root = getRoot();
+  if (!root) return null;
   try {
-    const raw = await fs.readFile(path.join(currentRoot, ".hardkas", "dev-server-token"), "utf8");
+    const raw = await fs.readFile(path.join(root, ".hardkas", "dev-server-token"), "utf8");
     return raw.trim() || null;
   } catch {
     return null;

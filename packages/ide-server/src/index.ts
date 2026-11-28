@@ -8,7 +8,9 @@ import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { AssistantError, answerConfirm, kaspaDocs, loadConfig, providerDefaults, publicConfig, saveConfig, streamChat, streamAgent, type ChatRequest, type AgentRequest } from "./assistant.js";
+import { AssistantError, answerConfirm, kaspaDocs, loadConfig, providerDefaults, providerKeyCommands, providerKeyStates, publicConfig, saveConfig, streamChat, streamAgent, type ChatRequest, type AgentRequest } from "./assistant.js";
+import { AuthConflictError, cancelAuthLogin, getAuthSession, getAuthStatus, logoutAuth, startAuthLogin, testApiKeyConnection, type AcpAuthMethod, type AcpAuthTarget } from "./acpAuth.js";
+import { originOf, resolveApiKey } from "./secrets.js";
 import { debugSession } from "./debug.js";
 import { listDevAccountAddresses, listDevAccountNames, revealDevAccountKey } from "./devkeys.js";
 import * as wsfs from "./fs.js";
@@ -25,7 +27,8 @@ import { readIdeSettings, thirdPartyExtensionsEnabled, writeIdeSettings } from "
 import { currentView, runnerInfo, sendCommand, startSession, stopSession, type DebugCommand, type StartRequest } from "./silverDebug.js";
 import { examplesDir, fetchText, installNpmPlugin, listExamples, loadRegistry, pluginsRoot, readStatic, searchNpmPlugins } from "./plugins.js";
 import { installVsx, readIndex, readVsxFile, searchVsx, setVsxEnabled, uninstallVsx } from "./vsx.js";
-import { closeWorkspace, describeWorkspace, getRoot, listRecents, openWorkspace, readDevServerToken, requireTrusted, trustFolder, WorkspaceError } from "./workspace.js";
+import { closeWorkspace, describeWorkspace, getRoot, initStartupWorkspace, listRecents, openWorkspace, readDevServerToken, requireTrusted, trustFolder, withWorkspaceTab, WorkspaceError } from "./workspace.js";
+import { clearModelCooldown, getActiveCooldowns } from "./opencodeModels.js";
 import { allowedHostnames, checkRequest, ideOrigins, isAllowedHost, isPublicStatic, SANDBOX_CSP, type RequestFacts } from "./guard.js";
 import { isHardkasMiner, LocalNodeError, resetWorkspaceChainState } from "./localNode.js";
 
@@ -60,6 +63,10 @@ function localOnly(c: { req: { method: string; path: string; header(name: string
   return checkRequest(requestFacts(c), ALLOWED_HOSTS, IDE_ORIGINS).ok;
 }
 
+function tabIdOf(c: { req: { header(name: string): string | undefined; query(name: string): string | undefined } }): string | undefined {
+  return c.req.header("x-hardkas-tab")?.trim() || c.req.query("tab")?.trim() || undefined;
+}
+
 // Every request names a loopback Host (stops DNS rebinding, see guard.ts); every /api request also comes from the
 // IDE page or a local program, whatever its method: a GET can read a file or start the CLI, and the terminal
 // WebSocket is refused here, before the upgrade.
@@ -67,7 +74,7 @@ app.use("*", async (c, next) => {
   if (!isAllowedHost(c.req.header("host"), ALLOWED_HOSTS)) {
     return c.json({ ok: false, code: "FORBIDDEN_HOST", message: "the IDE server only answers on localhost, 127.0.0.1 or [::1]" }, 403);
   }
-  await next();
+  await withWorkspaceTab(tabIdOf(c), () => next());
 });
 
 app.use("/api/*", async (c, next) => {
@@ -84,7 +91,7 @@ app.use(
       if (isPublicStatic(c.req.path)) return "*";
       return IDE_ORIGINS.has(origin.toLowerCase()) ? origin : "";
     },
-    allowHeaders: ["Content-Type", "X-Hardkas-Request", "X-Hardkas-Client"],
+    allowHeaders: ["Content-Type", "X-Hardkas-Request", "X-Hardkas-Client", "X-Hardkas-Tab"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
   })
 );
@@ -370,6 +377,7 @@ app.post("/api/terminal/:id/stop", (c) => {
 app.get(
   "/api/terminal/ws",
   upgradeWebSocket((c) => {
+    const tabId = tabIdOf(c);
     const allowedOrigin = localOnly(c);
     const cols = Math.min(Math.max(Number(c.req.query("cols") ?? 100) || 100, 10), 500);
     const rows = Math.min(Math.max(Number(c.req.query("rows") ?? 30) || 30, 5), 200);
@@ -382,54 +390,56 @@ app.get(
 
     return {
       async onOpen(_event, ws) {
-        const sendData = (text: string) => {
-          if (closed) return;
-          // Callers using `events=json` parse control/data frames without risking text/banner ambiguity.
-          ws.send(jsonMode ? JSON.stringify({ type: "data", data: text }) : text);
-        };
-        const sendCtrl = (payload: Record<string, unknown>, fallbackText?: string) => {
-          if (closed) return;
-          if (jsonMode) ws.send(JSON.stringify(payload));
-          else if (fallbackText) ws.send(fallbackText);
-        };
-        if (!allowedOrigin) {
-          sendCtrl({ type: "error", message: "forbidden WebSocket origin" }, "\r\n[ide-server] forbidden WebSocket origin\r\n");
-          ws.close();
-          return;
-        }
-        try {
-          if (scriptName) {
-            session = await openScriptTerminal({ pkgDir, script: scriptName, cols, rows });
-          } else {
-            const cwd = resolveSafeCwd(rawCwd);
-            session = openTerminal({ cwd, cols, rows });
+        return await withWorkspaceTab(tabId, async () => {
+          const sendData = (text: string) => {
+            if (closed) return;
+            // Callers using `events=json` parse control/data frames without risking text/banner ambiguity.
+            ws.send(jsonMode ? JSON.stringify({ type: "data", data: text }) : text);
+          };
+          const sendCtrl = (payload: Record<string, unknown>, fallbackText?: string) => {
+            if (closed) return;
+            if (jsonMode) ws.send(JSON.stringify(payload));
+            else if (fallbackText) ws.send(fallbackText);
+          };
+          if (!allowedOrigin) {
+            sendCtrl({ type: "error", message: "forbidden WebSocket origin" }, "\r\n[ide-server] forbidden WebSocket origin\r\n");
+            ws.close();
+            return;
           }
-        } catch (error) {
-          const msg = error instanceof Error ? error.message : String(error);
-          sendCtrl({ type: "error", message: msg }, `\r\n[ide-server] could not start terminal: ${msg}\r\n`);
-          ws.close();
-          return;
-        }
-        if (closed) {
-          closeTerminal(session.id);
-          session = null;
-          return;
-        }
-        sendCtrl({
-          type: "ready",
-          id: session.id,
-          shell: session.shell,
-          cwd: session.cwd,
-          commandLine: session.commandLine ?? session.shell
-        });
-        sendData(`\x1b[2m[hardkas-ide] ${session.commandLine ?? session.shell} in ${session.cwd}\x1b[0m\r\n`);
-        const activeSession = session;
-        activeSession.pty.onData((data) => sendData(data));
-        activeSession.pty.onExit(({ exitCode }) => {
-          const label = activeSession.stopped ? "[stopped by user]" : `[process exited with code ${exitCode}]`;
-          sendData(`\r\n\x1b[2m${label}\x1b[0m\r\n`);
-          sendCtrl({ type: "exit", exitCode, stopped: activeSession.stopped });
-          ws.close();
+          try {
+            if (scriptName) {
+              session = await openScriptTerminal({ pkgDir, script: scriptName, cols, rows });
+            } else {
+              const cwd = resolveSafeCwd(rawCwd);
+              session = openTerminal({ cwd, cols, rows });
+            }
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            sendCtrl({ type: "error", message: msg }, `\r\n[ide-server] could not start terminal: ${msg}\r\n`);
+            ws.close();
+            return;
+          }
+          if (closed) {
+            closeTerminal(session.id);
+            session = null;
+            return;
+          }
+          sendCtrl({
+            type: "ready",
+            id: session.id,
+            shell: session.shell,
+            cwd: session.cwd,
+            commandLine: session.commandLine ?? session.shell
+          });
+          sendData(`\x1b[2m[hardkas-ide] ${session.commandLine ?? session.shell} in ${session.cwd}\x1b[0m\r\n`);
+          const activeSession = session;
+          activeSession.pty.onData((data) => sendData(data));
+          activeSession.pty.onExit(({ exitCode }) => {
+            const label = activeSession.stopped ? "[stopped by user]" : `[process exited with code ${exitCode}]`;
+            sendData(`\r\n\x1b[2m${label}\x1b[0m\r\n`);
+            sendCtrl({ type: "exit", exitCode, stopped: activeSession.stopped });
+            ws.close();
+          });
         });
       },
       onMessage(event) {
@@ -656,13 +666,28 @@ app.post("/api/devkeys/reveal", async (c) => {
 
 // ---------------------------------------------------------------- assistant (chat grounded in the Kaspa docs)
 
-app.get("/api/assistant/config", async (c) => c.json({ ok: true, config: publicConfig(await loadConfig()), defaults: providerDefaults() }));
+app.get("/api/assistant/config", async (c) => {
+  const cfg = await loadConfig();
+  return c.json({
+    ok: true,
+    config: publicConfig(cfg),
+    defaults: providerDefaults(),
+    keyCommands: providerKeyCommands(),
+    keyStates: await providerKeyStates(cfg)
+  });
+});
 
 app.put("/api/assistant/config", async (c) => {
   if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
   const body = (await c.req.json()) as Parameters<typeof saveConfig>[0];
   try {
-    return c.json({ ok: true, config: publicConfig(await saveConfig(body)) });
+    const saved = await saveConfig(body);
+    return c.json({
+      ok: true,
+      config: publicConfig(saved),
+      keyCommands: providerKeyCommands(),
+      keyStates: await providerKeyStates(saved)
+    });
   } catch (error) {
     return c.json({ ok: false, code: "BAD_REQUEST", message: error instanceof Error ? error.message : String(error) }, 400);
   }
@@ -676,6 +701,88 @@ app.get("/api/assistant/docs", async (c) => {
   } catch (error) {
     return c.json({ ok: false, code: "DOCS_UNREACHABLE", message: error instanceof Error ? error.message : String(error) }, 502);
   }
+});
+
+app.get("/api/assistant/auth", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const refresh = c.req.query("refresh") === "1";
+  try {
+    return c.json({ ok: true, ...(await getAuthStatus(refresh)) });
+  } catch (error) {
+    return c.json({ ok: false, code: "AUTH_ERROR", message: error instanceof Error ? error.message : String(error) }, 500);
+  }
+});
+
+app.post("/api/assistant/auth/login", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { target?: unknown; method?: unknown };
+  const target: AcpAuthTarget | null = body.target === "opencode" || body.target === "openai" ? body.target : null;
+  if (!target) return c.json({ ok: false, code: "BAD_REQUEST", message: "target must be 'opencode' or 'openai'" }, 400);
+  const method: AcpAuthMethod | undefined =
+    body.method === "device" || body.method === "chatgpt-browser" || body.method === "chatgpt-headless" ? body.method : undefined;
+  try {
+    const session = await startAuthLogin(target, method);
+    return c.json({ ok: true, session });
+  } catch (error) {
+    if (error instanceof AuthConflictError) {
+      return c.json({ ok: false, code: error.code, message: error.message }, 409);
+    }
+    return c.json({ ok: false, code: "AUTH_FAILED", message: error instanceof Error ? error.message : String(error) }, 500);
+  }
+});
+
+app.get("/api/assistant/auth/login/:id", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const session = getAuthSession(c.req.param("id"));
+  if (!session) return c.json({ ok: false, code: "NOT_FOUND", message: "login session not found" }, 404);
+  return c.json({ ok: true, session });
+});
+
+app.delete("/api/assistant/auth/login/:id", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  cancelAuthLogin(c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+app.post("/api/assistant/auth/logout", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { target?: unknown };
+  const target: AcpAuthTarget | null = body.target === "opencode" || body.target === "openai" ? body.target : null;
+  if (!target) return c.json({ ok: false, code: "BAD_REQUEST", message: "target must be 'opencode' or 'openai'" }, 400);
+  try {
+    return c.json({ ok: true, ...(await logoutAuth(target)) });
+  } catch (error) {
+    return c.json({ ok: false, code: "AUTH_ERROR", message: error instanceof Error ? error.message : String(error) }, 500);
+  }
+});
+
+app.post("/api/assistant/cooldowns/clear", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { model?: unknown };
+  const model = typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined;
+  await clearModelCooldown(model);
+  return c.json({ ok: true, cooldowns: await getActiveCooldowns() });
+});
+
+app.post("/api/assistant/test", async (c) => {
+  if (!localOnly(c)) return c.json({ ok: false, code: "FORBIDDEN", message: "forbidden origin" }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { provider?: unknown; baseUrl?: unknown; apiKey?: unknown };
+  const provider = body.provider === "anthropic" || body.provider === "openai" ? body.provider : null;
+  if (!provider) return c.json({ ok: false, code: "BAD_REQUEST", message: "provider must be 'anthropic' or 'openai'" }, 400);
+  const defaults = providerDefaults();
+  const baseUrl = typeof body.baseUrl === "string" && body.baseUrl.trim() ? body.baseUrl.trim() : defaults[provider].baseUrl;
+  let apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+  if (!apiKey) {
+    const resolved = await resolveApiKey(provider, baseUrl);
+    if (resolved.key) {
+      apiKey = resolved.key;
+    } else {
+      const cfg = await loadConfig();
+      if (cfg.provider === provider && originOf(cfg.baseUrl) === originOf(baseUrl)) apiKey = cfg.apiKey;
+    }
+  }
+  const result = await testApiKeyConnection({ provider, baseUrl, apiKey });
+  return c.json(result);
 });
 
 app.post("/api/assistant/chat", async (c) => {
@@ -1049,13 +1156,27 @@ async function main() {
   const wsIndex = argv.indexOf("--workspace");
   const initial = wsIndex >= 0 ? argv[wsIndex + 1] : process.env.HARDKAS_IDE_WORKSPACE;
   if (initial) {
-    await openWorkspace(initial);
+    await initStartupWorkspace(initial);
     console.error(`[ide-server] workspace: ${getRoot()}`);
   } else {
     console.error("[ide-server] no workspace open; pick one from the IDE Home screen");
   }
   const server = serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" }, (info) => {
     console.error(`[ide-server] listening on http://127.0.0.1:${info.port}  (dev-server proxy -> ${DEV_SERVER}, shell: ${defaultShell().file})`);
+  });
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(
+        `[ide-server] port ${PORT} is already in use: another HardKas IDE (or another program) is listening on it.\n` +
+          `  - If it is the IDE, open http://127.0.0.1:${PORT} instead of starting a second one.\n` +
+          `  - Otherwise start this one on a free port: set HARDKAS_IDE_PORT=${PORT + 10} (and point the IDE or MCP client at it).`
+      );
+    } else if (err.code === "EACCES") {
+      console.error(`[ide-server] not allowed to listen on port ${PORT}. Pick another one with HARDKAS_IDE_PORT.`);
+    } else {
+      console.error(`[ide-server] could not start: ${err.message}`);
+    }
+    process.exit(1);
   });
   injectWebSocket(server);
 }

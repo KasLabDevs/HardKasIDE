@@ -73,7 +73,10 @@ describe("useIde secondary dock panel visibility", () => {
     useIde.getState().resetLayout();
   });
 
-  it("toggles right-docked panels such as Assistant open/hidden and restores on reveal or resetLayout", () => {
+  it("defaults Assistant to left full-height dock and supports toggling right-docked secondary panels", () => {
+    expect(useIde.getState().docks.assistant).toBeUndefined();
+
+    useIde.getState().setDock("assistant", "right");
     expect(useIde.getState().docks.assistant).toBe("right");
     expect(useIde.getState().hiddenPanels.assistant).toBeUndefined();
 
@@ -92,5 +95,6 @@ describe("useIde secondary dock panel visibility", () => {
     useIde.getState().setPanelHidden("assistant", true);
     useIde.getState().resetLayout();
     expect(useIde.getState().hiddenPanels).toEqual({});
+    expect(useIde.getState().docks).toEqual({ deployRun: "main" });
   });
 });

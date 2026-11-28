@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import { Pickaxe, Square, Zap } from "lucide-react";
+import { InfoTip } from "@/components/InfoTip";
 import { useEngine } from "@/engine/context";
 import type { EnvironmentPlugin } from "@/plugins/environment";
 import { useEnv } from "@/store/env";
@@ -46,14 +47,18 @@ export function MinerNotice({ compact = false }: { compact?: boolean }) {
         </span>
         {!compact && miner && <span className="text-[12px] text-fg-muted font-mono">{miner.status || (running ? "running" : "stopped")}</span>}
       </div>
-      <label className="flex items-start gap-2 cursor-pointer text-[12px] text-fg-muted">
-        <input type="checkbox" className="mt-0.5" checked={autoMine} onChange={(e) => setAutoMine(e.target.checked)} />
-        <span>
-          Mine automatically when something is sent
-          {!compact && <span className="block text-fg-muted/80">A short burst to {account} each time a deploy, spend or payment waits for a block; it stops by itself.</span>}
-        </span>
-      </label>
-      {!compact && running && <p className="text-[12px] text-fg-muted leading-relaxed">A miner left running floods the node and confirmations slow down. Stop it once your transactions are in.</p>}
+      <div className="flex items-start justify-between gap-2 text-[12px] text-fg-muted">
+        <label className="flex items-start gap-2 cursor-pointer flex-1 min-w-0">
+          <input type="checkbox" className="mt-0.5 shrink-0" checked={autoMine} onChange={(e) => setAutoMine(e.target.checked)} />
+          <span>Mine automatically when something is sent</span>
+        </label>
+        {!compact && (
+          <InfoTip label="Auto-mining details">
+            <div>A short burst to <b>{account}</b> each time a deploy, spend or payment waits for a block; it stops by itself.</div>
+            <div>A miner left running floods the node and confirmations slow down. Stop it once your transactions are in.</div>
+          </InfoTip>
+        )}
+      </div>
       <div className="flex gap-1">
         <button type="button" className={clsx("flex-1 justify-center !py-1", autoMine ? "btn-ghost" : "btn-primary")} disabled={disabled} onClick={() => act(() => env.mineBurst(account))} title={`hardkas localnet fund ${account} --amount 1 --stop-miner: mines until one more KAS matures (a minute or two), then stops`}>
           <Zap size={12} /> Mine blocks now

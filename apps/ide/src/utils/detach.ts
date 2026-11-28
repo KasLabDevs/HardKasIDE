@@ -1,3 +1,4 @@
+import { getTabId } from "@/api/client";
 import { VIEW_PREFIX, type OpenFile } from "@/store/ide";
 
 const DETACH_CHANNEL = "hardkas-ide.detach";
@@ -69,6 +70,8 @@ export function openDetachedWindow(file: OpenFile): boolean {
   const url = new URL(window.location.href);
   url.search = "";
   url.hash = "";
+  const parentTabId = getTabId();
+  if (parentTabId) url.searchParams.set("detachTab", parentTabId);
   if (file.kind === "view") {
     const pluginName = file.path.slice(VIEW_PREFIX.length);
     url.searchParams.set("detachView", pluginName);

@@ -77,7 +77,7 @@ export function ScriptsPanel() {
   const setTerminalOpen = useIde((s) => s.setTerminalOpen);
 
   const [query, setQuery] = useState("");
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [collapsed, setCollapsed] = useState(false);
 
   const tabByKey = useMemo(() => {
     const map = new Map<string, TerminalTab>();
@@ -92,18 +92,30 @@ export function ScriptsPanel() {
     [terminals]
   );
 
-  const filteredPackages = useMemo(() => {
+  const rootPkg = useMemo(
+    () => packages.find((p) => p.relDir === ".") ?? packages[0] ?? null,
+    [packages]
+  );
+
+  const visibleScripts = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return packages
-      .map((pkg) => {
-        const pkgMatches = !q || pkg.name.toLowerCase().includes(q) || pkg.relDir.toLowerCase().includes(q);
-        const matchingScripts = pkgMatches
-          ? pkg.scripts
-          : pkg.scripts.filter((s) => s.name.toLowerCase().includes(q) || s.command.toLowerCase().includes(q));
-        const sorted = [...matchingScripts].sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
-        return { ...pkg, scripts: sorted };
-      })
-      .filter((pkg) => pkg.scripts.length > 0);
+    const rows: Array<{ pkg: WorkspacePackageScripts; script: PackageScriptEntry }> = [];
+    for (const pkg of packages) {
+      const pkgMatches = !q || pkg.name.toLowerCase().includes(q) || pkg.relDir.toLowerCase().includes(q);
+      for (const script of pkg.scripts) {
+        if (pkgMatches || script.name.toLowerCase().includes(q) || script.command.toLowerCase().includes(q)) {
+          rows.push({ pkg, script });
+        }
+      }
+    }
+    rows.sort((a, b) => {
+      const kindDiff = KIND_ORDER[a.script.kind] - KIND_ORDER[b.script.kind];
+      if (kindDiff !== 0) return kindDiff;
+      const rootDiff = (a.pkg.relDir === "." ? 0 : 1) - (b.pkg.relDir === "." ? 0 : 1);
+      if (rootDiff !== 0) return rootDiff;
+      return a.script.name.localeCompare(b.script.name);
+    });
+    return rows;
   }, [packages, query]);
 
   const untrusted = workspace?.trusted === false;
@@ -113,16 +125,22 @@ export function ScriptsPanel() {
     setTerminalOpen(true);
   };
 
+  const projectDisplayName =
+    workspace?.name ||
+    (rootPkg && rootPkg.name !== "hardkas-project" ? rootPkg.name : undefined) ||
+    rootPkg?.name ||
+    "Workspace";
+
   return (
-    <div className="text-xs flex flex-col min-h-full">
-      <div className="sticky top-0 z-10 bg-bg-panel px-2.5 py-2 border-b border-border space-y-2">
-        <div className="flex items-center gap-1.5">
-          <div className="relative flex-1 min-w-0">
-            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-fg-muted" />
+    <div className="text-xs flex flex-col min-h-full min-w-0">
+      <div className="sticky top-0 z-10 bg-bg-panel px-2 py-1.5 border-b border-border space-y-1.5">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div className="input flex items-center gap-1.5 px-2 py-1 flex-1 min-w-0">
+            <Search size={12} className="shrink-0 text-fg-muted pointer-events-none" />
             <input
               aria-label="Filter scripts"
-              className="input !pl-7 !pr-6"
-              placeholder="Filter scripts or packages…"
+              className="flex-1 min-w-0 bg-transparent outline-none text-fg placeholder:text-fg-muted"
+              placeholder="Filter scripts…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -130,7 +148,7 @@ export function ScriptsPanel() {
               <button
                 type="button"
                 onClick={() => setQuery("")}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-fg-muted hover:text-fg cursor-pointer"
+                className="shrink-0 p-0.5 text-fg-muted hover:text-fg cursor-pointer"
                 aria-label="Clear filter"
               >
                 <X size={11} />
@@ -144,7 +162,7 @@ export function ScriptsPanel() {
             title="Rescan package.json scripts"
             aria-label="Refresh scripts"
           >
-            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
           </button>
         </div>
 
@@ -179,6 +197,11 @@ export function ScriptsPanel() {
       </div>
 
       <div className="flex-1 overflow-auto p-2 space-y-2">
+        {loading && packages.length === 0 && (
+          <div className="p-4 flex items-center justify-center gap-1.5 text-fg-muted" role="status">
+            <RefreshCw size={12} className="animate-spin" /> Reading package.json scripts…
+          </div>
+        )}
         {!loading && packages.length === 0 && !error && (
           <div className="rounded border border-dashed border-border p-4 text-center text-fg-muted space-y-1">
             <div className="text-fg font-medium">No package.json scripts found</div>
@@ -186,87 +209,83 @@ export function ScriptsPanel() {
           </div>
         )}
 
-        {!loading && packages.length > 0 && filteredPackages.length === 0 && (
+        {!loading && packages.length > 0 && visibleScripts.length === 0 && (
           <div className="p-4 text-center text-fg-muted">No scripts match “{query}”.</div>
         )}
 
-        {filteredPackages.map((pkg) => {
-          const isCollapsed = Boolean(collapsed[pkg.id]);
-          const runningInPkg = pkg.scripts.filter((s) => tabByKey.get(scriptKeyOf(pkg.relDir, s.name))?.status === "running").length;
-
-          return (
-            <section key={pkg.id} className="rounded border border-border bg-bg-elev overflow-hidden">
-              <div className="flex items-center gap-1.5 px-2 py-1.5 bg-bg-panel border-b border-border/70">
-                <button
-                  type="button"
-                  onClick={() => setCollapsed((c) => ({ ...c, [pkg.id]: !c[pkg.id] }))}
-                  className="flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer group"
-                  aria-expanded={!isCollapsed}
-                >
-                  {isCollapsed ? <ChevronRight size={13} className="text-fg-muted shrink-0" /> : <ChevronDown size={13} className="text-fg-muted shrink-0" />}
-                  <Package size={12} className="text-accent shrink-0" />
-                  <span className="font-semibold text-fg truncate group-hover:text-accent" title={`${pkg.name} (${pkg.manifestPath})`}>
-                    {pkg.name}
-                  </span>
-                  {pkg.relDir !== "." && (
-                    <span className="text-[11px] font-mono text-fg-muted truncate">
-                      {pkg.relDir}
-                    </span>
-                  )}
-                </button>
-                {runningInPkg > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-ok animate-pulse shrink-0" title={`${runningInPkg} running`} />
-                )}
+        {visibleScripts.length > 0 && rootPkg && (
+          <section className="rounded border border-border bg-bg-elev overflow-hidden">
+            <div className="flex items-center gap-1.5 px-2 py-1.5 bg-bg-panel border-b border-border/70">
+              <button
+                type="button"
+                onClick={() => setCollapsed((c) => !c)}
+                className="flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer group"
+                aria-expanded={!collapsed}
+              >
+                {collapsed ? <ChevronRight size={13} className="text-fg-muted shrink-0" /> : <ChevronDown size={13} className="text-fg-muted shrink-0" />}
+                <Package size={12} className="text-accent shrink-0" />
                 <span
-                  className="px-1.5 py-0.5 rounded bg-bg border border-border text-[11px] font-mono text-fg-muted shrink-0"
-                  title={`Detected package manager: ${pkg.manager}`}
+                  className="font-semibold text-fg truncate group-hover:text-accent"
+                  title={`${projectDisplayName} (${packages.map((p) => p.manifestPath).join(", ")})`}
                 >
-                  {pkg.manager}
+                  {projectDisplayName}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => void engine.call("fileManager", "open", pkg.manifestPath)}
-                  className="p-0.5 rounded text-fg-muted hover:text-accent hover:bg-bg-hover cursor-pointer shrink-0"
-                  title={`Open ${pkg.manifestPath}`}
-                  aria-label={`Open ${pkg.manifestPath}`}
-                >
-                  <FileJson size={12} />
-                </button>
-              </div>
-
-              {!isCollapsed && (
-                <div className="divide-y divide-border/40">
-                  {pkg.scripts.map((script) => (
-                    <ScriptRow
-                      key={script.name}
-                      pkg={pkg}
-                      script={script}
-                      tab={tabByKey.get(scriptKeyOf(pkg.relDir, script.name))}
-                      disabled={untrusted}
-                      onLaunch={() => (runsVitest(script) ? void engine.call("tests", "run") : launchScript(pkg, script))}
-                      onStop={(tabId) => void stopTerminal(tabId)}
-                      onRestart={(tabId) => void restartTerminal(tabId)}
-                      onFocus={focusTab}
-                    />
-                  ))}
-                </div>
+              </button>
+              {runningCount > 0 && (
+                <span className="w-2 h-2 rounded-full bg-ok animate-pulse shrink-0" title={`${runningCount} running`} />
               )}
-            </section>
-          );
-        })}
+              <span
+                className="px-1.5 py-0.5 rounded bg-bg border border-border text-[11px] font-mono text-fg-muted shrink-0"
+                title={`Detected package manager: ${rootPkg.manager}`}
+              >
+                {rootPkg.manager}
+              </span>
+              <button
+                type="button"
+                onClick={() => void engine.call("fileManager", "open", rootPkg.manifestPath)}
+                className="p-0.5 rounded text-fg-muted hover:text-accent hover:bg-bg-hover cursor-pointer shrink-0"
+                title={`Open ${rootPkg.manifestPath}`}
+                aria-label={`Open ${rootPkg.manifestPath}`}
+              >
+                <FileJson size={12} />
+              </button>
+            </div>
+
+            {!collapsed && (
+              <div className="divide-y divide-border/40">
+                {visibleScripts.map(({ pkg, script }) => (
+                  <ScriptRow
+                    key={scriptKeyOf(pkg.relDir, script.name)}
+                    pkg={pkg}
+                    script={script}
+                    tab={tabByKey.get(scriptKeyOf(pkg.relDir, script.name))}
+                    disabled={untrusted}
+                    onLaunch={() => (runsVitest(script) ? void engine.call("tests", "run") : launchScript(pkg, script))}
+                    onStop={(tabId) => void stopTerminal(tabId)}
+                    onRestart={(tabId) => void restartTerminal(tabId)}
+                    onFocus={focusTab}
+                    onOpenManifest={() => void engine.call("fileManager", "open", pkg.manifestPath)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </div>
   );
 }
 
 function ScriptRow({
+  pkg,
   script,
   tab,
   disabled,
   onLaunch,
   onStop,
   onRestart,
-  onFocus
+  onFocus,
+  onOpenManifest
 }: {
   pkg: WorkspacePackageScripts;
   script: PackageScriptEntry;
@@ -276,6 +295,7 @@ function ScriptRow({
   onStop: (tabId: string) => void;
   onRestart: (tabId: string) => void;
   onFocus: (tabId: string) => void;
+  onOpenManifest: () => void;
 }) {
   const running = tab?.status === "running";
   const urls = tab?.urls ?? [];
@@ -283,8 +303,8 @@ function ScriptRow({
   return (
     <div
       className={clsx(
-        "px-2 py-1.5 space-y-1 transition-colors",
-        running ? "bg-ok/5" : "hover:bg-bg-hover/50"
+        "px-2 py-1 transition-colors",
+        running ? "bg-ok/5" : "hover:bg-bg-hover/60"
       )}
     >
       <div className="flex items-center gap-1.5 min-w-0">
@@ -296,16 +316,29 @@ function ScriptRow({
           title={tab ? `Focus terminal · ${script.cliPreview}\n${script.command}` : `Run ${script.cliPreview}\n${script.command}`}
         >
           <KindIcon kind={script.kind} running={running} />
-          <span className={clsx("font-medium truncate", running ? "text-fg" : "text-fg group-hover:text-accent")}>
+          <span className={clsx("font-medium shrink-0 max-w-[55%] truncate", running ? "text-fg" : "text-fg group-hover:text-accent")}>
             {script.name}
+          </span>
+          <span className="font-mono text-[11px] text-fg-muted/80 truncate flex-1 min-w-0">
+            {script.command}
           </span>
         </button>
 
         <div className="flex items-center gap-1 shrink-0">
+          {pkg.relDir !== "." && (
+            <button
+              type="button"
+              onClick={onOpenManifest}
+              className="px-1 py-0.2 rounded border border-border bg-bg text-[10px] font-mono text-fg-muted hover:text-accent hover:border-accent/40 cursor-pointer max-w-[5.5rem] truncate"
+              title={`Open ${pkg.manifestPath}`}
+            >
+              {pkg.relDir}
+            </button>
+          )}
           {tab && !running && (
             <span
               className={clsx(
-                "px-1.5 py-0.5 rounded text-[11px] font-mono tabular-nums",
+                "px-1 py-0.2 rounded text-[10.5px] font-mono tabular-nums",
                 tab.status === "succeeded"
                   ? "text-ok bg-ok/10"
                   : tab.status === "failed"
@@ -317,13 +350,29 @@ function ScriptRow({
             </span>
           )}
 
+          {running && urls.map((url) => {
+            const port = portOfUrl(url);
+            return (
+              <a
+                key={url}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-accent/15 text-accent hover:bg-accent/25 font-mono text-[10.5px]"
+                title={`Open ${url} in browser`}
+              >
+                <ExternalLink size={10} /> {port ? `:${port}` : "open"}
+              </a>
+            );
+          })}
+
           {running && tab ? (
             <>
               <button
                 type="button"
                 disabled={disabled}
                 onClick={() => onRestart(tab.id)}
-                className="p-1 rounded border border-border text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer disabled:opacity-40"
+                className="p-1 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer disabled:opacity-40"
                 title={`Restart ${script.cliPreview}`}
                 aria-label={`Restart ${script.name}`}
               >
@@ -332,11 +381,11 @@ function ScriptRow({
               <button
                 type="button"
                 onClick={() => onStop(tab.id)}
-                className="inline-flex items-center gap-1 rounded px-2 py-0.5 border border-error/40 bg-error/15 text-error hover:bg-error/25 cursor-pointer font-medium"
+                className="p-1 rounded text-error hover:bg-error/15 cursor-pointer"
                 title={`Stop ${script.cliPreview}`}
                 aria-label={`Stop ${script.name}`}
               >
-                <Square size={10} className="fill-current" /> Stop
+                <Square size={10} className="fill-current" />
               </button>
             </>
           ) : (
@@ -344,39 +393,14 @@ function ScriptRow({
               type="button"
               disabled={disabled}
               onClick={onLaunch}
-              className="inline-flex items-center gap-1 rounded px-2 py-0.5 border border-border bg-bg-panel text-fg hover:text-accent hover:border-accent/60 hover:bg-bg-hover cursor-pointer font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-              title={runsVitest(script) ? `Run in the Tests view (each test green or red): ${script.command}` : `Run ${script.cliPreview}`}
+              className="p-1 rounded text-fg-muted hover:text-accent hover:bg-bg-hover cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              title={runsVitest(script) ? `Run in Tests view: ${script.command}` : `Run ${script.cliPreview}`}
               aria-label={`Run ${script.name}`}
             >
-              <Play size={10} className="fill-current" /> Run
+              <Play size={11} className="fill-current" />
             </button>
           )}
         </div>
-      </div>
-
-      <div className="flex items-center justify-between gap-2 pl-[19px]">
-        <span className="font-mono text-[11px] text-fg-muted truncate" title={script.command}>
-          {script.command}
-        </span>
-        {urls.length > 0 && (
-          <span className="flex items-center gap-1 shrink-0">
-            {urls.map((url) => {
-              const port = portOfUrl(url);
-              return (
-                <a
-                  key={url}
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-accent/15 text-accent hover:bg-accent/25 font-mono text-[11px]"
-                  title={`Open ${url} in browser`}
-                >
-                  <ExternalLink size={10} /> {port ? `:${port}` : "open"}
-                </a>
-              );
-            })}
-          </span>
-        )}
       </div>
     </div>
   );
