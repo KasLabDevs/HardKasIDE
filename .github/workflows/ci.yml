@@ -28,9 +28,26 @@ jobs:
         run: node scripts/version.mjs check
       # The project templates must compile with the SilverScript compiler the HardKas CLI installs.
       - name: Install silverc
-        run: npx -y @hardkas/cli@0.13.0-rc.1 toolchain install silverc
+        run: npx -y @hardkas/cli@0.13.0-rc.3 toolchain install silverc
       - name: Project templates compile
         run: node scripts/check-templates.mjs
+
+  # The IDE in a real browser against the real server: Home, opening a project, the guide, the editor, the palette.
+  # No Docker or HardKas CLI is needed (the test project is never trusted). Locally: pnpm test:e2e (uses your Chrome).
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.22.1
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright's Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: End-to-end smoke test
+        run: pnpm test:e2e
 
   # The release ships Windows, macOS and Linux builds, and staging is where they differ (the bundled Node, the
   # OpenCode binary, the production dependencies). Staging and starting the app on all three for every pull request

@@ -110,7 +110,11 @@ export function HistoryView() {
           </div>
         )}
 
-        {visible.length === 0 ? (
+        {visible.length === 0 && loading ? (
+          <div className="rounded border border-dashed border-border p-6 flex items-center justify-center gap-1.5 text-fg-muted" role="status">
+            <RefreshCw size={13} className="animate-spin" /> Reading the run history…
+          </div>
+        ) : visible.length === 0 ? (
           <div className="rounded border border-dashed border-border p-6 text-center text-fg-muted">
             Nothing here yet. Run Plan → Sign → Send, or deploy a contract and call one of its entries from Deploy &amp; Run, and it shows up in this list.
           </div>

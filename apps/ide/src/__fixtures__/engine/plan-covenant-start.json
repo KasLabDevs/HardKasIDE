@@ -1,0 +1,103 @@
+{
+  "schema": "hardkas.txPlan",
+  "hardkasVersion": "0.13.0-rc.3",
+  "schemaVersion": "hardkas.artifact.v1",
+  "version": "1.0.0-alpha",
+  "hashVersion": 5,
+  "createdAt": "2026-11-23T01:38:14.098Z",
+  "networkId": "simnet",
+  "mode": "localnet",
+  "execution": {
+    "mode": "localnet",
+    "domain": "kaspa-l1",
+    "network": "simnet"
+  },
+  "from": {
+    "address": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn",
+    "input": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn"
+  },
+  "to": {
+    "address": "kaspasim:pqmrmqnt9mekakv4dduzru0avqdz2hw4ztkpgfslscvq622ckq44u4yexxzla",
+    "input": "kaspasim:pqmrmqnt9mekakv4dduzru0avqdz2hw4ztkpgfslscvq622ckq44u4yexxzla"
+  },
+  "amountSompi": "200000000",
+  "estimatedFeeSompi": "208300",
+  "estimatedMass": "0",
+  "txVersion": 1,
+  "storageMass": "20002",
+  "inputs": [
+    {
+      "outpoint": {
+        "transactionId": "e7680a6b98775c97bf0a27748a7ec2056792038d93189202dd3e01226ba672b8",
+        "index": 1
+      },
+      "amountSompi": "9897159800",
+      "address": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn",
+      "scriptPublicKey": "0000203e1b1470f13a8d64128fd6b101a762190808ff3a4df0b7a8adfc23287290cffbac",
+      "blockDaaScore": "9831",
+      "isCoinbase": false,
+      "kind": "p2pk",
+      "computeBudget": 10,
+      "signer": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn"
+    }
+  ],
+  "outputs": [
+    {
+      "address": "kaspasim:pqmrmqnt9mekakv4dduzru0avqdz2hw4ztkpgfslscvq622ckq44u4yexxzla",
+      "amountSompi": "200000000"
+    },
+    {
+      "address": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn",
+      "amountSompi": "9696951500",
+      "role": "change"
+    }
+  ],
+  "genesisCovenantGroups": [
+    {
+      "authorizingInput": 0,
+      "outputs": [
+        0
+      ],
+      "contract": {
+        "compileRecord": {
+          "contentHash": "84f746f23e230ff0c48721992e31061835e11aee61812dd62896c1d4782847ec",
+          "artifactSha256": "e3a4e47a31dd24e4d51f4ebcddcf463b83b75611f09036036865cee61830ab57",
+          "path": ".hardkas/artifacts/silver/silverCompile-84f746f23e230ff0.json"
+        },
+        "contract": "Decls",
+        "constructorArgs": [
+          {
+            "kind": "int",
+            "value": "3"
+          },
+          {
+            "kind": "int",
+            "value": "10"
+          }
+        ]
+      },
+      "states": [
+        {
+          "value": {
+            "kind": "int",
+            "value": "10"
+          }
+        }
+      ]
+    }
+  ],
+  "maxFeeSompi": "208300",
+  "lineage": {
+    "artifactId": "7fbecf9a4b9892b392c1d8efa0ebe95b3804bda67fea1ddeb1085fd531b6186e",
+    "sequence": 1
+  },
+  "workflowId": "wf_b97641700c4fe1a2",
+  "metadata": {
+    "schema": "hardkas.artifact.v1"
+  },
+  "assumptionLevel": "local-dev",
+  "plannerAuthority": "HARDKAS_V1_PLANNER",
+  "plannerAuthorityDetail": "v1 transaction plan (covenant genesis of Decls): inputs, bindings, budgets and fee chosen by HardKAS; mass and fee floor by the rusty-kaspa 2.1.0 rules",
+  "contentHash": "7fbecf9a4b9892b392c1d8efa0ebe95b3804bda67fea1ddeb1085fd531b6186e",
+  "planId": "plan-7fbecf9a4b9892b3"
+}

@@ -1,6 +1,7 @@
 /** Thin client for the HardKas IDE server (http://127.0.0.1:7421): files, hardkas jobs, workspace. */
 
-export const IDE_URL = (process.env.HARDKAS_IDE_URL ?? "http://127.0.0.1:7421").replace(/\/$/, "");
+export const getIdeUrl = (): string => (process.env.HARDKAS_IDE_URL ?? "http://127.0.0.1:7421").replace(/\/$/, "");
+export const IDE_URL = getIdeUrl();
 
 export class IdeError extends Error {
   constructor(
@@ -12,17 +13,22 @@ export class IdeError extends Error {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const baseUrl = getIdeUrl();
   let res: Response;
   try {
-    res = await fetch(`${IDE_URL}${path}`, {
+    res = await fetch(`${baseUrl}${path}`, {
       method,
       // Marks every request as an AI agent's: the IDE server then refuses key stores, .env and SSH/PEM files, lets it
       // open only HardKas projects, and never lets it trust a folder.
-      headers: body === undefined ? { "x-hardkas-client": "mcp" } : { "content-type": "application/json", "x-hardkas-client": "mcp" },
+      headers: {
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+        "x-hardkas-client": "mcp",
+        ...(process.env.HARDKAS_IDE_TAB ? { "x-hardkas-tab": process.env.HARDKAS_IDE_TAB } : {})
+      },
       body: body === undefined ? undefined : JSON.stringify(body)
     });
   } catch {
-    throw new IdeError(`The HardKas IDE server is not reachable at ${IDE_URL}. Start it from the repo root with "pnpm dev:server" (or set HARDKAS_IDE_URL).`, "IDE_UNREACHABLE");
+    throw new IdeError(`The HardKas IDE server is not reachable at ${baseUrl}. Start it from the repo root with "pnpm dev:server" (or set HARDKAS_IDE_URL).`, "IDE_UNREACHABLE");
   }
   const json = (await res.json().catch(() => null)) as ({ ok?: boolean; code?: string; message?: string } & T) | null;
   if (!res.ok || !json || json.ok === false) {

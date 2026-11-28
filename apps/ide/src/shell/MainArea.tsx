@@ -1,16 +1,17 @@
 import clsx from "clsx";
-import { Database, FilePlus2, FlaskConical, GitBranch, Rocket, X } from "lucide-react";
+import { GitBranch, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FileIcon } from "@/components/FileIcon";
 import { Editor } from "@/editor/Editor";
 import { useEngine, useEngineVersion } from "@/engine/context";
+import { normalizeDiagPath, useDiagnostics } from "@/store/diagnostics";
 import { useIde, VIEW_PREFIX, type OpenFile } from "@/store/ide";
 import { confirmDialog } from "@/utils/dialog";
 import { openDetachedWindow } from "@/utils/detach";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { DockControls } from "./DockControls";
-import { HardKasMark } from "./Logo";
+import { EmptyMainArea } from "./GettingStarted";
 
 interface TabMenuState {
   x: number;
@@ -26,7 +27,7 @@ export function MainArea() {
   const activeFile = useIde((s) => s.activeFile);
   const closeFiles = useIde((s) => s.closeFiles);
   const setActiveFile = useIde((s) => s.setActiveFile);
-  const setActiveSidePlugin = useIde((s) => s.setActiveSidePlugin);
+  const countsByFile = useDiagnostics((s) => s.countsByFile);
   const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null);
 
   const active = openFiles.find((f) => f.path === activeFile);
@@ -81,6 +82,7 @@ export function MainArea() {
             const isView = f.kind === "view";
             const dirty = !isView && f.content !== f.savedContent;
             const isActive = f.path === activeFile;
+            const diagCount = !isView ? countsByFile[normalizeDiagPath(f.path)] : undefined;
             const label = isView ? (f.title ?? f.path) : f.path.split("/").pop();
             const selectTab = () => (isView ? setActiveFile(f.path) : void engine.call("fileManager", "open", f.path));
             const handleClose = (e: React.MouseEvent) => {
@@ -125,7 +127,18 @@ export function MainArea() {
                 })() : (
                   <FileIcon name={f.path} size={13} />
                 )}
-                <span className="truncate leading-[1.4]">{label}</span>
+                <span className={clsx("truncate leading-[1.4]", diagCount?.errors ? "text-error" : diagCount?.warnings ? "text-warn" : undefined)}>{label}</span>
+                {diagCount && (diagCount.errors > 0 || diagCount.warnings > 0) && (
+                  <span
+                    className={clsx(
+                      "text-[10px] font-mono tabular-nums px-1 rounded leading-tight shrink-0",
+                      diagCount.errors > 0 ? "bg-error/15 text-error" : "bg-warn/15 text-warn"
+                    )}
+                    title={`${diagCount.errors} error(s), ${diagCount.warnings} warning(s)`}
+                  >
+                    {diagCount.errors > 0 ? diagCount.errors : diagCount.warnings}
+                  </span>
+                )}
                 {dirty && <span className="w-1.5 h-1.5 rounded-full bg-warn shrink-0" title="Unsaved changes" aria-label="Unsaved changes" />}
                 <button
                   type="button"
@@ -165,42 +178,7 @@ export function MainArea() {
             <Editor />
           </ErrorBoundary>
         </div>
-        {isEmpty && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center select-none">
-            <div className="opacity-30 mb-3">
-              <HardKasMark size={44} />
-            </div>
-            <div className="text-sm font-semibold text-fg">No open files</div>
-            <p className="text-xs text-fg-muted mt-1 max-w-sm">
-              Pick a file from the Explorer on the left, or use a shortcut below to jump right in.
-            </p>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-              <button type="button" className="btn-ghost" onClick={() => setActiveSidePlugin("files")}>
-                <FilePlus2 size={13} /> Open Explorer
-              </button>
-              <button type="button" className="btn-ghost" onClick={() => setActiveSidePlugin("deployRun")}>
-                <Rocket size={13} /> Deploy &amp; Run
-              </button>
-              <button type="button" className="btn-ghost" onClick={() => void engine.call("lineage", "open")}>
-                <GitBranch size={13} /> Lineage Graph
-              </button>
-              <button type="button" className="btn-ghost" onClick={() => void engine.call("queryIndex", "open")}>
-                <Database size={13} /> Index
-              </button>
-              <button type="button" className="btn-ghost" onClick={() => void engine.call("tests", "open")}>
-                <FlaskConical size={13} /> Tests
-              </button>
-            </div>
-            <div className="mt-4 text-[12px] text-fg-muted flex items-center gap-4">
-              <span>
-                Command Palette <kbd className="border border-border rounded px-1.5 py-0.5 text-[12px] bg-bg-elev">Ctrl+K</kbd>
-              </span>
-              <span>
-                Compile .sil <kbd className="border border-border rounded px-1.5 py-0.5 text-[12px] bg-bg-elev">Ctrl+Enter</kbd>
-              </span>
-            </div>
-          </div>
-        )}
+        {isEmpty && <EmptyMainArea />}
         {View && (
           <div className="absolute inset-0">
             <ErrorBoundary name={activeView?.profile.displayName ?? "View"}>

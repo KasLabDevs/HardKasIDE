@@ -50,7 +50,8 @@ export class ConsolePlugin extends Plugin {
     return this.run(args, { ...options, command: "hardkas" });
   }
 
-  async run(args: string[], options?: { cwd?: string; command?: string; quiet?: boolean }): Promise<RunResult> {
+  /** `onOutput` hears stdout and stderr as they arrive (the Tests view reads vitest's progress lines from it). */
+  async run(args: string[], options?: { cwd?: string; command?: string; quiet?: boolean; onOutput?: (stream: "stdout" | "stderr", data: string) => void }): Promise<RunResult> {
     const state = useIde.getState();
     const label = `${options?.command ?? "hardkas"} ${args.join(" ")}`;
     const quiet = Boolean(options?.quiet); // background polling: no echo, no result block
@@ -64,6 +65,7 @@ export class ConsolePlugin extends Plugin {
       job.status !== "running"
         ? { status: job.status, exitCode: job.exitCode, result: job.result }
         : await api.jobs.follow(job.id, (type, data) => {
+            if (type === "stdout" || type === "stderr") options?.onOutput?.(type, data);
             if (type === "stdout") {
               // --json output is one document; keep it for the structured block, don't spam lines.
               stdoutBuffer += data;

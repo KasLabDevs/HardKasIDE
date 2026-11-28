@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type WorkspaceInfo } from "@/api/client";
+import { api, getSavedTabWorkspace, setSavedTabWorkspace, type WorkspaceInfo } from "@/api/client";
 import { EngineContext } from "@/engine/context";
 import { Engine } from "@/engine/engine";
 import { HomeScreen } from "@/home/HomeScreen";
@@ -14,6 +14,7 @@ import { IndexPlugin } from "@/plugins/indexView";
 import { LineagePlugin } from "@/plugins/lineage";
 import { CovenantPlugin } from "@/plugins/covenant";
 import { PluginManagerPlugin, REQUIRED_PLUGINS } from "@/plugins/pluginManager";
+import { ScriptsPlugin } from "@/plugins/scripts";
 import { SilverPlugin } from "@/plugins/silver";
 import { TestsPlugin } from "@/plugins/tests";
 import { VsxPlugin } from "@/plugins/vsx";
@@ -45,6 +46,7 @@ function createEngine(): Engine {
   engine.register(new CompilerPlugin());
   engine.register(new SilverPlugin());
   engine.register(new RunPlugin());
+  engine.register(new ScriptsPlugin());
   engine.register(new HistoryPlugin());
   engine.register(new IndexPlugin());
   engine.register(new LineagePlugin());
@@ -62,7 +64,7 @@ function createEngine(): Engine {
   return engine;
 }
 
-const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "runHistory", "queryIndex", "environment", "explorer", "accounts", "assistant", "lineage", "covenant", "tests", "debug", "settings", "pluginManager", "vsx"];
+const ACTIVATION_ORDER = ["console", "fileManager", "editor", "files", "silverCompiler", "silverContracts", "deployRun", "scripts", "runHistory", "queryIndex", "environment", "explorer", "accounts", "assistant", "lineage", "covenant", "tests", "debug", "settings", "pluginManager", "vsx"];
 
 export default function App() {
   const engine = useMemo(createEngine, []);
@@ -84,16 +86,29 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [hasDirtyFiles]);
 
-  // On load, ask the server whether a workspace is already open (e.g. --workspace flag).
+  // On load, restore this tab's workspace cleanly (without altering other open tabs), or load startup --workspace.
   useEffect(() => {
-    api.workspace
-      .get()
-      .then((ws) => {
+    (async () => {
+      try {
+        let ws = await api.workspace.get();
+        if (!ws.root) {
+          const savedTabRoot = getSavedTabWorkspace();
+          if (savedTabRoot) {
+            ws = await api.workspace.open(savedTabRoot).catch(() => {
+              setSavedTabWorkspace(null);
+              return ws;
+            });
+          }
+        }
         setWorkspace(ws.root ? ws : null);
+        setSavedTabWorkspace(ws.root ?? null);
         setServerDown(false);
-      })
-      .catch(() => setServerDown(true))
-      .finally(() => setBooted(true));
+      } catch {
+        setServerDown(true);
+      } finally {
+        setBooted(true);
+      }
+    })();
   }, [setWorkspace]);
 
   // Activate plugins whenever a workspace becomes available.
@@ -165,6 +180,7 @@ export default function App() {
       return;
     }
     await api.workspace.close().catch(() => undefined);
+    setSavedTabWorkspace(null);
     useIde.setState({ workspace: null, tree: [], openFiles: [], activeFile: null, journal: [], activeSidePlugin: "files" });
     // Deactivate pluginManager first so its listeners don't overwrite savedActive while tearing down.
     if (engine.isActive("pluginManager")) {
@@ -185,7 +201,10 @@ export default function App() {
     }
   };
 
-  const onOpened = (ws: WorkspaceInfo) => setWorkspace(ws);
+  const onOpened = (ws: WorkspaceInfo) => {
+    setSavedTabWorkspace(ws.root ?? null);
+    setWorkspace(ws);
+  };
 
   if (!booted) {
     return (

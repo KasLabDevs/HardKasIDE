@@ -5,6 +5,7 @@ import {
   Box,
   Braces,
   ChevronRight,
+  CircleDot,
   FlaskConical,
   Folder,
   FunctionSquare,
@@ -274,6 +275,13 @@ export function SymbolIcon({ kind }: { kind: SymbolKind }) {
   switch (kind) {
     case "contract":
       return <Box size={11} className="text-accent shrink-0" />;
+    case "class":
+      return <Box size={11} className="text-warn shrink-0" />;
+    case "interface":
+    case "type":
+      return <Braces size={11} className="text-info shrink-0" />;
+    case "const":
+      return <CircleDot size={11} className="text-info shrink-0" />;
     case "entry":
       return <FunctionSquare size={11} className="text-warn shrink-0" />;
     case "test":
@@ -281,7 +289,7 @@ export function SymbolIcon({ kind }: { kind: SymbolKind }) {
     case "heading":
       return <Hash size={11} className="text-info shrink-0" />;
     case "key":
-      return <Braces size={11} className="text-info shrink-0" />;
+      return <Braces size={11} className="text-warn shrink-0" />;
     default:
       return <FunctionSquare size={11} className="text-info shrink-0" />;
   }

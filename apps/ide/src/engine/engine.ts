@@ -27,6 +27,11 @@ export interface PluginProfile {
   events?: string[];
   /** Order in the icon rail; lower first. */
   order?: number;
+  /**
+   * Which block of the rail: `workspace` for what any editor has (files, scripts, tests), `hardkas` (the default)
+   * for the node, the accounts, the compiler, Deploy & Run and the graphs.
+   */
+  group?: "workspace" | "hardkas";
   /** Built into the IDE, or installed by the user (iframe). */
   kind?: "builtin" | "external";
   /** Cannot be deactivated (the IDE would not work without it). */

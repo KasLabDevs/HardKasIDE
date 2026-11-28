@@ -1,0 +1,53 @@
+{
+  "schema": "hardkas.txSubmission.v1",
+  "hardkasVersion": "0.13.0-rc.3",
+  "version": "1.0.0-alpha",
+  "hashVersion": 5,
+  "networkId": "simnet",
+  "mode": "localnet",
+  "createdAt": "2026-11-22T23:12:29.904Z",
+  "execution": {
+    "mode": "localnet",
+    "domain": "kaspa-l1",
+    "network": "simnet"
+  },
+  "signedArtifactId": "47c1ef90f6f12298924c36356681055eb9c2621b25cc9a2a96c8a1e60e2c0c0c",
+  "txId": "e7680a6b98775c97bf0a27748a7ec2056792038d93189202dd3e01226ba672b8",
+  "submitResult": {
+    "accepted": true,
+    "transactionId": "e7680a6b98775c97bf0a27748a7ec2056792038d93189202dd3e01226ba672b8"
+  },
+  "submitPoint": {
+    "virtualDaaScore": "9816",
+    "sinkHash": "d8c202f6aa355a368f71a0e227032df062e24436e4710090aed293835fe11814",
+    "sinkBlueScore": "9083"
+  },
+  "fee": {
+    "status": "derived",
+    "method": "inputs-minus-outputs",
+    "inputsSompi": "9997368100",
+    "outputsSompi": "9997159800",
+    "feeSompi": "208300",
+    "inputCount": 1,
+    "outputCount": 2,
+    "planArtifactId": "bdb74530794dff96579507f4c1ad9bbcec0f5ff2927667ae310a997ba2383983"
+  },
+  "submittedAt": "2026-11-22T23:12:29.904Z",
+  "rpcUrl": "ws://127.0.0.1:18210",
+  "workflowId": "wf_58b59081edc3a739",
+  "assumptionLevel": "local-dev",
+  "preflight": {
+    "observedAtDaaScore": "9816",
+    "inputs": 1,
+    "scope": "observer-local",
+    "guarantee": "local-orchestration-only: outpoints spent by transactions in the observer's mempool at the observation point were excluded; absence from that mempool does not prove absence of a competing spend on the network"
+  },
+  "lineage": {
+    "artifactId": "d77953ebb0a1df29d1ebcb5a011cf16e01fd7722fa7f7467277c3e87f231f354",
+    "lineageId": "bdb74530794dff96579507f4c1ad9bbcec0f5ff2927667ae310a997ba2383983",
+    "parentArtifactId": "47c1ef90f6f12298924c36356681055eb9c2621b25cc9a2a96c8a1e60e2c0c0c",
+    "rootArtifactId": "bdb74530794dff96579507f4c1ad9bbcec0f5ff2927667ae310a997ba2383983",
+    "sequence": 3
+  },
+  "contentHash": "d77953ebb0a1df29d1ebcb5a011cf16e01fd7722fa7f7467277c3e87f231f354"
+}

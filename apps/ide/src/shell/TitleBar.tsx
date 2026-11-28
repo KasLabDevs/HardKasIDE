@@ -27,6 +27,7 @@ import type { LineagePlugin } from "@/plugins/lineage";
 import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, envOf, useIde, type ExecutionTarget } from "@/store/ide";
 import { useSearch } from "@/store/search";
 import { useUpdates } from "@/store/updates";
+import { copyDiagnostics } from "@/utils/diagnostics";
 import {
   closeAllEditors,
   closeEditor,
@@ -41,6 +42,7 @@ import {
   newFile,
   openPalette,
   renameActiveFile,
+  showGettingStarted,
   revertActiveFile,
   saveAll,
   saveAs,
@@ -219,7 +221,6 @@ export function TitleBar({ onHome, mainRef }: Props) {
             disabled: !textFile
           }),
           item("Refresh", () => engine.call("fileManager", "refresh"), {
-            keys: "F5",
             icon: <RefreshCw size={12} />
           }),
           submenu("Convert Line Delimiters To", [
@@ -392,10 +393,15 @@ export function TitleBar({ onHome, mainRef }: Props) {
         entries: [
           item("Ask the Assistant", reveal("assistant", "Assistant")),
           item("Keyboard shortcuts and commands", openPalette),
+          item("Getting started guide", () => void showGettingStarted()),
           sep,
           item("Kaspa developer docs", external("https://docs.kaspa.org")),
           item("HardKas IDE on GitHub", external(REPO_URL)),
-          item("Report an issue", external(`${REPO_URL}/issues/new`)),
+          item("Report an issue (copies diagnostics)", () => {
+            // Copy first: the clipboard needs this click's user gesture, the new tab takes the focus.
+            void copyDiagnostics().finally(external(`${REPO_URL}/issues/new`));
+          }),
+          item("Copy diagnostics", () => void copyDiagnostics()),
           sep,
           item("Check for Updates…", () => {
             useUpdates.getState().openPopover();
@@ -462,8 +468,23 @@ export function TitleBar({ onHome, mainRef }: Props) {
         }
         return;
       }
+      // F2 renames the open file, except in the editor (Monaco's F2 renames the symbol) or a text field.
+      if (e.key === "F2" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+        const target = e.target as HTMLElement | null;
+        if (target?.closest?.(".monaco-editor, .xterm, input, textarea, [contenteditable='true']")) return;
+        if (!isTextFile(useIde.getState().activeFile)) return;
+        e.preventDefault();
+        void renameActiveFile(engine);
+        return;
+      }
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
+      // Ctrl+Alt+P -> File > Print… (the menu has always shown it).
+      if (e.altKey && !e.shiftKey && e.key.toLowerCase() === "p" && isTextFile(useIde.getState().activeFile)) {
+        e.preventDefault();
+        window.print();
+        return;
+      }
       // Eclipse Quick Search: Ctrl+Alt+Shift+L
       if (e.altKey && e.shiftKey && e.key.toLowerCase() === "l") {
         e.preventDefault();
@@ -881,7 +902,7 @@ function PropertiesDialog({ onClose }: { onClose: () => void }) {
               <span className="text-fg-muted">Active Target:</span>
               <span className="col-span-2 text-accent">{envOf(target).label}</span>
               <span className="text-fg-muted">HardKas CLI:</span>
-              <span className="col-span-2 text-fg">{cli?.version ?? "0.13.0-rc.1"}</span>
+              <span className="col-span-2 text-fg">{cli?.version ?? "0.13.0-rc.3"}</span>
               <span className="text-fg-muted">SilverScript:</span>
               <span className="col-span-2 text-fg">silverc v1.0.0 · pragma ^0.1.0 · TX v1</span>
             </div>

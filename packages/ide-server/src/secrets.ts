@@ -1,16 +1,11 @@
+import { execFile } from "node:child_process";
+
 /**
  * API keys for the Anthropic and OpenAI-compatible assistant providers.
  *
- * They live in the operating system's credential store (Windows Credential Manager, macOS Keychain, the Secret
- * Service on Linux) under the service "hardkas-ide", never in a file the IDE writes: a key in a plain file can be
- * read by any program, and by the hosted agent's file tools. An environment variable (ANTHROPIC_API_KEY /
- * OPENAI_API_KEY) takes precedence, so a key set for the whole system, or a Linux machine without a keyring,
- * also works.
- *
- * A key is bound to the server it was saved for. Changing the provider URL in the settings does not move the key
- * there: the next request would otherwise hand the key to whatever host the URL now names. The user types the key
- * again for a new host. An environment key is bound to the provider's official host, or to ANTHROPIC_BASE_URL /
- * OPENAI_BASE_URL when set.
+ * Environment variables (ANTHROPIC_API_KEY / OPENAI_API_KEY) take precedence so users can configure
+ * keys via generic shell commands (`setx` on Windows, `export` on macOS/Linux) and have the IDE detect
+ * them cleanly. Stored OpenAI keys live in the OS credential store under service "hardkas-ide".
  */
 
 export type KeyProvider = "anthropic" | "openai";
@@ -53,10 +48,53 @@ const osStore: SecretStore = {
 };
 
 let store: SecretStore = osStore;
+let usingCustomStore = false;
+type EnvReader = (name: string) => Promise<string | undefined>;
+let customEnvReader: EnvReader | null = null;
 
 /** Tests swap in an in-memory store so they never touch the real credential store; null restores it. */
 export function setSecretStore(next: SecretStore | null): void {
+  usingCustomStore = next !== null;
   store = next ?? osStore;
+}
+
+/** Tests can override OS-level env registry fallback without touching Windows Registry. */
+export function setEnvFallbackReader(reader: EnvReader | null): void {
+  customEnvReader = reader;
+}
+
+/** Parses `reg query <key> /v <name>` stdout for REG_SZ / REG_EXPAND_SZ values cleanly. */
+export function parseRegQueryValue(stdout: string, name: string): string | undefined {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`^\\s*${escaped}\\s+REG_(?:EXPAND_)?SZ\\s+(.*)$`, "im");
+  const m = re.exec(stdout);
+  const val = m?.[1]?.trim();
+  return val || undefined;
+}
+
+async function queryWindowsRegEnv(hiveKey: string, name: string): Promise<string | undefined> {
+  if (!/^[A-Z0-9_]+$/.test(name)) return undefined;
+  return await new Promise<string | undefined>((resolve) => {
+    execFile("reg", ["query", hiveKey, "/v", name], { timeout: 2000, windowsHide: true }, (err, stdout) => {
+      if (err || !stdout) return resolve(undefined);
+      resolve(parseRegQueryValue(stdout, name));
+    });
+  });
+}
+
+/**
+ * Reads an environment variable from `process.env`, falling back on Windows to live HKCU\Environment / HKLM
+ * Registry entries so `setx ANTHROPIC_API_KEY "..."` is detected immediately without restarting the IDE.
+ */
+export async function readEnvVar(name: string): Promise<string | undefined> {
+  const direct = process.env[name]?.trim();
+  if (direct) return direct;
+  if (customEnvReader) return (await customEnvReader(name))?.trim() || undefined;
+  // Unit tests swap in a custom SecretStore or set HARDKAS_IDE_NO_LISTEN=1; avoid leaking host registry vars into tests.
+  if (usingCustomStore || process.env.HARDKAS_IDE_NO_LISTEN === "1") return undefined;
+  if (process.platform !== "win32") return undefined;
+  return (await queryWindowsRegEnv("HKCU\\Environment", name))
+    ?? (await queryWindowsRegEnv("HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", name));
 }
 
 export function isKeyProvider(p: unknown): p is KeyProvider {
@@ -114,9 +152,9 @@ export interface ResolvedKey {
 export async function resolveApiKey(p: unknown, baseUrl?: string): Promise<ResolvedKey> {
   if (!isKeyProvider(p)) return { key: "", source: null, boundTo: null };
   const target = originOf(baseUrl) || OFFICIAL_ORIGIN[p];
-  const fromEnv = process.env[KEY_ENV[p]]?.trim();
+  const fromEnv = await readEnvVar(KEY_ENV[p]);
   if (fromEnv) {
-    const envOrigin = originOf(process.env[BASE_URL_ENV[p]]) || OFFICIAL_ORIGIN[p];
+    const envOrigin = originOf(await readEnvVar(BASE_URL_ENV[p])) || OFFICIAL_ORIGIN[p];
     return envOrigin === target ? { key: fromEnv, source: "env", boundTo: null } : { key: "", source: null, boundTo: envOrigin };
   }
   try {

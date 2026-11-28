@@ -2,12 +2,14 @@
 
 A single-purpose IDE for [HardKas](https://github.com/KasLabDevs/HardKas) projects on Kaspa.
 
+- **Getting started** in the empty editor area: seven steps from an empty project to a contract called and drawn (check the tools, start the node, fund, compile, deploy, call, graph), one button each, ticked from the real state. Deploy & Run opens as a tab in the editor area; the rail groups the workspace views (Explorer, Scripts, Tests) apart from the HardKas ones.
 - **Workbench**: icon rail, file explorer, Monaco editor, SilverScript compiler (a contract summary read from the source, the locking script silverc really produced, and an *Install silverc* button when silverc is missing), Deploy & Run, artifacts.
 - **Servers view** shaped like Eclipse: the rusty-kaspad node (start / stop / restart / status) and the accounts with balances.
 - **Bottom panel** shaped like VS Code: a **Console** (journal of every `hardkas` command the IDE runs, with a `hardkas ›` prompt) and real **Terminal** tabs (PowerShell or your shell, opened in the project folder, over a PTY).
 - **Project flow** shaped like Visual Studio: a Home screen with New project (from HardKas CLI templates), Open folder and Recents.
 - Projects are real folders on disk with `hardkas.config.ts` and `.hardkas/`, driven through `hardkas <cmd> --json`.
 
+- **Deploy & Run** in five tabs: Payments, SilverScript, Covenants, KCC20 and ZK. Contracts, covenant chains and payments are driven from the panel, and a command card runs each inspection command (`kcc20`, `zk`, `silver inspect / verify / test`, `tx verify`…) and reads its verdict. See [docs/deploy-and-run.md](docs/deploy-and-run.md).
 - **Index view**: browse everything HardKAS indexes (artifacts, events, lineage, transactions), query it with read-only SQL and run integrity checks. See [docs/index-view.md](docs/index-view.md).
 - **Test debugger**: breakpoints, stepping, variables and watches for the project's vitest tests (F5, F9, F10, F11). See [docs/debugging.md](docs/debugging.md).
 - **SilverScript debugger**: runs a contract entry on the Kaspa script engine line by line (breakpoints, locals, stack, eval), with `sig` arguments signed by simnet dev accounts. Needs a local build of `cli-debugger`. See [docs/debugging.md](docs/debugging.md#debugging-silverscript-contracts).

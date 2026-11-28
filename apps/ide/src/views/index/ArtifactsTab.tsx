@@ -114,6 +114,7 @@ export function ArtifactsTab() {
                 </span>
               </button>
             ))}
+            {loading && rows.length === 0 && <div className="p-6 text-center text-fg-muted" role="status">Reading the index…</div>}
             {!loading && rows.length === 0 && !error && <div className="p-6 text-center text-fg-muted">{anyFilter ? "Nothing matches these filters." : "The index has no artifacts yet."}</div>}
           </div>
         </div>

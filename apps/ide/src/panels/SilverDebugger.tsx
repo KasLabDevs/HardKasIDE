@@ -144,7 +144,7 @@ export function SilverDebugger({ file, source, argsJson, jumpToLine }: Props) {
   }, [view?.variables]);
 
   return (
-    <div className="rounded border border-border bg-bg-panel p-2.5 space-y-2 text-[12px]">
+    <div className="rounded border border-border bg-bg-panel p-2.5 space-y-2 text-[12px] min-w-0 overflow-hidden">
       <div className="flex items-center justify-between">
         <span className="font-semibold text-fg flex items-center gap-1.5">
           <Bug size={13} className="text-accent shrink-0" /> SilverScript debugger
@@ -174,7 +174,7 @@ export function SilverDebugger({ file, source, argsJson, jumpToLine }: Props) {
       {runner?.available && runner.approved && (
         <>
           {!live && (
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <select aria-label="Entry to debug" className="select py-1 font-mono" value={current?.name ?? ""} onChange={(e) => setEntry(e.target.value)}>
                 {entries.length === 0 && <option value="">No entry in this file</option>}
                 {entries.map((e) => (
@@ -186,12 +186,12 @@ export function SilverDebugger({ file, source, argsJson, jumpToLine }: Props) {
               {current?.params.map((p) => {
                 const key = `${current.name}.${p.name}`;
                 return (
-                  <label key={key} className="flex items-center gap-2">
-                    <span className="w-28 shrink-0 font-mono text-fg-muted truncate" title={`${p.type} ${p.name}`}>
+                  <label key={key} className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+                    <span className="w-24 shrink-0 font-mono text-fg-muted truncate" title={`${p.type} ${p.name}`}>
                       {p.type} {p.name}
                     </span>
                     {p.type === "sig" ? (
-                      <select className="select py-0.5 font-mono" value={values[key] ?? accounts[0] ?? ""} onChange={(e) => setValues({ ...values, [key]: e.target.value })} aria-label={`${p.name}: signing account`}>
+                      <select className="select flex-1 basis-[100px] min-w-0 py-0.5 font-mono" value={values[key] ?? accounts[0] ?? ""} onChange={(e) => setValues({ ...values, [key]: e.target.value })} aria-label={`${p.name}: signing account`}>
                         {accounts.length === 0 && <option value="">no simnet dev accounts</option>}
                         {accounts.map((a) => (
                           <option key={a} value={a}>
@@ -202,7 +202,7 @@ export function SilverDebugger({ file, source, argsJson, jumpToLine }: Props) {
                     ) : p.type === "bool" ? (
                       <input type="checkbox" checked={values[key] === "true"} onChange={(e) => setValues({ ...values, [key]: String(e.target.checked) })} aria-label={p.name} />
                     ) : (
-                      <input className="input py-0.5 font-mono" value={values[key] ?? ""} placeholder={p.type === "int" ? "0" : p.type === "pubkey" || p.type.startsWith("byte") ? "0x…" : ""} onChange={(e) => setValues({ ...values, [key]: e.target.value })} aria-label={p.name} />
+                      <input className="input flex-1 basis-[100px] min-w-0 py-0.5 font-mono" value={values[key] ?? ""} placeholder={p.type === "int" ? "0" : p.type === "pubkey" || p.type.startsWith("byte") ? "0x…" : ""} onChange={(e) => setValues({ ...values, [key]: e.target.value })} aria-label={p.name} />
                     )}
                   </label>
                 );
@@ -277,13 +277,13 @@ export function SilverDebugger({ file, source, argsJson, jumpToLine }: Props) {
               )}
               {live && (
                 <form
-                  className="flex gap-1"
+                  className="flex gap-1 min-w-0"
                   onSubmit={(e) => {
                     e.preventDefault();
                     if (expr.trim()) void cmd("eval", expr);
                   }}
                 >
-                  <input className="input py-0.5 font-mono" placeholder="evaluate, e.g. currentBalance - withdrawSompi" value={expr} onChange={(e) => setExpr(e.target.value)} aria-label="Expression to evaluate" />
+                  <input className="input flex-1 min-w-0 py-0.5 font-mono" placeholder="evaluate, e.g. currentBalance - withdrawSompi" value={expr} onChange={(e) => setExpr(e.target.value)} aria-label="Expression to evaluate" />
                   <button type="submit" className="btn-ghost px-2" disabled={busy !== null || !expr.trim()}>
                     Eval
                   </button>

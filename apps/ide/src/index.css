@@ -70,32 +70,42 @@ body {
   scrollbar-color: var(--border) transparent;
 }
 
-.btn-primary,
-.btn-ghost {
-  @apply inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-all duration-150 cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-accent/80 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
-}
-.btn-primary {
-  @apply bg-accent text-accent-fg hover:brightness-110 shadow-xs;
-}
-.btn-ghost {
-  @apply bg-transparent text-fg hover:bg-bg-hover border border-border hover:border-fg-muted/40;
-}
-.input {
-  @apply w-full rounded border border-border bg-bg px-2 py-1 text-xs text-fg outline-none transition-colors focus:border-accent focus-visible:ring-1 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed;
-}
-.label {
-  @apply block text-[12px] font-semibold uppercase tracking-wide text-fg-muted mb-1;
-}
-.panel-title {
-  @apply px-2.5 py-1 text-[12px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border select-none;
-}
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
+@layer components {
+  .btn-primary,
+  .btn-ghost {
+    @apply inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-all duration-150 cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-accent/80 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
+  }
+  .btn-primary {
+    @apply bg-accent text-accent-fg hover:brightness-110 shadow-xs;
+  }
+  .btn-ghost {
+    @apply bg-transparent text-fg hover:bg-bg-hover border border-border hover:border-fg-muted/40;
+  }
+  .input {
+    @apply w-full min-w-0 max-w-full rounded border border-border bg-bg px-2 py-1 text-xs text-fg outline-none transition-colors focus:border-accent focus-visible:ring-1 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .select {
+    @apply w-full min-w-0 max-w-full rounded border border-border bg-bg px-2 py-1 text-xs text-fg outline-none transition-colors focus:border-accent focus-visible:ring-1 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer;
+  }
+  .label {
+    @apply block text-[12px] font-semibold uppercase tracking-wide text-fg-muted mb-1;
+  }
+  .panel-title {
+    @apply px-2.5 py-1 text-[12px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border select-none;
+  }
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
 
-/* Header strip of a view that draws its own title: title left, small status right, wraps instead of overlapping. */
-.panel-header {
-  @apply flex flex-wrap items-center justify-between gap-x-2 px-2.5 py-1 text-[12px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border select-none;
+  /* Header strip of a view that draws its own title: title left, small status right, wraps instead of overlapping. */
+  .panel-header {
+    @apply flex flex-wrap items-center justify-between gap-x-2 px-2.5 py-1 text-[12px] font-semibold uppercase tracking-wider text-fg-muted border-b border-border select-none;
+  }
+
+  /* Floating card surfaces & ergonomic split gutters between workbench panes */
+  .panel-card {
+    @apply rounded-[6px] border border-border overflow-hidden;
+  }
 }
 
 /* Click targets of at least 24px: icon-only buttons and tabs grow to it (the icon itself keeps its size). */
@@ -120,10 +130,6 @@ a:focus-visible {
   outline-offset: -1px;
 }
 
-/* Floating card surfaces & ergonomic split gutters between workbench panes */
-.panel-card {
-  @apply rounded-[6px] border border-border overflow-hidden;
-}
 .ide-split-h {
   width: 3px;
 }
@@ -211,6 +217,38 @@ a:focus-visible {
 }
 .hk-current-line {
   background: color-mix(in srgb, var(--warn) 20%, transparent);
+}
+
+/* Eclipse-style diagnostic marks in the editor gutter and error line highlights. */
+.hk-diag-error,
+.hk-diag-error-fix,
+.hk-diag-warn,
+.hk-diag-warn-fix {
+  width: 14px !important;
+  height: 14px !important;
+  margin: 3px 0 0 3px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 13px 13px;
+  cursor: pointer;
+}
+.hk-diag-error {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.5' fill='%23ef4444'/%3E%3Cpath d='M5.3 5.3l5.4 5.4M10.7 5.3l-5.4 5.4' stroke='%23fff' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+.hk-diag-error-fix {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M7.5 1.5a4 4 0 0 0-2.3 7.3c.5.4.8 1 .8 1.6v.6h3v-.6c0-.6.3-1.2.8-1.6a4 4 0 0 0-2.3-7.3z' fill='%23facc15' stroke='%23a16207' stroke-width='0.8'/%3E%3Crect x='6.2' y='11.8' width='2.6' height='1.6' rx='0.6' fill='%2394a3b8'/%3E%3Ccircle cx='12.2' cy='12.2' r='3.4' fill='%23ef4444' stroke='%230b0f14' stroke-width='0.8'/%3E%3Cpath d='M10.9 10.9l2.6 2.6M13.5 10.9l-2.6 2.6' stroke='%23fff' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+.hk-diag-warn {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.8L14.5 13.5H1.5Z' fill='%23f59e0b' stroke='%2378350f' stroke-width='0.7' stroke-linejoin='round'/%3E%3Cpath d='M8 6.1v3.8' stroke='%23111827' stroke-width='1.6' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='11.6' r='0.9' fill='%23111827'/%3E%3C/svg%3E");
+}
+.hk-diag-warn-fix {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M7.5 1.5a4 4 0 0 0-2.3 7.3c.5.4.8 1 .8 1.6v.6h3v-.6c0-.6.3-1.2.8-1.6a4 4 0 0 0-2.3-7.3z' fill='%23facc15' stroke='%23a16207' stroke-width='0.8'/%3E%3Cpath d='M12.2 8.8l3.3 5.8H8.9Z' fill='%23f59e0b' stroke='%230b0f14' stroke-width='0.7' stroke-linejoin='round'/%3E%3Cpath d='M12.2 10.8v1.9' stroke='%23111827' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+.hk-line-error {
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+}
+.hk-line-warn {
+  background: color-mix(in srgb, var(--warn) 5%, transparent);
 }
 
 /* Title bar: the drag region of a desktop shell (Electron/Tauri/installed PWA); controls stay clickable. */

@@ -9,16 +9,23 @@ import type { EditorPlugin } from "@/plugins/editor";
 import type { EnvironmentPlugin } from "@/plugins/environment";
 import type { LineagePlugin } from "@/plugins/lineage";
 import { DEFAULT_ZOOM, useIde } from "@/store/ide";
+import { useScripts } from "@/store/scripts";
+import { useSearch } from "@/store/search";
 import { useUpdates } from "@/store/updates";
 import { extractDocumentSymbols } from "@/utils/symbols";
 import { SymbolIcon } from "./Breadcrumbs";
 import {
   PALETTE_EVENT,
+  closeAllEditors,
   confirmAndResetNode,
   isTextFile,
+  newFile,
+  saveAll,
   openPalette,
+  showGettingStarted,
   zoomBy
 } from "./actions";
+import { copyDiagnostics } from "@/utils/diagnostics";
 import {
   filePathBonus,
   flattenTreePaths,
@@ -59,6 +66,7 @@ export function CommandPalette() {
   const openFiles = useIde((s) => s.openFiles);
   const recentFiles = useIde((s) => s.recentFiles);
   const tree = useIde((s) => s.tree);
+  const scriptPackages = useScripts((s) => s.packages);
   const [catalogItems, setCatalogItems] = useState<PaletteItem[]>([]);
 
   const activeTextDoc = useMemo(
@@ -84,7 +92,8 @@ export function CommandPalette() {
                 id: `cli:${pathStr}`,
                 kind: "command",
                 title: `CLI: hardkas ${pathStr}`,
-                hint: c.summary || c.description || `Run hardkas ${pathStr}`,
+                // The CLI colours some summaries ("\x1b[32mstable\x1b[39m"): the palette shows plain text.
+                hint: stripAnsi(c.summary || c.description || `Run hardkas ${pathStr}`),
                 run: async () => {
                   useIde.getState().setTerminalOpen(true);
                   await engine.call("console", "runHardkas", [...fullPath, "--json"]);
@@ -122,6 +131,8 @@ export function CommandPalette() {
       { id: "outline", kind: "command", title: "Toggle Outline", run: () => ide().setOutlineOpen(!ide().outlineOpen) },
       { id: "layout:reset", kind: "command", title: "Layout: reset panels to their default places", hint: "undo any docking", run: () => ide().resetLayout() },
       { id: "run", kind: "command", title: "Open Deploy & Run", run: () => ide().setActiveSidePlugin("deployRun") },
+      { id: "scripts", kind: "command", title: "Open Scripts (package.json launcher)", run: () => ide().revealPlugin("scripts", "Scripts") },
+      { id: "scripts:stop", kind: "command", title: "Scripts: stop all running scripts", run: () => useScripts.getState().stopAllScripts() },
       { id: "servers", kind: "command", title: "Open Servers (node & accounts)", run: () => ide().setActiveSidePlugin("environment") },
       { id: "accounts", kind: "command", title: "Open Accounts (keys & balances)", run: () => ide().setActiveSidePlugin("accounts") },
       { id: "assistant", kind: "command", title: "Open Assistant (chat about Kaspa & SilverScript)", hint: "grounded in docs.kaspa.org", run: () => ide().revealPlugin("assistant", "Assistant") },
@@ -130,18 +141,40 @@ export function CommandPalette() {
       { id: "node:start", kind: "command", title: "Node: start localnet (rusty-kaspad)", hint: "hardkas localnet start --toccata", run: () => engine.get<EnvironmentPlugin>("environment").startNode() },
       { id: "node:stop", kind: "command", title: "Node: stop localnet", hint: "hardkas localnet stop", run: () => engine.get<EnvironmentPlugin>("environment").stopNode() },
       { id: "node:restart", kind: "command", title: "Node: restart localnet", run: () => engine.get<EnvironmentPlugin>("environment").restartNode() },
-      { id: "node:reset", kind: "command", title: "Node: reset from scratch (wipes the local chain)", hint: "hardkas node reset --yes", run: () => confirmAndResetNode(engine) },
+      { id: "node:reset", kind: "command", title: "Node: reset from scratch (wipes the local chain)", hint: "hardkas localnet reset --yes", run: () => confirmAndResetNode(engine) },
       { id: "sidebar", kind: "command", title: "View: toggle primary side bar", keys: "Ctrl+B", run: () => ide().setSidebarOpen(!ide().sidebarOpen) },
       { id: "terminal:new", kind: "command", title: "Terminal: new terminal", keys: "Ctrl+Shift+`", run: () => ide().requestTerminal() },
       { id: "zoom:in", kind: "command", title: "View: zoom in", keys: "Ctrl+=", run: () => zoomBy(10) },
       { id: "zoom:out", kind: "command", title: "View: zoom out", keys: "Ctrl+-", run: () => zoomBy(-10) },
       { id: "zoom:reset", kind: "command", title: "View: reset zoom", keys: "Ctrl+0", run: () => ide().setZoom(DEFAULT_ZOOM) },
       { id: "accounts:refresh", kind: "command", title: "Accounts: refresh balances", run: () => engine.get<EnvironmentPlugin>("environment").refreshAccounts() },
+      {
+        id: "accounts:fund",
+        kind: "command",
+        title: "Accounts: fund empty dev accounts (100 KAS each)",
+        hint: "from the localnet treasury",
+        run: async () => {
+          ide().setStatus("Funding the empty dev accounts…");
+          try {
+            await engine.get<EnvironmentPlugin>("environment").fundAll("100", (msg) => ide().setStatus(msg), { onlyEmpty: true });
+            ide().setStatus("Dev accounts funded.");
+          } catch (e) {
+            ide().setStatus(`Funding failed: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+      },
+      { id: "file:new", kind: "command", title: "File: new contract, test or file…", keys: "Ctrl+N", hint: "SilverScript templates", run: () => newFile(engine) },
+      { id: "help:guide", kind: "command", title: "Help: show the getting-started guide", hint: "create → node → compile → deploy", run: () => showGettingStarted() },
+      { id: "help:diagnostics", kind: "command", title: "Help: copy diagnostics for a bug report", hint: "versions, Docker, node, last console lines", run: () => copyDiagnostics() },
       { id: "target:simulator", kind: "command", title: "Target: simulator", run: () => ide().setTarget("simulator") },
       { id: "target:localnet", kind: "command", title: "Target: localnet (simnet)", run: () => ide().setTarget("localnet") },
       { id: "target:rpc", kind: "command", title: "Target: rpc (testnet-10)", run: () => ide().setTarget("rpc") },
       { id: "dev", kind: "command", title: "Start HardKas dev-server (headless)", hint: "hardkas dev --headless", run: () => engine.call("console", "runHardkas", ["dev", "--headless"]) },
-      { id: "panel", kind: "command", title: "Toggle console / terminal panel", run: () => ide().setTerminalOpen(!ide().terminalOpen) },
+      { id: "panel", kind: "command", title: "Toggle console / terminal panel", keys: "Ctrl+J", run: () => ide().setTerminalOpen(!ide().terminalOpen) },
+      { id: "search:files", kind: "command", title: "Search: find in files", keys: "Ctrl+Shift+F", run: () => useSearch.getState().openSearchDialog({ mode: "quick-search" }) },
+      { id: "search:replace", kind: "command", title: "Search: search and replace dialog", keys: "Ctrl+H", run: () => useSearch.getState().openSearchDialog({ mode: "eclipse-search", tab: "file" }) },
+      { id: "file:saveAll", kind: "command", title: "File: save all", keys: "Ctrl+Shift+S", run: () => saveAll(engine) },
+      { id: "editor:closeAll", kind: "command", title: "File: close all editors", keys: "Ctrl+Shift+W", run: () => closeAllEditors() },
       {
         id: "help:updates",
         kind: "command",
@@ -152,9 +185,20 @@ export function CommandPalette() {
           void useUpdates.getState().check(true);
         }
       },
+      ...scriptPackages.flatMap((pkg) =>
+        pkg.scripts.map<PaletteItem>((script) => ({
+          id: `script:${pkg.id}:${script.name}`,
+          kind: "command",
+          title: `Script: ${pkg.relDir === "." ? pkg.name : pkg.relDir} › ${script.name}`,
+          hint: `${script.cliPreview} · ${script.command}`,
+          run: () => {
+            useScripts.getState().launchScript(pkg, script);
+          }
+        }))
+      ),
       ...catalogItems
     ];
-  }, [engine, activeFile, catalogItems]);
+  }, [engine, activeFile, catalogItems, scriptPackages]);
 
   const parsed = useMemo(() => parsePaletteQuery(query), [query]);
 
@@ -224,7 +268,8 @@ export function CommandPalette() {
     }
 
     if (parsed.mode === "commands") {
-      return rankCommandItems(baseCommands, parsed.filter, 24);
+      // An empty ">" lists every IDE command (it doubles as the shortcut list); a query keeps the best 24.
+      return rankCommandItems(baseCommands, parsed.filter, parsed.filter.trim() ? 24 : 80);
     }
 
     // Default Quick Open (`Files` + recent + matching commands when typing text without prefix)
@@ -412,6 +457,7 @@ export function CommandPalette() {
           )}
           <input
             ref={inputRef}
+            aria-label="Command palette"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -604,6 +650,12 @@ function HighlightedText({
       )}
     </span>
   );
+}
+
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_RE, "");
 }
 
 function rankCommandItems(commands: PaletteItem[], filter: string, limit: number, group?: string): PaletteItem[] {

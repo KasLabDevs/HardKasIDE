@@ -1,5 +1,5 @@
 import { Server } from "lucide-react";
-import { api } from "@/api/client";
+import { api, IdeApiError } from "@/api/client";
 import { Plugin } from "@/engine/engine";
 import { copyText } from "@/utils/clipboard";
 import { ServersPanel } from "@/panels/ServersPanel";
@@ -47,11 +47,21 @@ export class EnvironmentPlugin extends Plugin {
   }
 
   async onActivation(): Promise<void> {
-    void this.refresh();
+    // Never an unhandled rejection: whatever fails here shows in the Servers view and the Console.
+    void this.refresh().catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      useEnv.getState().setError(msg);
+      this.console().warn(`Could not read the environment: ${msg}`);
+    });
     this.offs.push(
       this.on("deployRun", "transactionExecuted", () => void this.refreshAccounts()),
+      this.on("console", "jobStarted", (job) => this.maybeAutoMine(job as { args?: string[] })),
       useIde.subscribe((s, prev) => {
         if (s.target !== prev.target) void this.refreshAccounts();
+        // Trusting the folder is what lets the CLI run: read the CLI, the node and the accounts now, not on the next poll.
+        if (s.workspace?.trusted === true && prev.workspace?.trusted === false && s.workspace.root === prev.workspace.root) {
+          void this.refresh().catch(() => undefined);
+        }
       })
     );
     // Light polling of the node, like Eclipse's server state refresh.
@@ -186,11 +196,11 @@ export class EnvironmentPlugin extends Plugin {
   }
 
   /**
-   * Wipes the local chain and starts over: stop node + miner, `node reset --yes` (removes all local chain
+   * Wipes the local chain and starts over: stop node + miner, `localnet reset --yes` (removes all local chain
    * data), `localnet start --toccata` (fresh node, dev accounts recreated), and funds all dev accounts so
    * none remain at 0 KAS. Callers must have asked the user to confirm: this is destructive. The server moves the
    * account keys (accounts.real.json, dev-accounts) to .hardkas/backups/reset-<time>/ instead of deleting them, and
-   * leaves the containers to HardKas (`localnet stop`, `node reset`).
+   * leaves the containers to HardKas (`localnet stop`, `localnet reset`).
    */
   async resetNode(): Promise<void> {
     await this.runOp(
@@ -207,7 +217,7 @@ export class EnvironmentPlugin extends Plugin {
               ? ` Dev keystores were moved to ${saved.backupDir}${saved.copied.length ? "; accounts.real.json stays in place and a copy is there too" : ""}.`
               : "";
             if (where) useIde.getState().setStatus(`Local chain reset.${where}`);
-            await this.runCli(["node", "reset", "--yes"], `node reset failed: the local chain was not wiped.${where}`);
+            await this.wipeLocalChain(where);
           }
         },
         { ...this.stepStartNode(), label: "Starting a fresh node" },
@@ -219,10 +229,29 @@ export class EnvironmentPlugin extends Plugin {
     );
   }
 
+  /**
+   * `localnet reset --yes` (HardKas after 0.13.0-rc.3: stops the node and its miner, removes this workspace's
+   * chain data, keeps keys and records, refuses a running node whose chain is another workspace's). On an older
+   * CLI, where `localnet` has no reset, the now deprecated `node reset --yes` does the same wipe.
+   */
+  private async wipeLocalChain(where: string): Promise<void> {
+    const run = await this.console().runHardkas(["localnet", "reset", "--yes", "--json"]);
+    if (run.status === "succeeded") return;
+    if (isUnsupportedCliFeature(run, "reset")) {
+      this.console().info("This HardKas CLI has no `localnet reset`; using the older `node reset`.");
+      await this.runCli(["node", "reset", "--yes"], `node reset failed: the local chain was not wiped.${where}`);
+      return;
+    }
+    throw new Error(`${extractCliError(run.result, run.stderr) ?? `localnet reset failed (exit ${run.exitCode})`}: the local chain was not wiped.${where}`);
+  }
+
   /** Runs a hardkas command through the console and throws with `failure` when it does not succeed. */
   private async runCli(args: string[], failure: string): Promise<void> {
     const run = await this.console().runHardkas(args);
-    if (run.status !== "succeeded") throw new Error(`${failure} (exit ${run.exitCode}). See the Console for details.`);
+    if (run.status === "succeeded") return;
+    // The CLI's own error line (Docker down, port taken…) says far more than the exit code; the banner reads it.
+    const detail = extractCliError(run.result, run.stderr);
+    throw new Error(detail ? `${failure}: ${detail}` : `${failure} (exit ${run.exitCode}). See the Console for details.`);
   }
 
   /** Polls `localnet status` until the node answers RPC (up to ~2 minutes: first start pulls the image and mines). */
@@ -372,7 +401,6 @@ export class EnvironmentPlugin extends Plugin {
       const prevByName = new Map(useEnv.getState().accounts.map((a) => [a.name, a]));
       const list = Array.isArray(run.result) ? (run.result as Array<{ name: string; kind: string; address: string }>) : [];
       const accounts: AccountInfo[] = list.map((a) => {
-        const canExport = devKeySet.has(a.name);
         const prev = prevByName.get(a.name);
         const sameNet = prev?.balanceNetwork === network;
         const simnetFromStore = network === "simnet" ? devAddresses[a.name] ?? this.devAddressByName.get(a.name) : undefined;
@@ -382,6 +410,7 @@ export class EnvironmentPlugin extends Plugin {
             : network === "simnet" && !a.address.startsWith("kaspasim:") && simnetFromStore
               ? simnetFromStore
               : a.address;
+        const canExport = canExportSimnetKey(a.name, resolvedAddr, network, devKeySet.has(a.name));
         const isRealLocalKey = network === "simnet" && (canExport || resolvedAddr.startsWith("kaspasim:"));
         return {
           name: a.name,
@@ -402,13 +431,16 @@ export class EnvironmentPlugin extends Plugin {
           if (seq !== this.accountsSeq) return;
           if (bal) {
             const addr = bal.address ?? a.address;
-            const isRealLocalKey = network === "simnet" && (devKeySet.has(a.name) || addr.startsWith("kaspasim:"));
+            const nonSimnet = isNonSimnetAddress(addr);
+            const canExportNow = canExportSimnetKey(a.name, addr, network, devKeySet.has(a.name));
+            const isRealLocalKey = network === "simnet" && (canExportNow || addr.startsWith("kaspasim:"));
             env.patchAccount(a.name, {
               balanceSompi: bal.balanceSompi,
               utxoCount: bal.utxoCount,
               balanceNetwork: network,
               address: addr,
-              ...(isRealLocalKey ? { kind: "kaspa" } : {})
+              ...(isRealLocalKey ? { kind: "kaspa" } : {}),
+              ...(devKeySet.has(a.name) ? {} : canExportNow ? { hasPlainKey: true, keystore: "dev-keystore" } : nonSimnet ? { hasPlainKey: false, keystore: "encrypted" } : {})
             });
           } else {
             const prev = prevByName.get(a.name);
@@ -419,6 +451,14 @@ export class EnvironmentPlugin extends Plugin {
         })
       );
       return useEnv.getState().accounts;
+    } catch (e) {
+      // An untrusted folder runs no CLI, so it has no accounts to list yet: that is a state, not an error. The trust
+      // banner says what to do, and trusting the folder refreshes the accounts.
+      if (e instanceof IdeApiError && e.code === "UNTRUSTED_WORKSPACE") {
+        if (seq === this.accountsSeq) env.setAccounts([]);
+        return [];
+      }
+      throw e;
     } finally {
       if (seq === this.accountsSeq) {
         env.setAccountsBusy(false);
@@ -656,6 +696,23 @@ export class EnvironmentPlugin extends Plugin {
     });
   }
 
+  /**
+   * Auto-mining: a command that sends to the local node and waits for a block (`--wait`, or `tx send`) gets its
+   * blocks without anyone pressing a button. One burst (`localnet fund --amount 1 --stop-miner`) at a time; it
+   * stops by itself, so the node is never flooded. Off with the switch in the Local node card.
+   */
+  private maybeAutoMine(job: { args?: string[] }): void {
+    const args = job.args ?? [];
+    const env = useEnv.getState();
+    if (!env.autoMine || useIde.getState().target !== "localnet" || !env.node?.rpcReady) return;
+    if (env.minerBusy || env.nodeBusy || env.node.miner?.running) return;
+    const sends = args.includes("--wait") || (args[0] === "tx" && args[1] === "send");
+    if (!sends || args[0] === "localnet") return;
+    const account = env.accounts[0]?.name ?? "alice";
+    this.console().info(`Auto-mining: hardkas ${args.slice(0, 2).join(" ")} waits for a block, so a burst is mined to ${account}.`);
+    void this.mineBurst(account).catch(() => undefined); // the failure is in the store and the Console
+  }
+
   private async minerOp(kind: "start" | "stop" | "burst", run: () => Promise<void>): Promise<void> {
     const env = useEnv.getState();
     if (env.minerBusy) return;
@@ -744,6 +801,18 @@ function isUnsupportedCliFeature(run: Pick<RunResult, "result" | "stderr">, feat
   const pattern = new RegExp(`unknown (?:command|option)\\s+['"]?${escaped}['"]?`, "i");
   const text = `${extractCliError(run.result, run.stderr) ?? ""}\n${run.stderr ?? ""}`;
   return pattern.test(text);
+}
+
+const CANONICAL_SIMNET_ALIASES = new Set(["alice", "bob", "carol", "dave", "erin"]);
+
+export function isNonSimnetAddress(address: string): boolean {
+  return Boolean(address) && !address.startsWith("kaspasim:") && !address.startsWith("kaspa:sim_");
+}
+
+/** True when an account on simnet has an exportable dev key (listed on disk or one of the 5 canonical simnet aliases). */
+export function canExportSimnetKey(name: string, address: string, network: string, inDevKeySet: boolean): boolean {
+  if (inDevKeySet) return true;
+  return network === "simnet" && CANONICAL_SIMNET_ALIASES.has(name) && !isNonSimnetAddress(address);
 }
 
 /** One stage of a node operation: `run` may report short progress notes through `note`. */

@@ -1,0 +1,411 @@
+{
+  "schema": "hardkas.txPlan",
+  "hardkasVersion": "0.13.0-rc.3",
+  "schemaVersion": "hardkas.artifact.v1",
+  "version": "1.0.0-alpha",
+  "hashVersion": 5,
+  "createdAt": "2026-11-22T23:12:29.646Z",
+  "networkId": "simnet",
+  "mode": "localnet",
+  "execution": {
+    "mode": "localnet",
+    "domain": "kaspa-l1",
+    "network": "simnet"
+  },
+  "from": {
+    "address": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn",
+    "input": "alice"
+  },
+  "to": {
+    "address": "kaspasim:pr3q0wg37fmwjf8y6wg76v3d84hhpsx9s7g6ty4jv7n750mpwppjzmy0wze4z",
+    "input": "kaspasim:pr3q0wg37fmwjf8y6wg76v3d84hhpsx9s7g6ty4jv7n750mpwppjzmy0wze4z"
+  },
+  "amountSompi": "100000000",
+  "estimatedFeeSompi": "208300",
+  "estimatedMass": "0",
+  "txVersion": 1,
+  "storageMass": "40001",
+  "inputs": [
+    {
+      "outpoint": {
+        "transactionId": "2c9ac725a6e057f03b0e33f18c1dcfdddd08379860839045a79491c3aa92c08b",
+        "index": 1
+      },
+      "amountSompi": "9997368100",
+      "address": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn",
+      "scriptPublicKey": "0000203e1b1470f13a8d64128fd6b101a762190808ff3a4df0b7a8adfc23287290cffbac",
+      "blockDaaScore": "7196",
+      "isCoinbase": false,
+      "kind": "p2pk",
+      "computeBudget": 10,
+      "signer": "alice"
+    }
+  ],
+  "outputs": [
+    {
+      "address": "kaspasim:pr3q0wg37fmwjf8y6wg76v3d84hhpsx9s7g6ty4jv7n750mpwppjzmy0wze4z",
+      "amountSompi": "100000000"
+    },
+    {
+      "address": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn",
+      "amountSompi": "9897159800",
+      "role": "change"
+    }
+  ],
+  "genesisCovenantGroups": [
+    {
+      "authorizingInput": 0,
+      "outputs": [
+        0
+      ],
+      "contract": {
+        "compileRecord": {
+          "contentHash": "ae08321d82d42fd2e02517e526c23bd8f128ed62e208b8511684fa01c926128b",
+          "artifactSha256": "0b364e177dbd4f956d6d439e4959ee5ed1e6872342feb07d483cc5b447574935",
+          "path": ".hardkas/artifacts/silver/silverCompile-ae08321d82d42fd2.json"
+        },
+        "contract": "KCC20",
+        "constructorArgs": [
+          {
+            "kind": "bytes",
+            "value": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "kind": "int",
+            "value": "0"
+          },
+          {
+            "kind": "bytes",
+            "value": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "kind": "byte",
+            "value": 0
+          },
+          {
+            "kind": "byte",
+            "value": 0
+          },
+          {
+            "kind": "bytes",
+            "value": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "kind": "bytes",
+            "value": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "states": [
+        {
+          "gen__kcc20_template": {
+            "kind": "bytes",
+            "value": [
+              151,
+              3,
+              17,
+              46,
+              230,
+              227,
+              85,
+              81,
+              7,
+              205,
+              22,
+              136,
+              88,
+              153,
+              43,
+              119,
+              211,
+              183,
+              79,
+              101,
+              82,
+              5,
+              178,
+              180,
+              99,
+              177,
+              249,
+              236,
+              46,
+              199,
+              60,
+              247
+            ]
+          },
+          "amount": {
+            "kind": "int",
+            "value": "1000"
+          },
+          "owner": {
+            "kind": "bytes",
+            "value": [
+              62,
+              27,
+              20,
+              112,
+              241,
+              58,
+              141,
+              100,
+              18,
+              143,
+              214,
+              177,
+              1,
+              167,
+              98,
+              25,
+              8,
+              8,
+              255,
+              58,
+              77,
+              240,
+              183,
+              168,
+              173,
+              252,
+              35,
+              40,
+              114,
+              144,
+              207,
+              251
+            ]
+          },
+          "owner_scheme": {
+            "kind": "byte",
+            "value": 0
+          },
+          "borrow_scheme": {
+            "kind": "byte",
+            "value": 0
+          },
+          "borrow_guard": {
+            "kind": "bytes",
+            "value": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "extension_commitment": {
+            "kind": "bytes",
+            "value": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "maxFeeSompi": "208300",
+  "lineage": {
+    "artifactId": "bdb74530794dff96579507f4c1ad9bbcec0f5ff2927667ae310a997ba2383983",
+    "sequence": 1
+  },
+  "workflowId": "wf_58b59081edc3a739",
+  "metadata": {
+    "schema": "hardkas.artifact.v1"
+  },
+  "assumptionLevel": "local-dev",
+  "plannerAuthority": "HARDKAS_V1_PLANNER",
+  "plannerAuthorityDetail": "v1 transaction plan (covenant genesis of KCC20): inputs, bindings, budgets and fee chosen by HardKAS; mass and fee floor by the rusty-kaspa 2.1.0 rules",
+  "contentHash": "bdb74530794dff96579507f4c1ad9bbcec0f5ff2927667ae310a997ba2383983",
+  "planId": "plan-bdb74530794dff96"
+}

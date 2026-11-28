@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { Check, Coins, Copy, KeyRound, Pickaxe, Play, Plus, RefreshCw, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { InfoTip } from "@/components/InfoTip";
 import { useEngine } from "@/engine/context";
 import { copyText } from "@/utils/clipboard";
 import type { EnvironmentPlugin } from "@/plugins/environment";
@@ -74,14 +75,14 @@ export function AccountsPanel() {
   return (
     <div className="text-xs relative min-h-full">
       {target === "localnet" && <NodeBusyCover label="Accounts are loading…" />}
-      <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border">
-        <span className="text-fg-muted tabular-nums">
-          {accounts.length} account{accounts.length === 1 ? "" : "s"} · {envOf(target).networkId}
+      <div className="flex flex-wrap items-center justify-between gap-1.5 px-3 py-1.5 border-b border-border">
+        <span className="text-fg-muted tabular-nums whitespace-nowrap">
+          {accounts.length} {accounts.length === 1 ? "acct" : "accts"} · {envOf(target).networkId}
         </span>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           {busy && (
-            <span className="inline-flex items-center gap-1 text-[12px] text-accent font-medium animate-pulse">
-              Loading balances…
+            <span className="inline-flex items-center gap-1 text-[12px] text-accent font-medium animate-pulse whitespace-nowrap">
+              Loading…
             </span>
           )}
           {!isNodeDown && accounts.length > 0 && target !== "rpc" && (
@@ -89,11 +90,11 @@ export function AccountsPanel() {
               type="button"
               onClick={() => void fundAll()}
               disabled={fundingAll || busy}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[12px] text-accent border border-accent/25 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 cursor-pointer"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[12px] text-accent border border-accent/25 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 cursor-pointer whitespace-nowrap shrink-0"
               title="Seed all empty accounts with 100 KAS"
             >
               <Coins size={11} />
-              <span>{fundingAll ? "Funding all…" : "Fund all"}</span>
+              <span>{fundingAll ? "Funding…" : "Fund all"}</span>
             </button>
           )}
           <button type="button" onClick={() => void env.refreshAccounts()} className="p-0.5 rounded text-fg-muted hover:text-fg hover:bg-bg-hover cursor-pointer" title="Refresh balances" aria-label="Refresh account balances">
@@ -137,23 +138,29 @@ export function AccountsPanel() {
               <AccountItem key={a.name} account={a} busy={busy} env={env} say={say} />
             ))}
           </ul>
-          <div className="px-3 pb-3 space-y-1">
-            <div className="flex gap-1">
-              <input aria-label="New account name" className="input" placeholder="new account name" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void create()} />
+          <div className="px-3 pb-3 space-y-2">
+            <div className="flex items-center gap-1">
+              <input aria-label="New account name" className="input flex-1 min-w-0" placeholder="new account name" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void create()} />
               <button type="button" className="btn-ghost shrink-0" disabled={creating || !newName.trim()} onClick={() => void create()}>
                 <Plus size={12} /> {creating ? "…" : "Create"}
               </button>
+              <InfoTip label="Dev key storage details">
+                Created accounts store a plaintext simnet key in <code>.hardkas/accounts.real.json</code> (dev only, never use on mainnet).
+              </InfoTip>
             </div>
-            <div className="text-fg-muted text-[12px]">Created accounts store a plaintext simnet key in .hardkas/accounts.real.json (dev only, never use on mainnet).</div>
-          </div>
-          <div className="mx-3 mb-3 p-2 rounded bg-bg-elev border border-border/80 text-[12px] space-y-1">
-            <div className="font-medium text-fg flex items-center justify-between">
-              <span>KasWare Wallet Import</span>
-              <span className="text-[12px] px-1 py-0.5 rounded bg-accent/15 text-accent font-mono">Simnet</span>
+
+            <div className="px-2 py-1.5 rounded bg-bg-elev border border-border/80 flex items-center justify-between gap-2 text-[12px]">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="font-medium text-fg truncate">KasWare Import</span>
+                <span className="text-[11px] px-1 py-0.2 rounded bg-accent/15 text-accent font-mono shrink-0">Simnet</span>
+              </div>
+              <InfoTip label="How to import into KasWare Wallet">
+                <div>
+                  Copy an account&apos;s private key (64 hex characters), open KasWare on <strong>Kaspa Simnet</strong> (using the RPC values below) and choose <em>Import Account &rarr; Private Key</em>.
+                </div>
+                <div>These dev keys use a public password: simnet only, never real funds.</div>
+              </InfoTip>
             </div>
-            <p className="text-fg-muted text-[12px] leading-relaxed">
-              To use an account in KasWare: copy its private key (64 hex characters), open the KasWare extension on the <strong>Kaspa Simnet</strong> network (RPC settings in the Wallet card below) and choose <em>Import Account &rarr; Private Key</em>. These are dev keys protected by a public password: simnet only, never real funds.
-            </p>
           </div>
         </>
       )}
@@ -171,8 +178,13 @@ function CopyField({ label, value, mono = true, onCopy, copied }: { label: strin
   return (
     <div className="space-y-0.5">
       <div className="text-[12px] uppercase tracking-wide text-fg-muted">{label}</div>
-      <div className="flex items-start gap-1 min-w-0">
-        <span className={clsx("flex-1 min-w-0 break-all text-[12px] rounded bg-bg border border-border px-1.5 py-0.5", mono && "font-mono")}>{value}</span>
+      <div className="flex items-center gap-1 min-w-0">
+        <span
+          title={value}
+          className={clsx("flex-1 min-w-0 truncate text-[12px] rounded bg-bg border border-border px-1.5 py-0.5", mono && "font-mono")}
+        >
+          {value}
+        </span>
         <button type="button" onClick={onCopy} className="p-1 rounded text-fg-muted hover:text-accent hover:bg-bg-hover cursor-pointer shrink-0" title={`Copy ${label.toLowerCase()}`} aria-label={`Copy ${label.toLowerCase()}`}>
           {copied ? <Check size={13} className="text-ok" /> : <Copy size={13} />}
         </button>
@@ -230,27 +242,29 @@ function AccountItem({ account, busy, env, say }: { account: AccountInfo; busy: 
   };
 
   return (
-    <li className="rounded border border-border bg-bg-elev p-2 space-y-1.5">
+    <li className="rounded border border-border bg-bg-elev p-2 space-y-1.5 min-w-0">
       {/* name and balance header */}
-      <div className="flex items-center justify-between gap-2 min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 min-w-0">
         <div className="flex items-center gap-1.5 font-semibold text-fg min-w-0">
           <UserRound size={14} className="text-accent shrink-0" />
           <span className="truncate">{account.name}</span>
-          <span className="text-[12px] font-normal text-fg-muted shrink-0">{account.kind}</span>
+          <span className="text-[11px] font-normal text-fg-muted shrink-0">{account.kind}</span>
         </div>
         {account.balanceSompi === null ? (
-          <span role="status" className="inline-flex items-center gap-1.5 text-[12px] text-accent font-mono px-2 py-0.5 rounded bg-accent/10 border border-accent/25 shrink-0">
-            <RefreshCw size={11} className="animate-spin shrink-0" />
-            <span>Loading balance…</span>
+          <span role="status" className="inline-flex items-center gap-1 text-[11px] text-accent font-mono px-1.5 py-0.5 rounded bg-accent/10 border border-accent/25 shrink-0">
+            <RefreshCw size={10} className="animate-spin shrink-0" />
+            <span>Loading…</span>
           </span>
         ) : (
-          <div className="flex items-center justify-end gap-1.5 font-mono text-sm text-fg tabular-nums shrink-0">
+          <div className="flex items-center justify-end gap-1 font-mono text-xs font-medium text-fg tabular-nums max-w-full min-w-0">
             {busy && (
-              <span title="Refreshing balance…" className="inline-flex">
-                <RefreshCw size={11} className="animate-spin text-accent shrink-0" />
+              <span title="Refreshing balance…" className="inline-flex shrink-0">
+                <RefreshCw size={10} className="animate-spin text-accent" />
               </span>
             )}
-            <span>{formatKas(account.balanceSompi)}</span>
+            <span className="truncate" title={formatKas(account.balanceSompi)}>
+              {formatKas(account.balanceSompi)}
+            </span>
           </div>
         )}
       </div>

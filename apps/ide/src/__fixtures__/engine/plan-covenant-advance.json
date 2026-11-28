@@ -1,0 +1,153 @@
+{
+  "schema": "hardkas.txPlan",
+  "hardkasVersion": "0.13.0-rc.3",
+  "schemaVersion": "hardkas.artifact.v1",
+  "version": "1.0.0-alpha",
+  "hashVersion": 5,
+  "createdAt": "2026-11-23T01:42:56.671Z",
+  "networkId": "simnet",
+  "mode": "localnet",
+  "execution": {
+    "mode": "localnet",
+    "domain": "kaspa-l1",
+    "network": "simnet"
+  },
+  "from": {
+    "address": "kaspasim:pqmrmqnt9mekakv4dduzru0avqdz2hw4ztkpgfslscvq622ckq44u4yexxzla",
+    "input": "kaspasim:pqmrmqnt9mekakv4dduzru0avqdz2hw4ztkpgfslscvq622ckq44u4yexxzla"
+  },
+  "to": {
+    "address": "kaspasim:pqs3nqvfa2lmm8rfxfa369zl54d5ds62vy0dpym7x334p0rgrmu3kzcnza3q4",
+    "input": "kaspasim:pqs3nqvfa2lmm8rfxfa369zl54d5ds62vy0dpym7x334p0rgrmu3kzcnza3q4"
+  },
+  "amountSompi": "80000000",
+  "estimatedFeeSompi": "169800",
+  "estimatedMass": "0",
+  "txVersion": 1,
+  "storageMass": "63380",
+  "inputs": [
+    {
+      "outpoint": {
+        "transactionId": "ffea1559bdb6d336597a4688362ea59846caecce1a208340448548a4bbc48475",
+        "index": 0
+      },
+      "amountSompi": "200000000",
+      "address": "kaspasim:pqmrmqnt9mekakv4dduzru0avqdz2hw4ztkpgfslscvq622ckq44u4yexxzla",
+      "scriptPublicKey": "0000aa20363d826b2ef36ed9956b7821f1fd601a255dd512ec14261f86180d2958b02b5e87",
+      "blockDaaScore": "22722",
+      "covenantId": "cef7b6af0c84742487931edbf3b2394000c7eb6396fb1c1c2141b077add3da20",
+      "kind": "covenant",
+      "computeBudget": 3,
+      "contract": {
+        "compileRecord": {
+          "contentHash": "84f746f23e230ff0c48721992e31061835e11aee61812dd62896c1d4782847ec",
+          "artifactSha256": "e3a4e47a31dd24e4d51f4ebcddcf463b83b75611f09036036865cee61830ab57",
+          "path": ".hardkas/artifacts/silver/silverCompile-84f746f23e230ff0.json"
+        },
+        "contract": "Decls",
+        "constructorArgs": [
+          {
+            "kind": "int",
+            "value": "3"
+          },
+          {
+            "kind": "int",
+            "value": "10"
+          }
+        ],
+        "entry": "__covenant_entrypoint_auth_fanout",
+        "policy": "fanout",
+        "args": [
+          {
+            "kind": "array",
+            "value": [
+              {
+                "kind": "object",
+                "value": {
+                  "value": {
+                    "kind": "int",
+                    "value": "11"
+                  }
+                }
+              },
+              {
+                "kind": "object",
+                "value": {
+                  "value": {
+                    "kind": "int",
+                    "value": "12"
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "state": {
+          "value": {
+            "kind": "int",
+            "value": "10"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "address": "kaspasim:pqs3nqvfa2lmm8rfxfa369zl54d5ds62vy0dpym7x334p0rgrmu3kzcnza3q4",
+      "amountSompi": "80000000",
+      "covenant": {
+        "authorizingInput": 0,
+        "covenantId": "cef7b6af0c84742487931edbf3b2394000c7eb6396fb1c1c2141b077add3da20"
+      }
+    },
+    {
+      "address": "kaspasim:pq73zk2cukq8lv3t57mwawsdgj5y4mrq75tjk8z0wqvpdptdds2xgf69jl2qs",
+      "amountSompi": "119830200",
+      "covenant": {
+        "authorizingInput": 0,
+        "covenantId": "cef7b6af0c84742487931edbf3b2394000c7eb6396fb1c1c2141b077add3da20"
+      }
+    }
+  ],
+  "covenantOutpoints": [
+    "ffea1559bdb6d336597a4688362ea59846caecce1a208340448548a4bbc48475:0"
+  ],
+  "nextState": [
+    {
+      "covenantId": "cef7b6af0c84742487931edbf3b2394000c7eb6396fb1c1c2141b077add3da20",
+      "input": 0,
+      "outputs": [
+        0,
+        1
+      ],
+      "states": [
+        {
+          "value": {
+            "kind": "int",
+            "value": "11"
+          }
+        },
+        {
+          "value": {
+            "kind": "int",
+            "value": "12"
+          }
+        }
+      ]
+    }
+  ],
+  "maxFeeSompi": "169800",
+  "lineage": {
+    "artifactId": "546b5bd3de3f85efeca642ee0535df4f41c48d13661678f88516a2cdec7bd65c",
+    "sequence": 1
+  },
+  "workflowId": "wf_ca8e8e9c3d99b823",
+  "metadata": {
+    "schema": "hardkas.artifact.v1"
+  },
+  "assumptionLevel": "local-dev",
+  "plannerAuthority": "HARDKAS_V1_PLANNER",
+  "plannerAuthorityDetail": "v1 transaction plan (covenant transition): inputs, bindings, budgets and fee chosen by HardKAS; mass and fee floor by the rusty-kaspa 2.1.0 rules",
+  "contentHash": "546b5bd3de3f85efeca642ee0535df4f41c48d13661678f88516a2cdec7bd65c",
+  "planId": "plan-546b5bd3de3f85ef"
+}

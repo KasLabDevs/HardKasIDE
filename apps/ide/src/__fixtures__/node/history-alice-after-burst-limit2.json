@@ -1,0 +1,124 @@
+{
+  "ok": true,
+  "command": "history",
+  "mode": "cli",
+  "schema": "hardkas.addressHistory.v1",
+  "address": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn",
+  "networkId": "simnet",
+  "entries": [
+    {
+      "txId": "170ecff27b8c17303ecffde73555e7f89ef5d200e96a59402f0b9d34e56f3606",
+      "source": "node",
+      "direction": "in",
+      "receivedSompi": "10000000000",
+      "covenantBoundReceivedSompi": "0",
+      "spentSompi": "0",
+      "netSompi": "10000000000",
+      "outputs": [
+        {
+          "index": 0,
+          "amountSompi": "10000000000"
+        }
+      ],
+      "spends": [],
+      "coinbase": false,
+      "covenantBound": false,
+      "acceptance": {
+        "chainBlockHash": "f7fab1f599999682d23d88cbd22bcdb08ae6726c35074e0fc88a33cb9288969a",
+        "daaScore": "3911",
+        "blueScore": "3432",
+        "previousChainBlockHash": "f94ae3e431baff7fa6a8ec2f390c1c3f0a5f2a7751ae48c4a6d5096438ba103f",
+        "confirmationsDaa": "2372",
+        "confirmationsBlue": "2222"
+      }
+    },
+    {
+      "txId": "c29d0ee95bf65c5898f189bb376a15b56496b19860500e8288be501d51f28fc9",
+      "source": "node",
+      "direction": "in",
+      "receivedSompi": "100000000",
+      "covenantBoundReceivedSompi": "0",
+      "spentSompi": "0",
+      "netSompi": "100000000",
+      "outputs": [
+        {
+          "index": 0,
+          "amountSompi": "100000000"
+        }
+      ],
+      "spends": [],
+      "coinbase": false,
+      "covenantBound": false,
+      "acceptance": {
+        "chainBlockHash": "c22b351351d17c58e40a98d5445d307b2e742b90dcea592938222fbce17e7489",
+        "daaScore": "6235",
+        "blueScore": "5628",
+        "previousChainBlockHash": "c20347683510174cb9c901ae23344f83207c0d6abfd1f4a4226d665b0143b45d",
+        "confirmationsDaa": "48",
+        "confirmationsBlue": "26"
+      }
+    }
+  ],
+  "total": 5,
+  "page": {
+    "offset": 0,
+    "limit": 2,
+    "nextCursor": "eyJ2IjoxLCJhIjoia2FzcGFzaW06cXFscGs5cnM3eWFnNmVxajNsdHR6cWQ4dmd2c3N6OGw4ZnhscGRhZzRoN3p4MnJqanI4bGtrZXJ3a2V6biIsImYiOiI0MTFmOGNkMjZmM2Q0MWFlYTM5ZTc4NTczOTI3ZGEyNGQyMzk5NTcwNWI1NzlmMzA5NTliOTEyN2U5NmI3OWUzIiwidCI6ImZkMDZmNmVlNTU2NTNjMGM0YTI5ZGZkYTY1NWY1NDNlYThjZjkzZWMyYjlhMzgxNTgwZTYzN2E3ZmJiZWE5MzciLCJvIjoyfQ"
+  },
+  "coverage": {
+    "window": {
+      "requested": {
+        "kind": "default",
+        "lookback": 1000
+      },
+      "from": {
+        "hash": "411f8cd26f3d41aea39e78573927da24d23995705b579f30959b9127e96b79e3",
+        "daaScore": "0"
+      },
+      "firstCoveredDaaScore": "1",
+      "to": {
+        "hash": "fd06f6ee55653c0c4a29dfda655f543ea8cf93ec2b9a381580e637a7fbbea937",
+        "daaScore": "6261"
+      },
+      "chainBlocks": 146,
+      "reachedTip": true,
+      "startsAtPruningPoint": true,
+      "clampedToPruningPoint": false,
+      "requestedStartNotReached": false,
+      "startOffSelectedChain": false,
+      "stoppedBy": "tip",
+      "pruningPoint": {
+        "hash": "411f8cd26f3d41aea39e78573927da24d23995705b579f30959b9127e96b79e3",
+        "daaScore": "0",
+        "isGenesis": true
+      }
+    },
+    "spends": "node-entries",
+    "inputsWithoutEntry": 0,
+    "point": {
+      "virtualDaaScore": "6283",
+      "sinkHash": "fd06f6ee55653c0c4a29dfda655f543ea8cf93ec2b9a381580e637a7fbbea937",
+      "sinkBlueScore": "5654"
+    },
+    "node": {
+      "networkId": "simnet",
+      "isSynced": true,
+      "serverVersion": "2.1.0"
+    },
+    "workspace": {
+      "merged": true,
+      "records": 3,
+      "outsideWindow": 3,
+      "rejected": 0
+    },
+    "reads": {
+      "getBlock": 150,
+      "getVirtualChainFromBlockV2": 4,
+      "other": 5
+    },
+    "notCovered": [
+      "transactions not yet accepted by a chain block (a mempool is not history)",
+      "records of other workspaces and wallets (only this workspace's own records are merged)"
+    ]
+  }
+}

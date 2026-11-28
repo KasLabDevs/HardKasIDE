@@ -6,14 +6,17 @@ import type { DebugPlugin } from "@/plugins/debug";
 import type { EditorPlugin } from "@/plugins/editor";
 import { currentLocation, useDebug } from "@/store/debug";
 import { silverDebugLine, useSilverDebug } from "@/store/silverDebug";
+import { diagnosticsAtPosition, fixableDiagnosticsInRange, normalizeDiagPath, useDiagnostics } from "@/store/diagnostics";
 import { useEditorCursor } from "@/store/editorCursor";
 import { useIde } from "@/store/ide";
 import { useVsx } from "@/store/vsx";
 import { monacoThemeName } from "@/plugins/vsx";
+import { analyzeSilverSymbols, getSilverSymbolHover } from "@/utils/silverLinter";
 import { extractDocumentSymbols } from "@/utils/symbols";
 import { SILVERSCRIPT_ID, getSilverscriptHover, silverscriptCompletions, silverscriptConfiguration, silverscriptMonarch } from "./silverscript";
 import { buildMonacoTheme, THEME_NAME } from "./theme";
 import { registerVscodeMonarchLanguages } from "./vscodeTokens";
+import { configureMonacoLanguageDefaults, syncModelMarkersToStore, syncWorkspaceIntelligence } from "./workspaceIntelligence";
 
 let languagesRegistered = false;
 
@@ -24,6 +27,7 @@ function isTestPath(path: string | undefined): boolean {
 export function Editor() {
   const engine = useEngine();
   const activeFile = useIde((s) => s.activeFile);
+  const workspaceRoot = useIde((s) => s.workspace?.root);
   const file = useIde((s) => s.openFiles.find((f) => f.path === s.activeFile));
   const updateContent = useIde((s) => s.updateContent);
   const activeVsxTheme = useVsx((s) => s.activeTheme);
@@ -32,6 +36,7 @@ export function Editor() {
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const bpCollection = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
   const markCollection = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
+  const diagCollection = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
   const [mounted, setMounted] = useState(0);
   const disposables = useRef<Monaco.IDisposable[]>([]);
   const themeName = activeVsxTheme ? monacoThemeName(activeVsxTheme) : THEME_NAME;
@@ -73,6 +78,103 @@ export function Editor() {
     markCollection.current = ed.createDecorationsCollection(marks);
   }, [activeFile, breakpoints, bpStatus, debugState, frames, frameIndex, mounted, silverView]);
 
+  // Eclipse-style diagnostic gutter marks & error line highlights synchronized with useDiagnostics + breakpoints.
+  const activeFileDiags = useDiagnostics((s) =>
+    activeFile && !activeFile.startsWith("view:") ? s.byFile[normalizeDiagPath(activeFile)] : undefined
+  );
+  useEffect(() => {
+    const ed = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!ed || !monaco || !activeFile || activeFile.startsWith("view:")) {
+      diagCollection.current?.clear();
+      return;
+    }
+    const items = activeFileDiags ?? [];
+    if (items.length === 0) {
+      diagCollection.current?.clear();
+      return;
+    }
+
+    const bpLines = new Set(breakpoints[activeFile] ?? []);
+    const byLine = new Map<number, typeof items>();
+    for (const d of items) {
+      const list = byLine.get(d.line) ?? [];
+      list.push(d);
+      byLine.set(d.line, list);
+    }
+
+    const decos: Monaco.editor.IModelDeltaDecoration[] = [];
+    for (const [line, list] of byLine.entries()) {
+      const hasErr = list.some((d) => d.severity === "error");
+      const hasWarn = list.some((d) => d.severity === "warning");
+      if (!hasErr && !hasWarn) continue;
+      const hasFix = list.some((d) => d.fixes && d.fixes.length > 0);
+      const hasBp = bpLines.has(line);
+      const glyphClass = hasBp
+        ? undefined
+        : hasErr
+          ? hasFix
+            ? "hk-diag-error-fix"
+            : "hk-diag-error"
+          : hasFix
+            ? "hk-diag-warn-fix"
+            : "hk-diag-warn";
+      const hoverLines = list.map((d) => {
+        const prefix = d.severity === "error" ? "**Error**" : d.severity === "warning" ? "**Warning**" : "**Info**";
+        const codeTag = d.code ? ` \`${d.code}\`` : "";
+        const hintLine = d.hint ? `\n  *${d.hint}*` : "";
+        const fixNote = d.fixes && d.fixes.length > 0 ? `\n  💡 *Quick Fix available (\`Ctrl+.\`): ${d.fixes[0].title}*` : "";
+        return `- ${prefix}${codeTag}: ${d.message}${hintLine}${fixNote}`;
+      });
+      decos.push({
+        range: new monaco.Range(line, 1, line, 1),
+        options: {
+          isWholeLine: true,
+          className: hasErr ? "hk-line-error" : "hk-line-warn",
+          ...(glyphClass
+            ? {
+                glyphMarginClassName: glyphClass,
+                glyphMarginHoverMessage: { value: hoverLines.join("\n") }
+              }
+            : {}),
+          overviewRuler: {
+            color: hasErr ? "#ef4444" : "#f59e0b",
+            position: monaco.editor.OverviewRulerLane.Right
+          }
+        }
+      });
+    }
+    diagCollection.current?.clear();
+    diagCollection.current = ed.createDecorationsCollection(decos);
+  }, [activeFile, activeFileDiags, breakpoints, mounted]);
+
+  // Sync workspace TypeScript/JSX/Silver/HardKas context into Monaco whenever workspace opens or files change.
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    if (!monaco || !mounted) return;
+    const plugin = engine.get<EditorPlugin>("editor");
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = (delay = 150) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        void syncWorkspaceIntelligence(monaco, plugin);
+      }, delay);
+    };
+    schedule(50);
+
+    const offSave = engine.on("fileManager", "fileSaved", () => schedule(180));
+    const offTree = engine.on("fileManager", "treeChanged", () => schedule(250));
+    const offContent = engine.on("editor", "contentChanged", (p) => {
+      if (typeof p === "string" && !p.endsWith(".sil")) schedule(850);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      offSave();
+      offTree();
+      offContent();
+    };
+  }, [engine, workspaceRoot, mounted]);
+
   const editorOptions = useMemo<Monaco.editor.IStandaloneEditorConstructionOptions>(
     () => ({
       fontFamily: getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim() || "monospace",
@@ -82,6 +184,8 @@ export function Editor() {
       scrollBeyondLastLine: false,
       glyphMargin: true,
       renderLineHighlight: "line",
+      hover: { enabled: true, delay: 180, sticky: true },
+      lightbulb: { enabled: "on" as Monaco.editor.ShowLightbulbIconMode },
       bracketPairColorization: { enabled: true },
       guides: { indentation: true, bracketPairs: false },
       tabSize: 2,
@@ -94,6 +198,7 @@ export function Editor() {
 
   const beforeMount: BeforeMount = useCallback((monaco) => {
     monacoRef.current = monaco;
+    configureMonacoLanguageDefaults(monaco);
     if (languagesRegistered) return;
     languagesRegistered = true;
     registerVscodeMonarchLanguages(monaco);
@@ -104,33 +209,128 @@ export function Editor() {
       provideCompletionItems: (model, position) => {
         const word = model.getWordUntilPosition(position);
         const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn };
+        const symSuggestions: Monaco.languages.CompletionItem[] = [];
+        const seenNames = new Set<string>();
+        const analysis = analyzeSilverSymbols(model.getValue());
+        for (const c of analysis.contracts) {
+          for (const sym of [...c.params, ...c.fields]) {
+            if (seenNames.has(sym.name)) continue;
+            seenNames.add(sym.name);
+            symSuggestions.push({
+              label: sym.name,
+              kind: monaco.languages.CompletionItemKind.Field,
+              insertText: sym.name,
+              detail: `${sym.type} (${sym.role})`,
+              range
+            });
+          }
+          for (const s of c.scopes) {
+            if (!seenNames.has(s.name)) {
+              seenNames.add(s.name);
+              symSuggestions.push({
+                label: s.name,
+                kind: monaco.languages.CompletionItemKind.Function,
+                insertText: s.name,
+                detail: `${s.kind} in ${c.name}`,
+                range
+              });
+            }
+            for (const sym of [...s.params, ...s.locals]) {
+              if (seenNames.has(sym.name)) continue;
+              seenNames.add(sym.name);
+              symSuggestions.push({
+                label: sym.name,
+                kind: monaco.languages.CompletionItemKind.Variable,
+                insertText: sym.name,
+                detail: `${sym.type} (${s.name})`,
+                range
+              });
+            }
+          }
+        }
         return {
-          suggestions: silverscriptCompletions.map((c) => ({
-            label: c.label,
-            kind: monaco.languages.CompletionItemKind.Snippet,
-            insertText: c.insertText,
-            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            detail: c.detail,
-            range
-          }))
+          suggestions: [
+            ...symSuggestions,
+            ...silverscriptCompletions.map((c) => ({
+              label: c.label,
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText: c.insertText,
+              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              detail: c.detail,
+              range
+            }))
+          ]
         };
       }
     });
     monaco.languages.registerHoverProvider(SILVERSCRIPT_ID, {
       provideHover: (model, position) => {
+        const contents: Monaco.IMarkdownString[] = [];
+        const filePath = model.uri.path.replace(/^\/+/, "");
+        const diags = diagnosticsAtPosition(filePath, position.lineNumber, position.column);
+        for (const d of diags) {
+          const icon = d.severity === "error" ? "❌" : d.severity === "warning" ? "⚠️" : "ℹ️";
+          const codeTag = d.code ? ` \`[${d.code}]\`` : "";
+          const hint = d.hint ? `\n\n*Hint:* ${d.hint}` : "";
+          const fixInfo = d.fixes && d.fixes.length > 0 ? `\n\n💡 *Quick Fix (\`Ctrl+.\`):* ${d.fixes[0].title}` : "";
+          contents.push({ value: `${icon}${codeTag} ${d.message}${hint}${fixInfo}` });
+        }
+
         const word = model.getWordAtPosition(position);
-        if (!word) return null;
-        const doc = getSilverscriptHover(word.word);
-        if (!doc) return null;
-        return {
-          range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
-          contents: [
-            { value: `\`\`\`silverscript\n${doc.signature}\n\`\`\`` },
-            { value: doc.summary }
-          ]
-        };
+        const symDoc = getSilverSymbolHover(model.getValue(), position.lineNumber, position.column);
+        if (symDoc) {
+          contents.push({ value: `\`\`\`silverscript\n${symDoc.signature}\n\`\`\`` });
+          contents.push({ value: symDoc.summary });
+        } else if (word) {
+          const doc = getSilverscriptHover(word.word);
+          if (doc) {
+            contents.push({ value: `\`\`\`silverscript\n${doc.signature}\n\`\`\`` });
+            contents.push({ value: doc.summary });
+          }
+        }
+        if (contents.length === 0) return null;
+        const range = word
+          ? new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn)
+          : new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column);
+        return { range, contents };
       }
     });
+    for (const langId of [SILVERSCRIPT_ID, "json", "typescript", "javascript"]) {
+      monaco.languages.registerCodeActionProvider(langId, {
+        provideCodeActions: (model, range) => {
+          const filePath = model.uri.path.replace(/^\/+/, "");
+          const matching = fixableDiagnosticsInRange(filePath, range.startLineNumber, range.endLineNumber);
+          const actions: Monaco.languages.CodeAction[] = [];
+          for (const d of matching) {
+            for (const fix of d.fixes ?? []) {
+              actions.push({
+                title: fix.title,
+                kind: "quickfix",
+                isPreferred: true,
+                edit: {
+                  edits: [
+                    {
+                      resource: model.uri,
+                      versionId: model.getVersionId(),
+                      textEdit: {
+                        range: new monaco.Range(
+                          fix.edit.startLineNumber,
+                          fix.edit.startColumn,
+                          fix.edit.endLineNumber,
+                          fix.edit.endColumn
+                        ),
+                        text: fix.edit.text
+                      }
+                    }
+                  ]
+                }
+              });
+            }
+          }
+          return { actions, dispose: () => undefined };
+        }
+      });
+    }
     monaco.languages.registerDocumentSymbolProvider(SILVERSCRIPT_ID, {
       provideDocumentSymbols: (model) => {
         const syms = extractDocumentSymbols(model.uri.path, model.getValue());
@@ -213,7 +413,10 @@ export function Editor() {
         editor.onDidChangeCursorPosition(syncCursor),
         editor.onDidChangeModel(() => {
           const model = editor.getModel();
-          if (model) plugin.applyStoredMarkersForModel(model);
+          if (model) {
+            plugin.applyStoredMarkersForModel(model);
+            syncModelMarkersToStore(monaco, model);
+          }
           syncCursor();
           syncMarkers();
           const modelPath = model?.uri.path ?? "";
@@ -222,6 +425,10 @@ export function Editor() {
         }),
         editor.onDidChangeModelContent(syncCursor),
         monaco.editor.onDidChangeMarkers((uris) => {
+          for (const u of uris) {
+            const m = monaco.editor.getModel(u);
+            if (m) syncModelMarkersToStore(monaco, m);
+          }
           const cur = editor.getModel()?.uri.toString();
           if (cur && uris.some((u) => u.toString() === cur)) syncMarkers();
         })

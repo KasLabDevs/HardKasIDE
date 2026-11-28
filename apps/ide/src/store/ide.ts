@@ -107,10 +107,13 @@ export const VIEW_PREFIX = "view:";
 
 /** Where a side-panel plugin is docked (Eclipse-style movable views). */
 export type Dock = "left" | "leftBottom" | "right" | "main";
-const DOCKS_KEY = "hardkas-ide.docks";
+const DOCKS_KEY = "hardkas-ide.docks.v2";
 const HIDDEN_PANELS_KEY = "hardkas-ide.hidden-panels";
-/** Out-of-the-box placement: the Assistant chat lives on the right, like an editor's side panels. */
-const DEFAULT_DOCKS: Record<string, Dock> = { assistant: "right" };
+/**
+ * Out-of-the-box placement: Deploy & Run opens as a wide tab in the editor area, and Assistant opens in
+ * full-height left sidebar (or pops out to a center tab / separate window) instead of squeezing below Outline.
+ */
+const DEFAULT_DOCKS: Record<string, Dock> = { deployRun: "main" };
 
 function loadDocks(): Record<string, Dock> {
   try {
@@ -120,12 +123,16 @@ function loadDocks(): Record<string, Dock> {
   }
 }
 
+const DEFAULT_HIDDEN_PANELS: Record<string, boolean> = {};
+
 function loadHiddenPanels(): Record<string, boolean> {
   try {
-    const parsed = JSON.parse(localStorage.getItem(HIDDEN_PANELS_KEY) ?? "{}") as Record<string, boolean>;
-    return parsed && typeof parsed === "object" ? parsed : {};
+    const raw = localStorage.getItem(HIDDEN_PANELS_KEY);
+    if (raw === null) return { ...DEFAULT_HIDDEN_PANELS };
+    const parsed = JSON.parse(raw) as Record<string, boolean>;
+    return parsed && typeof parsed === "object" ? parsed : { ...DEFAULT_HIDDEN_PANELS };
   } catch {
-    return {};
+    return { ...DEFAULT_HIDDEN_PANELS };
   }
 }
 
@@ -179,6 +186,8 @@ interface IdeState {
 
   setWorkspace(ws: WorkspaceInfo | null): void;
   setTree(tree: TreeNode[]): void;
+  /** False from opening a project until its file tree first arrives: the Explorer says "Loading", not "Empty". */
+  treeLoaded: boolean;
   upsertOpenFile(file: OpenFile): void;
   updateContent(path: string, content: string): void;
   markSaved(path: string): void;
@@ -254,6 +263,7 @@ export const useIde = create<IdeState>((set, get) => ({
   clearTerminalRequest: () => set({ pendingTerminal: false }),
   workspace: null,
   tree: [],
+  treeLoaded: false,
   openFiles: [],
   activeFile: null,
   recentFiles: [],
@@ -324,11 +334,15 @@ export const useIde = create<IdeState>((set, get) => ({
   },
 
   setWorkspace: (workspace) =>
-    set((s) => ({
-      workspace,
-      recentFiles: s.workspace?.root && workspace?.root && s.workspace.root === workspace.root ? s.recentFiles : []
-    })),
-  setTree: (tree) => set({ tree }),
+    set((s) => {
+      const same = !!s.workspace?.root && !!workspace?.root && s.workspace.root === workspace.root;
+      return {
+        workspace,
+        recentFiles: same ? s.recentFiles : [],
+        treeLoaded: same ? s.treeLoaded : false
+      };
+    }),
+  setTree: (tree) => set({ tree, treeLoaded: true }),
   upsertOpenFile: (file) =>
     set((s) => {
       const exists = s.openFiles.some((f) => f.path === file.path);
@@ -408,15 +422,31 @@ export function languageForPath(path: string): string {
       return "silverscript";
     case "ts":
     case "mts":
-      return "typescript";
+    case "cts":
     case "tsx":
       return "typescript";
     case "js":
     case "mjs":
     case "cjs":
+    case "jsx":
       return "javascript";
+    case "html":
+    case "htm":
+    case "svg":
+    case "vue":
+    case "svelte":
+      return "html";
+    case "css":
+      return "css";
+    case "scss":
+      return "scss";
+    case "less":
+      return "less";
     case "json":
+    case "jsonc":
       return "json";
+    case "sql":
+      return "sql";
     case "md":
       return "markdown";
     case "yaml":

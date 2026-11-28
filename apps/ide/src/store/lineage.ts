@@ -16,6 +16,8 @@ export interface ArtifactRow {
   flowId?: string;
   /** What it says in words ("Deploy VaultGuard · 5 KAS"); from the IDE server, absent for a kind it does not know. */
   summary?: ArtifactSummary;
+  /** Bech32 addresses and 64-hex public keys referenced inside the artifact JSON. */
+  keys?: string[];
 }
 
 export interface LineageEdge {

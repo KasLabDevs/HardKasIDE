@@ -2,10 +2,12 @@ import { Hammer } from "lucide-react";
 import { api } from "@/api/client";
 import { Plugin } from "@/engine/engine";
 import { CompilePanel } from "@/panels/CompilePanel";
+import { useDiagnostics } from "@/store/diagnostics";
 import { useIde } from "@/store/ide";
 import { useSilver } from "@/store/silver";
 import { normalizeSilverArgsText } from "@/utils/silverArgs";
 import { parseSilverDiagnostics } from "@/utils/silverInspector";
+import { lintSilverSource } from "@/utils/silverLinter";
 import type { EditorDiagnostic } from "./editor";
 import type { ConsolePlugin } from "./console";
 
@@ -79,6 +81,27 @@ export class CompilerPlugin extends Plugin {
       }),
       this.on("editor", "contentChanged", (path) => {
         if (typeof path === "string" && path.endsWith(".sil")) {
+          // Instant client-side SilverScript & Covenant feedback as you type
+          const content = useIde.getState().openFiles.find((t) => t.path === path)?.content;
+          if (typeof content === "string") {
+            const instant = lintSilverSource(path, content);
+            useDiagnostics.getState().setFileDiagnostics(path, "sil-lint", instant);
+            void this.call(
+              "editor",
+              "setFileMarkers",
+              path,
+              instant.map((d) => ({
+                file: d.file,
+                line: d.line,
+                column: d.column,
+                endLine: d.endLine,
+                endColumn: d.endColumn,
+                severity: d.severity,
+                message: `[${d.code}] ${d.message}${d.hint ? ` (${d.hint})` : ""}`
+              })),
+              "sil-lint"
+            );
+          }
           if (this.autoCompile) {
             void this.call("fileManager", "saveFile", path).then(() => this.compile(path));
           } else {
@@ -163,10 +186,33 @@ export class CompilerPlugin extends Plugin {
       line: d.line,
       column: d.column,
       endLine: d.line,
-      endColumn: d.endColumn ?? d.column + 24,
+      endColumn: d.endColumn ?? d.column + 1,
       severity: d.severity,
       message: `[${d.code}] ${d.message}${d.hint ? ` (${d.hint})` : ""}`
     }));
+
+    // Keep global diagnostics store in sync (preserving quick fixes for CodeActionProvider & Problems view)
+    useDiagnostics.getState().setFileDiagnostics(
+      file,
+      "silverc",
+      parsedDiags.map((d, idx) => ({
+        id: `silverc:${file}:${d.line}:${d.column}:${idx}`,
+        file: d.file,
+        source: d.code.startsWith("SIL-") ? "sil-lint" : "silverc",
+        line: d.line,
+        column: d.column,
+        endLine: d.line,
+        endColumn: d.endColumn ?? d.column + 1,
+        severity: d.severity,
+        code: d.code,
+        message: d.message,
+        hint: d.hint,
+        fixes: d.fixes
+      }))
+    );
+    // Clear separate sil-lint layer because parseSilverDiagnostics already merges static & silverc cleanly
+    useDiagnostics.getState().setFileDiagnostics(file, "sil-lint", []);
+    await this.call("editor", "clearErrorMarkers", "sil-lint", file);
     await this.call("editor", "setFileMarkers", file, diagnostics, "silverc");
   }
 
@@ -191,11 +237,19 @@ export class CompilerPlugin extends Plugin {
   }
 
   async readArgs(file: string): Promise<string | null> {
-    try {
-      return await this.call<string>("fileManager", "readFile", this.argsFileFor(file));
-    } catch {
-      return null;
+    return (await this.findArgs(file))?.text ?? null;
+  }
+
+  /** The project's constructor values for `file`: `<name>.constructor-args.json`, else `<name>.ctor.json`. */
+  private async findArgs(file: string): Promise<{ path: string; text: string } | null> {
+    for (const path of [this.argsFileFor(file), file.replace(/\.sil$/, "") + ".ctor.json"]) {
+      try {
+        return { path, text: await this.call<string>("fileManager", "readFile", path) };
+      } catch {
+        // not there: try the next name
+      }
     }
+    return null;
   }
 
   async compile(file: string, options?: { args?: string }): Promise<CompilationResult> {
@@ -215,10 +269,10 @@ export class CompilerPlugin extends Plugin {
       usedArgsText = normalized;
       cliArgs.push("--args", argsFile);
     } else {
-      const existingArgs = await this.readArgs(file);
-      if (existingArgs !== null) {
-        usedArgsText = existingArgs;
-        cliArgs.push("--args", argsFile);
+      const existing = await this.findArgs(file);
+      if (existing !== null) {
+        usedArgsText = existing.text;
+        cliArgs.push("--args", existing.path);
       }
     }
     cliArgs.push("--json");

@@ -54,17 +54,17 @@ export class EditorPlugin extends Plugin {
     return this.monaco;
   }
 
-  /** Debounced (500 ms): drives auto-save and auto-compile. */
+  /** Debounced (220 ms): drives instant inline linting and auto-compile. */
   notifyChange(path: string): void {
     if (this.changeTimer) clearTimeout(this.changeTimer);
-    this.changeTimer = setTimeout(() => this.emit("contentChanged", path), 500);
+    this.changeTimer = setTimeout(() => this.emit("contentChanged", path), 220);
   }
 
   private normalizePath(p: string): string {
     return p.replace(/\\/g, "/").replace(/^\/+/, "");
   }
 
-  private toMonacoMarkers(list: EditorDiagnostic[]): Monaco.editor.IMarkerData[] {
+  private toMonacoMarkers(list: EditorDiagnostic[], owner = "hardkas"): Monaco.editor.IMarkerData[] {
     const monaco = this.monaco!;
     return list.map((d) => ({
       startLineNumber: d.line,
@@ -72,7 +72,7 @@ export class EditorPlugin extends Plugin {
       endLineNumber: d.endLine ?? d.line,
       endColumn: d.endColumn ?? (d.column ?? 1) + 1,
       message: d.message,
-      source: "silverc",
+      source: owner,
       severity:
         d.severity === "error"
           ? monaco.MarkerSeverity.Error
@@ -87,7 +87,7 @@ export class EditorPlugin extends Plugin {
     const norm = this.normalizePath(model.uri.path);
     for (const [owner, byFile] of this.markersByOwner.entries()) {
       const list = byFile.get(norm) ?? [];
-      this.monaco.editor.setModelMarkers(model, owner, this.toMonacoMarkers(list));
+      this.monaco.editor.setModelMarkers(model, owner, this.toMonacoMarkers(list, owner));
     }
   }
 
@@ -105,7 +105,7 @@ export class EditorPlugin extends Plugin {
     if (!this.monaco) return;
     for (const model of this.monaco.editor.getModels()) {
       if (this.normalizePath(model.uri.path) === norm) {
-        this.monaco.editor.setModelMarkers(model, owner, this.toMonacoMarkers(diagnostics));
+        this.monaco.editor.setModelMarkers(model, owner, this.toMonacoMarkers(diagnostics, owner));
       }
     }
   }
@@ -123,7 +123,7 @@ export class EditorPlugin extends Plugin {
     for (const model of this.monaco.editor.getModels()) {
       const path = this.normalizePath(model.uri.path);
       const list = byFile.get(path) ?? [];
-      this.monaco.editor.setModelMarkers(model, owner, this.toMonacoMarkers(list));
+      this.monaco.editor.setModelMarkers(model, owner, this.toMonacoMarkers(list, owner));
     }
   }
 

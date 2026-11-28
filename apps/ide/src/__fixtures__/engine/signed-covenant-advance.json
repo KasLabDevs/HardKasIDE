@@ -1,0 +1,40 @@
+{
+  "schema": "hardkas.signedTx",
+  "hardkasVersion": "0.13.0-rc.3",
+  "version": "1.0.0-alpha",
+  "hashVersion": 5,
+  "status": "signed",
+  "createdAt": "2026-11-23T01:42:56.734Z",
+  "txId": "2fa74f3203f240614908f3bddc581c6f0b924abff12c549283bb466373a9df14",
+  "sourcePlanId": "plan-546b5bd3de3f85ef",
+  "networkId": "simnet",
+  "mode": "localnet",
+  "from": {
+    "address": "kaspasim:pqmrmqnt9mekakv4dduzru0avqdz2hw4ztkpgfslscvq622ckq44u4yexxzla"
+  },
+  "to": {
+    "address": "kaspasim:pqs3nqvfa2lmm8rfxfa369zl54d5ds62vy0dpym7x334p0rgrmu3kzcnza3q4"
+  },
+  "amountSompi": "80000000",
+  "txVersion": 1,
+  "signedTransaction": {
+    "format": "hex",
+    "payload": "{\"version\":1,\"inputs\":[{\"previousOutpoint\":{\"transactionId\":\"ffea1559bdb6d336597a4688362ea59846caecce1a208340448548a4bbc48475\",\"index\":0},\"signatureScript\":\"100b000000000000000c00000000000000046ce122a94d37016b080a000000000000006c76046ce122a987637578825897009d75b9cb7876547976547953a169547978827c7558969c69005579787853799453a1697652799f6376b978cc5579527958957658937f01087858cd7eb976c902370194765193bc7c7eb976c976022d81937cbc7eaa02000001aa7e01207e7c7e01877e5279c38852795193547a75777777687652799f6376b978cc5579527958957658937f01087858cd7eb976c902370194765193bc7c7eb976c976022d81937cbc7eaa02000001aa7e01207e7c7e01877e5279c38852795193547a75777777687652799f6376b978cc5579527958957658937f01087858cd7eb976c902370194765193bc7c7eb976c976022d81937cbc7eaa02000001aa7e01207e7c7e01877e5279c38852795193547a75777777687575757575757575757551676a68\",\"sequence\":0,\"sigOpCount\":0,\"computeBudget\":3}],\"outputs\":[{\"amount\":\"80000000\",\"scriptPublicKey\":{\"version\":0,\"scriptPublicKey\":\"aa2021198189eabfbd9c69327b1d145fa55b46c34a611ed0937e346350bc681ef91b87\"},\"covenant\":{\"authorizingInput\":0,\"covenantId\":\"cef7b6af0c84742487931edbf3b2394000c7eb6396fb1c1c2141b077add3da20\"}},{\"amount\":\"119830200\",\"scriptPublicKey\":{\"version\":0,\"scriptPublicKey\":\"aa203d115958e5807fb22ba7b6eeba0d44a84aec60f5172b1c4f701816856d6c146487\"},\"covenant\":{\"authorizingInput\":0,\"covenantId\":\"cef7b6af0c84742487931edbf3b2394000c7eb6396fb1c1c2141b077add3da20\"}}],\"lockTime\":0,\"subnetworkId\":\"0000000000000000000000000000000000000000\",\"gas\":0,\"storageMass\":63380,\"payload\":\"\"}"
+  },
+  "lineage": {
+    "artifactId": "2e7d6b8892aa5b92d16d3f822c9e3a471d1ab51dc24b092ed22565a9e942561b",
+    "lineageId": "546b5bd3de3f85efeca642ee0535df4f41c48d13661678f88516a2cdec7bd65c",
+    "parentArtifactId": "546b5bd3de3f85efeca642ee0535df4f41c48d13661678f88516a2cdec7bd65c",
+    "rootArtifactId": "546b5bd3de3f85efeca642ee0535df4f41c48d13661678f88516a2cdec7bd65c",
+    "sequence": 2
+  },
+  "execution": {
+    "mode": "localnet",
+    "domain": "kaspa-l1",
+    "network": "simnet"
+  },
+  "workflowId": "wf_ca8e8e9c3d99b823",
+  "assumptionLevel": "local-dev",
+  "signedId": "signed-2e7d6b8892aa5b92",
+  "contentHash": "2e7d6b8892aa5b92d16d3f822c9e3a471d1ab51dc24b092ed22565a9e942561b"
+}

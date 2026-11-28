@@ -34,12 +34,12 @@ export function SidePanel() {
                 if (!View) return null;
                 const isActive = p.profile.name === shown;
                 return (
-                  <section key={p.profile.name} className="flex-1 min-h-0 flex-col" style={{ display: isActive ? "flex" : "none" }}>
-                    <header className="panel-title flex items-center justify-between">
-                      <span>{p.profile.displayName}</span>
+                  <section key={p.profile.name} className="flex-1 min-h-0 min-w-0 flex-col" style={{ display: isActive ? "flex" : "none" }}>
+                    <header className="panel-title flex items-center justify-between gap-2 min-w-0">
+                      <span className="truncate">{p.profile.displayName}</span>
                       {p.profile.name !== "files" && <DockControls pluginName={p.profile.name} displayName={p.profile.displayName} />}
                     </header>
-                    <div className="flex-1 min-h-0 overflow-auto">
+                    <div className="flex-1 min-h-0 min-w-0 overflow-auto">
                       <ErrorBoundary name={p.profile.displayName}>
                         <View />
                       </ErrorBoundary>
@@ -47,7 +47,9 @@ export function SidePanel() {
                   </section>
                 );
               })}
-              {left.length === 0 && <div className="p-3 text-xs text-fg-muted">Every view is docked elsewhere. Click an icon in the rail to show it, or reset the layout from the command palette.</div>}
+              {all.length > 0 && left.length === 0 && (
+                <div className="p-3 text-xs text-fg-muted">Every view is docked elsewhere. Click an icon in the rail to show it, or reset the layout from the command palette.</div>
+              )}
             </div>
           </Panel>
           {below.map((p) => {

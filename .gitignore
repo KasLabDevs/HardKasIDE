@@ -26,3 +26,6 @@ apps/desktop/src-tauri/gen/
 /.hardkas/
 
 apps/desktop/.opencode-cache/
+
+# Playwright report of the end-to-end smoke test (pnpm test:e2e)
+e2e/report/

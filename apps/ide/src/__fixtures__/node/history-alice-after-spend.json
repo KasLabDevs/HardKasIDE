@@ -1,0 +1,323 @@
+{
+  "ok": true,
+  "command": "history",
+  "mode": "cli",
+  "schema": "hardkas.addressHistory.v1",
+  "address": "kaspasim:qqlpk9rs7yag6eqj3lttzqd8vgvssz8l8fxlpdag4h7zx2rjjr8lkkerwkezn",
+  "networkId": "simnet",
+  "entries": [
+    {
+      "txId": "170ecff27b8c17303ecffde73555e7f89ef5d200e96a59402f0b9d34e56f3606",
+      "source": "node",
+      "direction": "in",
+      "receivedSompi": "10000000000",
+      "covenantBoundReceivedSompi": "0",
+      "spentSompi": "0",
+      "netSompi": "10000000000",
+      "outputs": [
+        {
+          "index": 0,
+          "amountSompi": "10000000000",
+          "spentBy": "b0d762ef59303790b2e123ca0450819e869390547a786baf9092c3928beea5d6"
+        }
+      ],
+      "spends": [],
+      "coinbase": false,
+      "covenantBound": false,
+      "acceptance": {
+        "chainBlockHash": "f7fab1f599999682d23d88cbd22bcdb08ae6726c35074e0fc88a33cb9288969a",
+        "daaScore": "3911",
+        "blueScore": "3432",
+        "previousChainBlockHash": "f94ae3e431baff7fa6a8ec2f390c1c3f0a5f2a7751ae48c4a6d5096438ba103f",
+        "confirmationsDaa": "3264",
+        "confirmationsBlue": "3034"
+      }
+    },
+    {
+      "txId": "c29d0ee95bf65c5898f189bb376a15b56496b19860500e8288be501d51f28fc9",
+      "source": "node",
+      "direction": "in",
+      "receivedSompi": "100000000",
+      "covenantBoundReceivedSompi": "0",
+      "spentSompi": "0",
+      "netSompi": "100000000",
+      "outputs": [
+        {
+          "index": 0,
+          "amountSompi": "100000000",
+          "spentBy": "b0d762ef59303790b2e123ca0450819e869390547a786baf9092c3928beea5d6"
+        }
+      ],
+      "spends": [],
+      "coinbase": false,
+      "covenantBound": false,
+      "acceptance": {
+        "chainBlockHash": "c22b351351d17c58e40a98d5445d307b2e742b90dcea592938222fbce17e7489",
+        "daaScore": "6235",
+        "blueScore": "5628",
+        "previousChainBlockHash": "c20347683510174cb9c901ae23344f83207c0d6abfd1f4a4226d665b0143b45d",
+        "confirmationsDaa": "940",
+        "confirmationsBlue": "838"
+      }
+    },
+    {
+      "txId": "b0d762ef59303790b2e123ca0450819e869390547a786baf9092c3928beea5d6",
+      "source": "node+workspace",
+      "direction": "self",
+      "receivedSompi": "9999684600",
+      "covenantBoundReceivedSompi": "0",
+      "spentSompi": "10100000000",
+      "netSompi": "-100315400",
+      "outputs": [
+        {
+          "index": 1,
+          "amountSompi": "9999684600"
+        }
+      ],
+      "spends": [
+        {
+          "outpoint": "170ecff27b8c17303ecffde73555e7f89ef5d200e96a59402f0b9d34e56f3606:0",
+          "amountSompi": "10000000000",
+          "coinbase": false,
+          "matchedBy": "node-entry"
+        },
+        {
+          "outpoint": "c29d0ee95bf65c5898f189bb376a15b56496b19860500e8288be501d51f28fc9:0",
+          "amountSompi": "100000000",
+          "coinbase": false,
+          "matchedBy": "node-entry"
+        }
+      ],
+      "coinbase": false,
+      "covenantBound": false,
+      "acceptance": {
+        "chainBlockHash": "fef90dcec6d16d84ed3f689be84ca00fae8a96290cc0404e97f60a457d751fb7",
+        "daaScore": "6288",
+        "blueScore": "5681",
+        "previousChainBlockHash": "c054176f93f1e1d8545bf52a71f6be32b0928c453a40dc8e04522c9b7f3e89b8",
+        "confirmationsDaa": "887",
+        "confirmationsBlue": "785"
+      },
+      "workspace": {
+        "submissionArtifactId": "983e6dc358ccc8af6fe88f4e3f9afeef685c1a885d1c8c827996093c6451072d",
+        "planArtifactId": "e6a9295479a475e45f2777caa2d748363db394ecacb782690bd25ad7f3e00263",
+        "submittedAt": "2026-11-22T22:53:00.974Z",
+        "state": "SUBMITTED"
+      }
+    },
+    {
+      "txId": "d54e3cf07e2593a2476fe2c043e1239445c268fd799ff56232b164d59eebbaee",
+      "source": "node",
+      "direction": "in",
+      "receivedSompi": "100000000",
+      "covenantBoundReceivedSompi": "0",
+      "spentSompi": "0",
+      "netSompi": "100000000",
+      "outputs": [
+        {
+          "index": 0,
+          "amountSompi": "100000000"
+        }
+      ],
+      "spends": [],
+      "coinbase": false,
+      "covenantBound": false,
+      "acceptance": {
+        "chainBlockHash": "fef90dcec6d16d84ed3f689be84ca00fae8a96290cc0404e97f60a457d751fb7",
+        "daaScore": "6288",
+        "blueScore": "5681",
+        "previousChainBlockHash": "c054176f93f1e1d8545bf52a71f6be32b0928c453a40dc8e04522c9b7f3e89b8",
+        "confirmationsDaa": "887",
+        "confirmationsBlue": "785"
+      }
+    },
+    {
+      "txId": "2c9ac725a6e057f03b0e33f18c1dcfdddd08379860839045a79491c3aa92c08b",
+      "source": "workspace",
+      "direction": "self",
+      "receivedSompi": "9997368100",
+      "covenantBoundReceivedSompi": "0",
+      "spentSompi": "10099684600",
+      "netSompi": "-102316500",
+      "outputs": [
+        {
+          "amountSompi": "9997368100"
+        }
+      ],
+      "spends": [
+        {
+          "outpoint": "b0d762ef59303790b2e123ca0450819e869390547a786baf9092c3928beea5d6:1",
+          "amountSompi": "9999684600",
+          "matchedBy": "workspace-plan"
+        },
+        {
+          "outpoint": "d54e3cf07e2593a2476fe2c043e1239445c268fd799ff56232b164d59eebbaee:0",
+          "amountSompi": "100000000",
+          "matchedBy": "workspace-plan"
+        }
+      ],
+      "coinbase": false,
+      "covenantBound": false,
+      "workspace": {
+        "submissionArtifactId": "675954160ef7749327056672d713d33b3891be0567cb4bcf112057067eabe4dd",
+        "planArtifactId": "695e56cf7f471b89c48355433623faf8deaf231974c26fddc47048b238289af4",
+        "submittedAt": "2026-11-22T22:54:48.288Z",
+        "state": "SUBMITTED"
+      },
+      "outsideWindow": "the workspace's evidence locates no accepting chain block for it (state SUBMITTED): the window does not hold its acceptance"
+    },
+    {
+      "txId": "3eb37777d9d8df933753c8c9e6a06a1bfe3e8d7cb5538279cbf40ebb4b018731",
+      "source": "workspace",
+      "direction": "self",
+      "receivedSompi": "3999796400",
+      "covenantBoundReceivedSompi": "0",
+      "spentSompi": "5000000000",
+      "netSompi": "-1000203600",
+      "outputs": [
+        {
+          "amountSompi": "3999796400"
+        }
+      ],
+      "spends": [
+        {
+          "outpoint": "3dc6e4635d3390bfe502c83a8f220bc31df2414d4a14e8b2cdfad6da6584dad5:38",
+          "amountSompi": "5000000000",
+          "matchedBy": "workspace-plan"
+        }
+      ],
+      "coinbase": false,
+      "covenantBound": false,
+      "workspace": {
+        "submissionArtifactId": "2910390a098bf80d252b63d16b4d77d83b95f87dcae1dd8164e6f05f50d2632e",
+        "planArtifactId": "c6681cdc856c3aeea8b6c816d265ea3bda312be3e1e08b60f5c7f6d1a0cb8448",
+        "submittedAt": "2026-10-26T01:08:44.069Z",
+        "state": "SUBMITTED"
+      },
+      "outsideWindow": "the workspace's evidence locates no accepting chain block for it (state SUBMITTED): the window does not hold its acceptance"
+    },
+    {
+      "txId": "46e49b3ca3aae823d9a5a2d69a93b7b2ce2a7064c1bf12c85415f35d30a16b7e",
+      "source": "workspace",
+      "direction": "self",
+      "receivedSompi": "3999796400",
+      "covenantBoundReceivedSompi": "0",
+      "spentSompi": "5000000000",
+      "netSompi": "-1000203600",
+      "outputs": [
+        {
+          "amountSompi": "3999796400"
+        }
+      ],
+      "spends": [
+        {
+          "outpoint": "3d6c028004ef2857ff37ffc3f1b734a1bbf7a064e377a38a9b27ed577bcc73b8:5",
+          "amountSompi": "5000000000",
+          "matchedBy": "workspace-plan"
+        }
+      ],
+      "coinbase": false,
+      "covenantBound": false,
+      "workspace": {
+        "submissionArtifactId": "895a02727f71aa39cdf09e27cfd582cf9a223d21772fba5a72d2c6abe21b187d",
+        "planArtifactId": "f139fc9e58871e8e52ed538fec3f08a4f34623d8a0530c69cb6b8b8a9fd204e6",
+        "submittedAt": "2026-10-25T20:32:33.131Z",
+        "state": "CONFIRMED",
+        "acceptingBlockHash": "e3f2f9fd0591ef81cc815a2bb6870d576df8cdbc06b5badf5a0347fd5b9b57cb"
+      },
+      "outsideWindow": "the workspace's evidence locates no accepting chain block for it (state CONFIRMED): the window does not hold its acceptance"
+    },
+    {
+      "txId": "9de8d745579e021615550eabc5e0b758f71defeef8378d0de850fecded91cac6",
+      "source": "workspace",
+      "direction": "self",
+      "receivedSompi": "3999796400",
+      "covenantBoundReceivedSompi": "0",
+      "spentSompi": "5000000000",
+      "netSompi": "-1000203600",
+      "outputs": [
+        {
+          "amountSompi": "3999796400"
+        }
+      ],
+      "spends": [
+        {
+          "outpoint": "292872fc526f03330c6a79c29374e21925eef74f86a64a94ea4287b0e3aff38d:49",
+          "amountSompi": "5000000000",
+          "matchedBy": "workspace-plan"
+        }
+      ],
+      "coinbase": false,
+      "covenantBound": false,
+      "workspace": {
+        "submissionArtifactId": "0ffb25d601dbecac6b1767d7169eef6de2b708e3cf4c7437199a0e3b51c3f711",
+        "planArtifactId": "804ebca7643e9d771369a41a444b321cf21d35658727b14c2815e52d9047de45",
+        "submittedAt": "2026-10-25T20:29:33.081Z",
+        "state": "CONFIRMED",
+        "acceptingBlockHash": "f3cc36bf5c8b3036e77e1c53097b67098334402f3b70945a97e86d5fe4d2201e"
+      },
+      "outsideWindow": "the workspace's evidence locates no accepting chain block for it (state CONFIRMED): the window does not hold its acceptance"
+    }
+  ],
+  "total": 8,
+  "page": {
+    "offset": 0,
+    "limit": 100
+  },
+  "coverage": {
+    "window": {
+      "requested": {
+        "kind": "default",
+        "lookback": 1000
+      },
+      "from": {
+        "hash": "411f8cd26f3d41aea39e78573927da24d23995705b579f30959b9127e96b79e3",
+        "daaScore": "0"
+      },
+      "firstCoveredDaaScore": "1",
+      "to": {
+        "hash": "f9da07e4a80ff7f0a2ef678b5c2eb56369deeb349323c9446f147c88f31c6d55",
+        "daaScore": "7115"
+      },
+      "chainBlocks": 166,
+      "reachedTip": true,
+      "startsAtPruningPoint": true,
+      "clampedToPruningPoint": false,
+      "requestedStartNotReached": false,
+      "startOffSelectedChain": false,
+      "stoppedBy": "tip",
+      "pruningPoint": {
+        "hash": "411f8cd26f3d41aea39e78573927da24d23995705b579f30959b9127e96b79e3",
+        "daaScore": "0",
+        "isGenesis": true
+      }
+    },
+    "spends": "node-entries",
+    "inputsWithoutEntry": 0,
+    "point": {
+      "virtualDaaScore": "7175",
+      "sinkHash": "f9da07e4a80ff7f0a2ef678b5c2eb56369deeb349323c9446f147c88f31c6d55",
+      "sinkBlueScore": "6466"
+    },
+    "node": {
+      "networkId": "simnet",
+      "isSynced": true,
+      "serverVersion": "2.1.0"
+    },
+    "workspace": {
+      "merged": true,
+      "records": 5,
+      "outsideWindow": 4,
+      "rejected": 0
+    },
+    "reads": {
+      "getBlock": 170,
+      "getVirtualChainFromBlockV2": 4,
+      "other": 5
+    },
+    "notCovered": [
+      "transactions not yet accepted by a chain block (a mempool is not history)",
+      "records of other workspaces and wallets (only this workspace's own records are merged)"
+    ]
+  }
+}

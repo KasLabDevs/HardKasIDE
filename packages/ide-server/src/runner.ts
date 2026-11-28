@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -17,7 +17,7 @@ const IDE_REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
  */
 
 /** The CLI version the IDE was built and tested against; the npx fallback pins it. */
-export const HARDKAS_CLI_VERSION = "0.13.0-rc.1";
+export const HARDKAS_CLI_VERSION = "0.13.0-rc.3";
 
 export interface CliInfo {
   /** What `hardkas --version` printed, or null when it could not run. */
@@ -95,6 +95,8 @@ export interface Job {
 
 const jobs = new Map<string, Job>();
 const emitters = new Map<string, EventEmitter>();
+/** The child process of every running job, so a long-lived one (`hardkas watch`) can be stopped on request. */
+const children = new Map<string, ChildProcess>();
 const MAX_JOBS = 200;
 
 interface Resolved {
@@ -241,6 +243,7 @@ export async function startJob(options: RunOptions): Promise<Job> {
     finish(job, emitter, 1, String(error));
     return job;
   }
+  children.set(id, child);
 
   child.stdout.on("data", (chunk: Buffer) => {
     const text = chunk.toString("utf8");
@@ -263,8 +266,39 @@ export async function startJob(options: RunOptions): Promise<Job> {
   return job;
 }
 
+/**
+ * Stops a running job's process. Returns false when the job is unknown or already over. The exit is reported
+ * through the job's normal "close" path, so followers see `exit` and `done` like for any other end.
+ *
+ * On Windows `child.kill()` only reaches the process it spawned: with `shell: true` that is cmd.exe, and the
+ * CLI it started would keep running (and keep the node's wRPC subscription open), so the whole tree is ended
+ * with `taskkill /T`. Elsewhere SIGTERM first, SIGKILL if the process is still there after a few seconds.
+ */
+export function killJob(id: string): boolean {
+  const job = jobs.get(id);
+  const child = children.get(id);
+  if (!job || job.status !== "running" || !child || child.pid === undefined) return false;
+  job.events.push({ type: "stderr", data: "stopped by the IDE\n", at: new Date().toISOString() });
+  emitters.get(id)?.emit("event", job.events[job.events.length - 1]);
+  if (process.platform === "win32") {
+    try {
+      spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }).on("error", () => child.kill());
+    } catch {
+      child.kill();
+    }
+  } else {
+    child.kill("SIGTERM");
+    const force = setTimeout(() => {
+      if (jobs.get(id)?.status === "running") child.kill("SIGKILL");
+    }, 3000);
+    child.once("close", () => clearTimeout(force));
+  }
+  return true;
+}
+
 function finish(job: Job, emitter: EventEmitter, code: number, errorText: string | null): void {
   if (job.status !== "running") return;
+  children.delete(job.id);
   job.exitCode = code;
   job.endedAt = new Date().toISOString();
   job.status = code === 0 ? "succeeded" : "failed";
@@ -556,6 +590,9 @@ export interface SilverCheckResult {
   raw?: unknown;
 }
 
+/** Where a contract's constructor values may live, next to `<name>.sil`, in the order they are tried. */
+export const SILVER_ARGS_SUFFIXES = [".constructor-args.json", ".ctor.json"] as const;
+
 function stripSilComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, "");
 }
@@ -569,16 +606,19 @@ function dummyValueForSilType(silType: string): { kind: string; value: unknown }
   if (t === "pubkey" || t === "bytes32") {
     return { kind: "bytes", value: Array.from({ length: 32 }, (_, i) => (i === 0 ? 2 : 17)) };
   }
-  const fixedBytes = /^bytes(\d+)$/.exec(t);
+  // SilverScript spells fixed byte strings `byte[32]` (older code `bytes32`); `byte[]` and `bytes` have no fixed length.
+  const fixedBytes = /^bytes(\d+)$/.exec(t) ?? /^byte\s*\[\s*(\d+)\s*\]$/.exec(t);
   if (fixedBytes) {
-    const len = Math.max(1, Math.min(64, Number(fixedBytes[1]) || 32));
+    const len = Math.max(1, Math.min(520, Number(fixedBytes[1]) || 32));
     return { kind: "bytes", value: Array.from({ length: len }, () => 17) };
   }
-  if (t === "bytes") return { kind: "bytes", value: Array.from({ length: 32 }, () => 17) };
+  if (t === "bytes" || /^byte\s*\[\s*\]$/.test(t)) return { kind: "bytes", value: Array.from({ length: 32 }, () => 17) };
+  if (t === "sig" || t === "datasig") return { kind: "bytes", value: Array.from({ length: 64 }, () => 17) };
   return { kind: "int", value: 1 };
 }
 
-function synthesizeDummyConstructorArgs(source: string): string | null {
+/** Typed placeholder values for every constructor parameter, so a parameterised contract can be checked without args. */
+export function synthesizeDummyConstructorArgs(source: string): string | null {
   const clean = stripSilComments(source);
   const match = /\bcontract\s+[A-Za-z_]\w*\s*\(([^)]*)\)\s*\{/.exec(clean);
   if (!match) return null;
@@ -620,12 +660,13 @@ export async function checkSilverSource(options: SilverCheckOptions): Promise<Si
     await fs.writeFile(tmpSil, sourceText, "utf8");
 
     let argsText = options.constructorArgs?.trim() || "";
-    if (!argsText) {
-      const siblingArgs = `${resolvedTarget.replace(/\.sil$/i, "")}.constructor-args.json`;
+    // The project's own constructor values first: `<name>.constructor-args.json` (HardKas fixtures) or `<name>.ctor.json`.
+    for (const suffix of SILVER_ARGS_SUFFIXES) {
+      if (argsText) break;
       try {
-        argsText = (await fs.readFile(siblingArgs, "utf8")).trim();
+        argsText = (await fs.readFile(`${resolvedTarget.replace(/\.sil$/i, "")}${suffix}`, "utf8")).trim();
       } catch {
-        // No sibling constructor-args.json; synthesize dummy typed values so parameterized contracts compile.
+        // not there: try the next name, then synthesize dummy typed values so parameterized contracts compile.
       }
     }
     if (!argsText) {

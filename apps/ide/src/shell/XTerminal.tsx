@@ -3,26 +3,34 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
+import { api } from "@/api/client";
 import { useIde } from "@/store/ide";
+import { useScripts, type TerminalTab } from "@/store/scripts";
 
 interface Props {
-  /** Stable id so the PTY survives tab switches (the component stays mounted, hidden). */
-  id: string;
+  tab: TerminalTab;
   visible: boolean;
-  onExit?: (id: string) => void;
 }
 
+type WsFrame =
+  | { type: "ready"; id: string; shell: string; cwd: string; commandLine?: string }
+  | { type: "data"; data: string }
+  | { type: "exit"; exitCode: number | null; stopped?: boolean }
+  | { type: "error"; message: string };
+
 /**
- * A real shell (VS Code-style integrated terminal): xterm.js in the browser,
- * a PTY in ide-server, connected over WebSocket at /api/terminal/ws.
+ * A real PTY shell or package.json script runner in ide-server over /api/terminal/ws.
  */
-export function XTerminal({ id, visible, onExit }: Props) {
+export function XTerminal({ tab, visible }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const workspace = useIde((s) => s.workspace);
 
+  const runSeq = tab.scriptRun?.runSeq ?? 1;
+
+  // Create the xterm canvas once per terminal tab so re-runs keep scrollback visible cleanly.
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -62,22 +70,13 @@ export function XTerminal({ id, visible, onExit }: Props) {
       // host not laid out yet; the resize observer will fit later
     }
 
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const params = new URLSearchParams({ cols: String(term.cols), rows: String(term.rows) });
-    if (workspace?.root) params.set("cwd", workspace.root);
-    const ws = new WebSocket(`${proto}://${location.host}/api/terminal/ws?${params.toString()}`);
-    wsRef.current = ws;
-    ws.onmessage = (e) => term.write(typeof e.data === "string" ? e.data : "");
-    ws.onclose = () => {
-      term.write("\r\n\x1b[2m[terminal closed]\x1b[0m\r\n");
-      onExit?.(id);
-    };
-    ws.onerror = () => term.write("\r\n\x1b[31m[could not connect to ide-server terminal]\x1b[0m\r\n");
     const disposeData = term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "input", data }));
+      const ws = wsRef.current;
+      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "input", data }));
     });
     const disposeResize = term.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "resize", cols, rows }));
+      const ws = wsRef.current;
+      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "resize", cols, rows }));
     });
 
     const observer = new ResizeObserver(() => {
@@ -94,19 +93,83 @@ export function XTerminal({ id, visible, onExit }: Props) {
       observer.disconnect();
       disposeData.dispose();
       disposeResize.dispose();
-      // An unmount (including React StrictMode's dev double-mount) must not count as the
-      // shell exiting: detach the handlers so onExit only fires for server-initiated closes.
+      term.dispose();
+      termRef.current = null;
+      fitRef.current = null;
+    };
+  }, [tab.id]);
+
+  // Connect WebSocket session (and reconnect cleanly when re-running a script).
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    if (runSeq > 1 && tab.scriptRun) {
+      term.write(`\r\n\x1b[2m──────── re-running ${tab.scriptRun.commandLine} ────────\x1b[0m\r\n`);
+    }
+
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const params = new URLSearchParams({
+      cols: String(term.cols || 100),
+      rows: String(term.rows || 30),
+      events: "json"
+    });
+    const tabId = api.tabId();
+    if (tabId) params.set("tab", tabId);
+    if (tab.scriptRun) {
+      params.set("pkgDir", tab.scriptRun.pkgRelDir);
+      params.set("script", tab.scriptRun.scriptName);
+    } else if (tab.cwd ?? workspace?.root) {
+      params.set("cwd", tab.cwd ?? workspace!.root!);
+    }
+
+    const ws = new WebSocket(`${proto}://${location.host}/api/terminal/ws?${params.toString()}`);
+    wsRef.current = ws;
+    let exited = false;
+    const store = useScripts.getState;
+
+    ws.onmessage = (e) => {
+      const raw = typeof e.data === "string" ? e.data : "";
+      try {
+        const frame = JSON.parse(raw) as WsFrame;
+        if (frame.type === "ready") {
+          store().setSessionId(tab.id, frame.id);
+        } else if (frame.type === "data") {
+          term.write(frame.data);
+          store().appendTerminalOutput(tab.id, frame.data);
+        } else if (frame.type === "exit") {
+          exited = true;
+          store().markExited(tab.id, frame.exitCode, Boolean(frame.stopped));
+        } else if (frame.type === "error") {
+          exited = true;
+          term.write(`\r\n\x1b[31m[${frame.message}]\x1b[0m\r\n`);
+          store().markExited(tab.id, 1, false);
+        }
+      } catch {
+        term.write(raw);
+      }
+    };
+
+    ws.onclose = () => {
+      if (!exited) {
+        term.write("\r\n\x1b[2m[terminal closed]\x1b[0m\r\n");
+        store().markExited(tab.id, null, false);
+      }
+    };
+
+    ws.onerror = () => {
+      term.write("\r\n\x1b[31m[could not connect to ide-server terminal]\x1b[0m\r\n");
+    };
+
+    return () => {
       ws.onclose = null;
       ws.onmessage = null;
       ws.onerror = null;
       ws.close();
-      term.dispose();
-      termRef.current = null;
-      wsRef.current = null;
+      if (wsRef.current === ws) wsRef.current = null;
     };
-    // The PTY is bound to this component instance; cwd changes mean a new workspace, i.e. a new mount.
+    // Only reconnect when tab identity or runSeq changes cleanly; script metadata stays aligned with runSeq.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [tab.id, runSeq]);
 
   // Re-fit and focus when the tab becomes visible.
   useEffect(() => {

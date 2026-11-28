@@ -414,7 +414,10 @@ export async function ensureWorkspaceBase(
       pkg = {};
     }
   }
-  pkg.name = (pkg.name as string) || projectName.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
+  const existingPkgName = typeof pkg.name === "string" ? pkg.name.trim() : "";
+  pkg.name = existingPkgName && existingPkgName !== "hardkas-project"
+    ? existingPkgName
+    : projectName.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
   pkg.version = (pkg.version as string) || "0.1.0";
   pkg.private = true;
   pkg.type = (pkg.type as string) || "module";

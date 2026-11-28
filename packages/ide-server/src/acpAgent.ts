@@ -6,6 +6,7 @@ import { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { client, ndJsonStream } from "@agentclientprotocol/sdk";
 import { isAgentForbidden } from "./secretPaths.js";
+import { currentWorkspaceTab } from "./workspace.js";
 
 /**
  * The assistant's "OpenCode" provider: instead of the IDE's own model client and agent loop, the IDE hosts an
@@ -76,6 +77,7 @@ const POLICY = `{
     { "action": "*", "resource": "*.env", "effect": "deny" },
     { "action": "*", "resource": "*.env.*", "effect": "deny" },
     { "action": "*", "resource": "*keystore*", "effect": "deny" },
+    { "action": "*", "resource": "*auth.json*", "effect": "deny" },
     { "action": "*", "resource": "*backups*", "effect": "deny" },
     { "action": "*", "resource": "*id_rsa*", "effect": "deny" },
     { "action": "*", "resource": "*id_ed25519*", "effect": "deny" },
@@ -109,7 +111,7 @@ export function resolveOpenCode(): string | null {
 }
 
 /** The IDE MCP server, started by the agent with this server's own Node. */
-function mcpServer(port: number): { name: string; command: string; args: string[]; env: Array<{ name: string; value: string }> } | null {
+function mcpServer(port: number, tabId?: string): { name: string; command: string; args: string[]; env: Array<{ name: string; value: string }> } | null {
   const stage = stageDir();
   const candidates = [
     stage ? path.join(stage, "mcp", "dist", "index.js") : "",
@@ -117,11 +119,13 @@ function mcpServer(port: number): { name: string; command: string; args: string[
   ].filter(Boolean);
   const entry = candidates.find((p) => existsSync(p));
   if (!entry) return null;
-  return { name: "hardkas-ide", command: process.execPath, args: [entry], env: [{ name: "HARDKAS_IDE_URL", value: `http://127.0.0.1:${port}` }] };
+  const env = [{ name: "HARDKAS_IDE_URL", value: `http://127.0.0.1:${port}` }];
+  if (tabId) env.push({ name: "HARDKAS_IDE_TAB", value: tabId });
+  return { name: "hardkas-ide", command: process.execPath, args: [entry], env };
 }
 
 /** ~/.hardkas-ide/opencode: the agent's own config/data home, separate from any OpenCode the user runs. */
-async function agentHome(): Promise<string> {
+export async function agentHome(): Promise<string> {
   const home = path.join(os.homedir(), ".hardkas-ide", "opencode");
   const configDir = path.join(home, ".config", "opencode");
   await fs.mkdir(configDir, { recursive: true });
@@ -233,7 +237,7 @@ export async function* runAcpTurn(o: AcpTurnOptions): AsyncGenerator<AcpEvent> {
     return;
   }
   const port = Number(process.env.HARDKAS_IDE_PORT ?? 7421);
-  const mcp = mcpServer(port);
+  const mcp = mcpServer(port, currentWorkspaceTab());
   const home = await agentHome();
   const env = agentEnv(home);
 
@@ -329,7 +333,7 @@ export async function* runAcpTurn(o: AcpTurnOptions): AsyncGenerator<AcpEvent> {
     const init = await ctx.request("initialize", {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false },
-      clientInfo: { name: "hardkas-ide", version: "0.3.0" }
+      clientInfo: { name: "hardkas-ide", version: "0.4.0" }
     });
     const session = await ctx.buildSession({ cwd: o.cwd, mcpServers: mcp ? [mcp] : [] }).start();
     const options: Array<{ id: string; name?: string }> = session.newSessionResponse.configOptions ?? [];

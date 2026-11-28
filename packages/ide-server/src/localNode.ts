@@ -4,7 +4,7 @@ import path from "node:path";
 /**
  * The local node is HardKas' own: one rusty-kaspad container (and its CPU miner) per machine, the same one the
  * HardKas CLI, its test gates and any other project on this machine use. The IDE therefore changes it only
- * through the HardKas CLI (`localnet start|stop`, `node reset --yes`), with two narrow exceptions that the CLI
+ * through the HardKas CLI (`localnet start|stop|reset`), with two narrow exceptions that the CLI
  * has no command for: starting and stopping the miner container, and only after checking it is HardKas' miner.
  */
 
@@ -110,7 +110,7 @@ export async function resetWorkspaceChainState(root: string, now: Date = new Dat
       await fs.rm(p, { recursive: true, force: true });
       wiped.push(`.hardkas/${rel}`);
     } catch {
-      // a locked file: `hardkas node reset` reports what it could not remove
+      // a locked file: `hardkas localnet reset` reports what it could not remove
     }
   }
 

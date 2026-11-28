@@ -5,6 +5,15 @@ import path from "node:path";
 import * as wsfs from "./fs.js";
 import { startJob, waitForJob } from "./runner.js";
 import { runAcpTurn } from "./acpAgent.js";
+import { getAuthStatus, listAgentModels } from "./acpAuth.js";
+import {
+  formatCooldownRemaining,
+  getActiveCooldowns,
+  handleModelTurnFailure,
+  markModelSucceeded,
+  OPENCODE_AUTO_MODEL,
+  selectBestOpenCodeModels
+} from "./opencodeModels.js";
 import { getRoot, requireTrusted } from "./workspace.js";
 import { deleteApiKey, hasStoredKey, isKeyProvider, KEY_ENV, originOf, resolveApiKey, saveApiKey, type KeyProvider, type KeySource } from "./secrets.js";
 import { isAgentForbidden } from "./secretPaths.js";
@@ -32,11 +41,14 @@ const DOCS_TTL_MS = 24 * 60 * 60 * 1000;
 
 export type Provider = "opencode" | "anthropic" | "openai";
 export type DocsMode = "off" | "core" | "full";
+export type OpenAiAuthMode = "oauth" | "api";
 
 export interface AssistantConfig {
   provider: Provider;
   baseUrl: string;
   model: string;
+  /** Whether the OpenAI provider runs via ChatGPT browser/device login ("oauth") or API key / local URL ("api"). */
+  openaiAuthMode?: OpenAiAuthMode;
   /** The key in use for this provider, resolved on load (environment, then credential store). Never written to the file. */
   apiKey: string;
   /** Where apiKey came from; null when there is none. Not written to the file either. */
@@ -50,6 +62,8 @@ export interface AssistantConfig {
    * Until then the OpenCode provider sends nothing.
    */
   opencodeConsent: boolean;
+  /** Automatically fall back down OpenCode free models when the active free model hits a rate/quota limit. */
+  opencodeAutoFallback?: boolean;
 }
 
 // The default free model is one whose provider keeps nothing and does not train on it (opencode.ai/docs/zen).
@@ -59,7 +73,7 @@ const DEFAULTS: Record<Provider, { baseUrl: string; model: string }> = {
   openai: { baseUrl: "https://api.openai.com/v1", model: "" }
 };
 
-export const defaultConfig: AssistantConfig = { provider: "opencode", baseUrl: DEFAULTS.opencode.baseUrl, model: DEFAULTS.opencode.model, apiKey: "", keySource: null, docs: "core", maxTokens: 4096, opencodeConsent: false };
+export const defaultConfig: AssistantConfig = { provider: "opencode", baseUrl: DEFAULTS.opencode.baseUrl, model: DEFAULTS.opencode.model, apiKey: "", keySource: null, docs: "core", maxTokens: 4096, opencodeConsent: false, opencodeAutoFallback: true };
 
 export function providerDefaults(): typeof DEFAULTS {
   return DEFAULTS;
@@ -107,6 +121,72 @@ export async function loadConfig(): Promise<AssistantConfig> {
   return { ...base, keyBoundTo: resolved.boundTo };
 }
 
+export interface ProviderKeyCommands {
+  anthropic: {
+    envVar: "ANTHROPIC_API_KEY";
+    baseUrlVar: "ANTHROPIC_BASE_URL";
+    command: string;
+    powershellCommand: string;
+    posixCommand: string;
+    liveDetection: boolean;
+  };
+}
+
+/** Generic OS commands for setting the Anthropic environment variable (no custom wrapper script needed). */
+export function providerKeyCommands(): ProviderKeyCommands {
+  const isWin = process.platform === "win32";
+  return {
+    anthropic: {
+      envVar: "ANTHROPIC_API_KEY",
+      baseUrlVar: "ANTHROPIC_BASE_URL",
+      command: isWin ? 'setx ANTHROPIC_API_KEY "sk-ant-..."' : 'export ANTHROPIC_API_KEY="sk-ant-..."',
+      powershellCommand: 'setx ANTHROPIC_API_KEY "sk-ant-..."',
+      posixCommand: 'export ANTHROPIC_API_KEY="sk-ant-..."',
+      liveDetection: isWin
+    }
+  };
+}
+
+/** Safe non-secret key status for a provider so Settings reflects OS keyring / env keys before saving provider switch. */
+export interface ProviderKeyState {
+  hasKey: boolean;
+  keyHint: string;
+  keySource: KeySource | null;
+  keyBoundTo: string | null;
+}
+
+export async function providerKeyStates(current?: AssistantConfig): Promise<Record<KeyProvider, ProviderKeyState>> {
+  const cfg = current ?? (await loadConfig());
+  const read = async (p: KeyProvider): Promise<ProviderKeyState> => {
+    const baseUrl = cfg.provider === p ? cfg.baseUrl : DEFAULTS[p].baseUrl;
+    const resolved = await resolveApiKey(p, baseUrl);
+    if (resolved.key) {
+      return {
+        hasKey: true,
+        keyHint: `…${resolved.key.slice(-4)}`,
+        keySource: resolved.source,
+        keyBoundTo: null
+      };
+    }
+    if (cfg.provider === p && cfg.keySource === "file" && cfg.apiKey) {
+      return {
+        hasKey: true,
+        keyHint: `…${cfg.apiKey.slice(-4)}`,
+        keySource: "file",
+        keyBoundTo: null
+      };
+    }
+    return {
+      hasKey: false,
+      keyHint: "",
+      keySource: null,
+      keyBoundTo: resolved.boundTo
+    };
+  };
+  const [anthropic, openai] = await Promise.all([read("anthropic"), read("openai")]);
+  return { anthropic, openai };
+}
+
 /** What the browser may see: everything except the key. */
 export function publicConfig(c: AssistantConfig) {
   const { apiKey, ...rest } = c;
@@ -125,8 +205,10 @@ export async function saveConfig(patch: Partial<AssistantConfig> & { clearKey?: 
   if (typeof patch.baseUrl === "string") next.baseUrl = patch.baseUrl.trim().replace(/\/+$/, "");
   if (typeof patch.model === "string") next.model = patch.model.trim();
   if (patch.docs === "off" || patch.docs === "core" || patch.docs === "full") next.docs = patch.docs;
+  if (patch.openaiAuthMode === "oauth" || patch.openaiAuthMode === "api") next.openaiAuthMode = patch.openaiAuthMode;
   if (typeof patch.maxTokens === "number" && patch.maxTokens >= 256 && patch.maxTokens <= 32000) next.maxTokens = Math.floor(patch.maxTokens);
   if (typeof patch.opencodeConsent === "boolean") next.opencodeConsent = patch.opencodeConsent;
+  if (typeof patch.opencodeAutoFallback === "boolean") next.opencodeAutoFallback = patch.opencodeAutoFallback;
   if (next.baseUrl && !/^https?:\/\//.test(next.baseUrl)) throw new Error("Base URL must start with http:// or https://");
 
   // The key goes to the credential store of the provider being saved, never into the file.
@@ -261,8 +343,27 @@ function chatPromptForAgent(req: ChatRequest): string {
     .join("\n");
 }
 
+function sanitizeHistory(history?: ChatMessage[]): ChatMessage[] {
+  if (!Array.isArray(history)) return [];
+  return history
+    .filter((m): m is ChatMessage => Boolean(m) && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim().length > 0)
+    .slice(-10)
+    .map((m) => ({
+      role: m.role,
+      content: m.content.length > 6000 ? m.content.slice(0, 6000) + "\n…(truncated)" : m.content
+    }));
+}
+
 function agentPromptForAgent(req: AgentRequest): string {
-  return [...HARDKAS_BRIEF, ...contextLines(req.context), `\nGoal: ${req.goal.trim()}`].join("\n");
+  const prior = sanitizeHistory(req.history).map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`);
+  return [
+    ...HARDKAS_BRIEF,
+    ...contextLines(req.context),
+    prior.length ? `\nConversation so far:\n${prior.join("\n\n")}` : "",
+    `\nGoal: ${req.goal.trim()}`
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export class AssistantError extends Error {
@@ -286,27 +387,94 @@ export function requireOpenCodeConsent(cfg: AssistantConfig): void {
   }
 }
 
+export function isChatGptModel(model: string): boolean {
+  return /^openai\/\S+$/i.test(model.trim());
+}
+
+function usesAcpBackend(cfg: AssistantConfig): boolean {
+  return cfg.provider === "opencode" || (cfg.provider === "openai" && cfg.openaiAuthMode === "oauth");
+}
+
+export async function ensureAcpReady(
+  cfg: AssistantConfig,
+  readAuth: () => Promise<{ accounts: Array<{ target: string }> }> = () => getAuthStatus(false)
+): Promise<void> {
+  if (cfg.provider === "opencode") {
+    requireOpenCodeConsent(cfg);
+    return;
+  }
+  const status = await readAuth();
+  if (!status.accounts.some((a) => a.target === "openai")) {
+    throw new AssistantError(400, "AUTH_REQUIRED", "Sign in with ChatGPT in the assistant settings first (no API key needed).");
+  }
+  // Never pass an empty or non-openai/* model to OpenCode ACP here: OpenCode would otherwise fall back to an OpenCode-hosted model without consent.
+  if (!isChatGptModel(cfg.model)) {
+    throw new AssistantError(
+      400,
+      "MODEL_REQUIRED",
+      "Pick an openai/… model for ChatGPT in the assistant settings first (refusing to fall back to OpenCode's default model)."
+    );
+  }
+}
+
+async function resolveAcpAttempts(cfg: AssistantConfig): Promise<string[]> {
+  if (cfg.provider !== "opencode") return [cfg.model];
+  const [availableModels, cooldowns] = await Promise.all([
+    listAgentModels().catch(() => [] as string[]),
+    getActiveCooldowns().catch(() => [])
+  ]);
+  const sel = selectBestOpenCodeModels({
+    configuredModel: cfg.model,
+    availableModels,
+    cooldowns,
+    autoFailover: cfg.opencodeAutoFallback !== false
+  });
+  return sel.attempts.length > 0 ? sel.attempts : [cfg.model || OPENCODE_AUTO_MODEL];
+}
+
 /** Streams the model's answer as text deltas. Throws AssistantError before the first byte for config problems. */
 export async function* streamChat(req: ChatRequest, signal: AbortSignal): AsyncGenerator<{ type: "delta"; text: string } | { type: "meta"; docs: { mode: DocsMode; chars: number; stale: boolean } | null; model: string }> {
   const cfg = await loadConfig();
-  if (cfg.provider === "opencode") {
-    requireOpenCodeConsent(cfg);
+  if (usesAcpBackend(cfg)) {
+    await ensureAcpReady(cfg);
     // The hosted agent reads the open project: only one the user trusts (with no project open it runs in an empty folder).
     if (getRoot()) await requireTrusted();
     if (!req.messages?.length) throw new AssistantError(400, "BAD_REQUEST", "messages is required");
-    yield { type: "meta", docs: null, model: cfg.model || "opencode default" };
-    let produced = false;
-    // Chat is read-only ("plan" mode): any permission request is declined without asking.
-    // With no project open, the agent starts in an empty folder of its own, never in the user's home.
     const noProject = path.join(HOME, "opencode", "no-project");
     const chatCwd: string = getRoot() ?? (await fs.mkdir(noProject, { recursive: true }), noProject);
-    for await (const ev of runAcpTurn({ cwd: chatCwd, prompt: chatPromptForAgent(req), model: cfg.model, mode: "plan", streamText: true, decide: async () => false, signal })) {
-      if (ev.type === "delta") {
-        produced = true;
-        yield ev;
-      } else if (ev.type === "done" && !ev.ok && !produced) {
-        throw new AssistantError(502, "AGENT_FAILED", ev.summary);
+    const candidates = await resolveAcpAttempts(cfg);
+
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i];
+      yield { type: "meta", docs: null, model: candidate || "opencode default" };
+      let produced = false;
+      let retryNext = false;
+
+      // Chat is read-only ("plan" mode): any permission request is declined without asking.
+      // With no project open, the agent starts in an empty folder of its own, never in the user's home.
+      for await (const ev of runAcpTurn({ cwd: chatCwd, prompt: chatPromptForAgent(req), model: candidate, mode: "plan", streamText: true, decide: async () => false, signal })) {
+        if (ev.type === "delta") {
+          if (!produced) {
+            produced = true;
+            if (cfg.provider === "opencode") void markModelSucceeded(candidate);
+          }
+          yield ev;
+        } else if (ev.type === "done") {
+          if (ev.ok) {
+            if (cfg.provider === "opencode") void markModelSucceeded(candidate);
+            return;
+          }
+          if (!produced) {
+            const outcome = cfg.provider === "opencode" ? await handleModelTurnFailure(candidate, ev.summary) : null;
+            if (outcome?.retryNext && i + 1 < candidates.length && !signal.aborted) {
+              retryNext = true;
+              break;
+            }
+            throw new AssistantError(502, "AGENT_FAILED", ev.summary);
+          }
+        }
       }
+      if (!retryNext) return;
     }
     return;
   }
@@ -421,6 +589,7 @@ async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator<string
 
 export interface AgentRequest {
   goal: string;
+  history?: ChatMessage[];
   context?: { workspace?: string; environment?: string; file?: { path: string; content: string } | null };
 }
 
@@ -700,26 +869,63 @@ export async function* streamAgent(req: AgentRequest, signal: AbortSignal): Asyn
   const cfg = await loadConfig();
   // Any agent edits files and runs the project's tools: only in a folder the user trusts.
   await requireTrusted();
-  if (cfg.provider === "opencode") {
-    requireOpenCodeConsent(cfg);
+  if (usesAcpBackend(cfg)) {
+    await ensureAcpReady(cfg);
     if (!req.goal?.trim()) throw new AssistantError(400, "BAD_REQUEST", "goal is required");
     const root = getRoot();
     if (!root) throw new AssistantError(409, "NO_WORKSPACE", "Open a project first: the agent works inside the open project.");
-    const run = { autoApprove: false };
-    for await (const ev of runAcpTurn({
-      cwd: root,
-      prompt: agentPromptForAgent(req),
-      model: cfg.model,
-      mode: "build",
-      shouldAsk: () => !run.autoApprove,
-      decide: async (r) => {
-        const answer = await waitForConfirm(r.id, signal);
-        if (answer.approved && answer.allForRun) run.autoApprove = true;
-        return answer.approved;
-      },
-      signal
-    })) {
-      if (ev.type !== "delta") yield ev;
+    const candidates = await resolveAcpAttempts(cfg);
+
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i];
+      const run = { autoApprove: false };
+      let hasProgress = false;
+      let retryNext = false;
+
+      for await (const ev of runAcpTurn({
+        cwd: root,
+        prompt: agentPromptForAgent(req),
+        model: candidate,
+        mode: "build",
+        shouldAsk: () => !run.autoApprove,
+        decide: async (r) => {
+          hasProgress = true;
+          const answer = await waitForConfirm(r.id, signal);
+          if (answer.approved && answer.allForRun) run.autoApprove = true;
+          return answer.approved;
+        },
+        signal
+      })) {
+        if (ev.type === "step" || ev.type === "confirm") hasProgress = true;
+        if (ev.type === "done") {
+          if (ev.ok) {
+            if (cfg.provider === "opencode") void markModelSucceeded(candidate);
+            yield ev;
+            return;
+          }
+          if (!hasProgress && cfg.provider === "opencode") {
+            const outcome = await handleModelTurnFailure(candidate, ev.summary);
+            const next = candidates[i + 1];
+            if (outcome.retryNext && next && !signal.aborted) {
+              const shortCur = candidate.split("/").pop() ?? candidate;
+              const shortNext = next.split("/").pop() ?? next;
+              const detail = outcome.cooldown
+                ? `${outcome.cooldown.reason} · resets in ${formatCooldownRemaining(outcome.cooldown.retryAt)}`
+                : outcome.reason;
+              yield {
+                type: "thought",
+                text: `${shortCur} failed (${detail}). Switching automatically to ${shortNext}…`
+              };
+              retryNext = true;
+              break;
+            }
+          }
+          yield ev;
+          return;
+        }
+        if (ev.type !== "delta") yield ev;
+      }
+      if (!retryNext) return;
     }
     return;
   }
@@ -755,8 +961,11 @@ export async function* streamAgent(req: AgentRequest, signal: AbortSignal): Asyn
   let stepCount = 0;
   const run = { autoApprove: false };
 
+  const priorMessages = sanitizeHistory(req.history);
+  const goalWithContext = [...contextLines(req.context), req.goal].filter(Boolean).join("\n\n");
+
   if (cfg.provider === "anthropic") {
-    const messages: Array<any> = [{ role: "user", content: req.goal }];
+    const messages: Array<any> = [...priorMessages, { role: "user", content: goalWithContext }];
     while (stepCount < MAX_STEPS) {
       if (signal.aborted) return;
       stepCount++;
@@ -795,7 +1004,7 @@ export async function* streamAgent(req: AgentRequest, signal: AbortSignal): Asyn
   }
 
   // OpenAI / compatible
-  const messages: Array<any> = [{ role: "user", content: req.goal }];
+  const messages: Array<any> = [...priorMessages, { role: "user", content: goalWithContext }];
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (cfg.apiKey) headers.authorization = `Bearer ${cfg.apiKey}`;
 

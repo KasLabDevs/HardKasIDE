@@ -24,10 +24,17 @@ async function reloadIfClean(path: string): Promise<void> {
   }
 }
 
+function recentHistory(excludeId?: number): Array<{ role: "user" | "assistant"; content: string }> {
+  return useAssistant
+    .getState()
+    .turns.filter((t) => t.id !== excludeId && !t.streaming && !t.error && t.content.trim().length > 0)
+    .slice(-10)
+    .map((t) => ({ role: t.role, content: t.content }));
+}
+
 /**
- * Chat assistant, model-agnostic and grounded in the official Kaspa docs (docs.kaspa.org/llms.txt).
- * It can only chat: it never runs commands or edits files; code in answers has Copy / Insert / Save buttons
- * and the user decides. Keys stay on ide-server; the browser only ever sees "hasKey".
+ * Claude Code / Gemini-style AI workbench assistant: unified multi-turn Ask + Agent sessions grounded in
+ * official Kaspa docs (docs.kaspa.org/llms.txt). Keys stay on ide-server; commands require explicit approval.
  */
 export class AssistantPlugin extends Plugin {
   view = AssistantPanel;
@@ -37,17 +44,18 @@ export class AssistantPlugin extends Plugin {
     super({
       name: "assistant",
       displayName: "Assistant",
-      description: "Chat about Kaspa and SilverScript, grounded in the official docs",
+      description: "AI chat and autonomous coding agent grounded in Kaspa docs",
       location: "sidePanel",
       icon: Sparkles,
       order: 18,
-      methods: ["open", "stop", "clear", "resetAgent", "refreshConfig", "runAgent", "answerConfirm"],
+      methods: ["open", "stop", "clear", "resetAgent", "refreshConfig", "refreshAuth", "runAgent", "answerConfirm"],
       events: ["answered", "agentFinished"]
     });
   }
 
   async onActivation(): Promise<void> {
-    await this.refreshConfig();
+    // Load persisted config/auth asynchronously so plugin activation never delays IDE first paint.
+    void this.refreshConfig();
   }
 
   onDeactivation(): void {
@@ -56,15 +64,6 @@ export class AssistantPlugin extends Plugin {
 
   open(): void {
     useIde.getState().revealPlugin("assistant", "Assistant");
-  }
-
-  async refreshConfig(): Promise<void> {
-    try {
-      const { config, defaults } = await api.assistant.config();
-      useAssistant.getState().setConfig(config, defaults);
-    } catch {
-      // ide-server down: the panel shows the connection problem when you send
-    }
   }
 
   stop(): void {
@@ -76,12 +75,52 @@ export class AssistantPlugin extends Plugin {
     useAssistant.getState().clear();
   }
 
-  /** Approves or declines the terminal command the agent is waiting on. */
+  /** Kept for backward compatibility; clears the current conversation cleanly. */
+  resetAgent(): void {
+    this.clear();
+  }
+
+  async refreshAuth(refreshModels = false): Promise<void> {
+    try {
+      const auth = await api.assistant.authStatus(refreshModels);
+      useAssistant.getState().setAuth({
+        installed: auth.installed,
+        accounts: auth.accounts,
+        models: auth.models,
+        rankedFreeModels: auth.rankedFreeModels,
+        cooldowns: auth.cooldowns
+      });
+    } catch {
+      // ide-server down or opencode unavailable: Settings surfaces auth status when opened
+    }
+  }
+
+  async clearCooldowns(model?: string): Promise<void> {
+    try {
+      await api.assistant.clearCooldowns(model);
+      await this.refreshAuth(false);
+    } catch {
+      // ignore
+    }
+  }
+
+  async refreshConfig(refreshModels = false): Promise<void> {
+    try {
+      const { config, defaults, keyCommands, keyStates } = await api.assistant.config();
+      useAssistant.getState().setConfig(config, defaults, keyCommands ?? null, keyStates ?? null);
+      void this.refreshAuth(refreshModels);
+    } catch {
+      // ide-server down: the panel surfaces configuration errors when sending
+    }
+  }
+
+  /** Approves or declines the terminal command the active agent turn is waiting on. */
   async answerConfirm(approved: boolean, allForRun = false): Promise<void> {
     const st = useAssistant.getState();
-    const pending = st.agentRun?.pendingConfirm;
-    if (!pending) return;
-    st.setAgentConfirm(null);
+    const activeTurn = [...st.turns].reverse().find((t) => t.pendingConfirm);
+    const pending = activeTurn?.pendingConfirm;
+    if (!activeTurn || !pending) return;
+    st.setConfirm(activeTurn.id, null);
     try {
       await api.assistant.agentConfirm(pending.id, approved, allForRun);
     } catch (e) {
@@ -89,36 +128,24 @@ export class AssistantPlugin extends Plugin {
     }
   }
 
-  /** Clears the agent run; a run still streaming is stopped first so its late events cannot land in the next run. */
-  resetAgent(): void {
-    this.abort?.abort();
-    useAssistant.getState().resetAgentRun();
-  }
-
-  /** Sends `text` (plus the open file when enabled) and streams the answer into the chat. */
+  /** Sends `text` (plus the open file when enabled) and streams a read-only answer into the session. */
   async ask(text: string): Promise<void> {
     const st = useAssistant.getState();
     const prompt = text.trim();
     if (!prompt || st.busy) return;
 
-    st.push("user", prompt);
-    const answerId = st.push("assistant", "", true);
-    st.setBusy(true);
-
+    const historyBefore = recentHistory();
     const ide = useIde.getState();
     const active = ide.openFiles.find((f) => f.path === ide.activeFile);
     const file = st.includeFile && active && active.kind !== "view" && !SENSITIVE.test(active.path) ? { path: active.path, content: active.content } : null;
-    const history = useAssistant
-      .getState()
-      .turns.filter((t) => t.id !== answerId && !t.error && t.content.trim())
-      .map((t) => ({ role: t.role, content: t.content }));
+    const answerId = st.startTurnPair("chat", prompt, file?.path ?? null);
 
     this.abort = new AbortController();
     let failed: string | undefined;
     try {
       await api.assistant.chat(
         {
-          messages: history,
+          messages: [...historyBefore, { role: "user", content: prompt }],
           context: { workspace: ide.workspace?.name ?? undefined, environment: `${envOf(ide.target).label} (network ${envOf(ide.target).networkId})`, file }
         },
         this.abort.signal,
@@ -131,24 +158,24 @@ export class AssistantPlugin extends Plugin {
     } catch (e) {
       if (!(e instanceof DOMException && e.name === "AbortError")) failed = e instanceof Error ? e.message : String(e);
     } finally {
-      useAssistant.getState().finish(answerId, failed);
-      useAssistant.getState().setBusy(false);
+      useAssistant.getState().finishTurn(answerId, { error: failed, ok: !failed });
       this.abort = null;
+      if (useAssistant.getState().config?.provider === "opencode") void this.refreshAuth(false);
       this.emit("answered");
     }
   }
 
-  /** Runs the autonomous agent for a given goal. Executes tools, handles self-healing, and updates steps. */
+  /** Runs an autonomous agent turn inside the unified conversation, preserving prior context. */
   async runAgent(goal: string): Promise<void> {
     const st = useAssistant.getState();
     const g = goal.trim();
     if (!g || st.busy) return;
 
-    st.startAgentRun(g);
-
+    const historyBefore = recentHistory();
     const ide = useIde.getState();
     const active = ide.openFiles.find((f) => f.path === ide.activeFile);
     const file = st.includeFile && active && active.kind !== "view" && !SENSITIVE.test(active.path) ? { path: active.path, content: active.content } : null;
+    const answerId = st.startTurnPair("agent", g, file?.path ?? null);
 
     this.abort = new AbortController();
     let failed: string | undefined;
@@ -159,22 +186,24 @@ export class AssistantPlugin extends Plugin {
       await api.assistant.agent(
         {
           goal: g,
+          history: historyBefore,
           context: { workspace: ide.workspace?.name ?? undefined, environment: `${envOf(ide.target).label} (network ${envOf(ide.target).networkId})`, file }
         },
         this.abort.signal,
         (event, data) => {
           if (event === "thought" && typeof data.text === "string") {
-            useAssistant.getState().addAgentThought(data.text);
+            useAssistant.getState().addThought(answerId, data.text);
           } else if (event === "confirm" && typeof data.id === "string" && typeof data.command === "string") {
-            // The run is paused on the server until answerConfirm is called (or Stop aborts it).
-            useAssistant.getState().setAgentConfirm({ id: data.id, command: data.command });
+            useAssistant.getState().setConfirm(answerId, { id: data.id, command: data.command });
           } else if (event === "step") {
             const stepId = String(data.id ?? `step_${Date.now()}`);
             const toolName = String(data.tool ?? "");
             const stepStatus = (data.status as "running" | "succeeded" | "failed") || "running";
-            const st = useAssistant.getState();
-            if (st.agentRun?.pendingConfirm?.id === `confirm_${stepId}`) st.setAgentConfirm(null);
-            useAssistant.getState().upsertAgentStep({
+            const currentTurn = useAssistant.getState().turns.find((t) => t.id === answerId);
+            if (currentTurn?.pendingConfirm?.id === `confirm_${stepId}`) {
+              useAssistant.getState().setConfirm(answerId, null);
+            }
+            useAssistant.getState().upsertStep(answerId, {
               id: stepId,
               title: String(data.title ?? ""),
               tool: toolName,
@@ -184,9 +213,8 @@ export class AssistantPlugin extends Plugin {
               error: typeof data.error === "string" ? data.error : undefined
             });
 
-            // A file the agent wrote reloads in the editor if it is open and clean; unsaved edits are never replaced.
-            if (stepStatus === "succeeded" && toolName === "write_file" && data.input && typeof (data.input as any).path === "string") {
-              const editedPath = String((data.input as any).path).replace(/^[\/\\]+/, "");
+            if (stepStatus === "succeeded" && toolName === "write_file" && data.input && typeof (data.input as Record<string, unknown>).path === "string") {
+              const editedPath = String((data.input as Record<string, unknown>).path).replace(/^[\/\\]+/, "");
               void reloadIfClean(editedPath);
             }
           } else if (event === "done") {
@@ -197,7 +225,7 @@ export class AssistantPlugin extends Plugin {
           }
         }
       );
-      // The agent may have created files or run commands that write: refresh the tree and the clean open files.
+
       try {
         const { tree } = await api.fs.tree();
         ide.setTree(tree);
@@ -212,8 +240,14 @@ export class AssistantPlugin extends Plugin {
         failed = e instanceof Error ? e.message : String(e);
       }
     } finally {
-      useAssistant.getState().finishAgentRun(finalSummary || failed || (this.abort?.signal.aborted ? "Agent run stopped by user." : "Agent finished."), succeeded && !failed);
+      const aborted = Boolean(this.abort?.signal.aborted);
+      useAssistant.getState().finishTurn(answerId, {
+        content: finalSummary ?? (aborted ? "Stopped by user." : succeeded ? "Done." : ""),
+        error: failed ?? (aborted ? "Stopped by user." : undefined),
+        ok: succeeded && !failed && !aborted
+      });
       this.abort = null;
+      if (useAssistant.getState().config?.provider === "opencode") void this.refreshAuth(false);
       this.emit("agentFinished");
     }
   }

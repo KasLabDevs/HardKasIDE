@@ -46,6 +46,10 @@ export interface TreeNode {
   path: string;
   type: "file" | "dir";
   children?: TreeNode[];
+  /** Build output or dependencies (node_modules, dist…): listed but not read; `api.fs.dir` loads it on request. */
+  hidden?: true;
+  /** A key store: listed so people know it is there, never opened. */
+  locked?: true;
 }
 
 export interface SearchMatchLine {
@@ -112,6 +116,26 @@ export interface FrontendStackOption {
   description: string;
 }
 
+export type PackageManager = "pnpm" | "npm" | "yarn" | "bun";
+export type ScriptKind = "launch" | "deploy" | "test" | "build" | "other";
+
+export interface PackageScriptEntry {
+  name: string;
+  command: string;
+  kind: ScriptKind;
+  manager: PackageManager;
+  cliPreview: string;
+}
+
+export interface WorkspacePackageScripts {
+  id: string;
+  name: string;
+  relDir: string;
+  manifestPath: string;
+  manager: PackageManager;
+  scripts: PackageScriptEntry[];
+}
+
 /** Assistant settings as the browser sees them: the API key itself never leaves the server. */
 export interface AssistantConfigView {
   provider: "opencode" | "anthropic" | "openai";
@@ -125,8 +149,75 @@ export interface AssistantConfigView {
   keySource?: "env" | "keychain" | "file" | null;
   /** The host the saved key may be sent to (it was saved for that Base URL); null when there is no key. */
   keyBoundTo?: string | null;
+  /** Whether OpenAI uses ChatGPT browser/device login ("oauth") or API key / local URL ("api"). */
+  openaiAuthMode?: "oauth" | "api";
   /** The user agreed that prompts and the files the agent reads go to OpenCode's hosted models. */
   opencodeConsent?: boolean;
+  /** Automatically fail over across OpenCode free models when a rate limit is hit. */
+  opencodeAutoFallback?: boolean;
+}
+
+export interface AssistantKeyState {
+  hasKey: boolean;
+  keyHint: string;
+  keySource: "env" | "keychain" | "file" | null;
+  keyBoundTo: string | null;
+}
+
+export interface AssistantKeyCommands {
+  anthropic: {
+    envVar: "ANTHROPIC_API_KEY";
+    baseUrlVar: "ANTHROPIC_BASE_URL";
+    command: string;
+    powershellCommand: string;
+    posixCommand: string;
+    liveDetection: boolean;
+  };
+}
+
+export interface AssistantAuthAccount {
+  target: string;
+  label: string;
+  credentialId?: string;
+  method?: string;
+}
+
+export interface RankedOpenCodeModel {
+  id: string;
+  shortId: string;
+  name: string;
+  rank: number;
+  tier: "frontier" | "strong" | "balanced" | "fast";
+  contextWindow?: number;
+  outputLimit?: number;
+  summary: string;
+  free: boolean;
+}
+
+export interface ModelCooldownInfo {
+  model: string;
+  limitedAt: number;
+  retryAt: number;
+  reason: string;
+}
+
+export interface AssistantAuthStatus {
+  installed: boolean;
+  accounts: AssistantAuthAccount[];
+  models: string[];
+  rankedFreeModels?: RankedOpenCodeModel[];
+  cooldowns?: ModelCooldownInfo[];
+}
+
+export interface AssistantAuthSession {
+  id: string;
+  target: "opencode" | "openai";
+  method: "device" | "chatgpt-browser" | "chatgpt-headless";
+  status: "starting" | "pending" | "succeeded" | "failed" | "cancelled";
+  url?: string;
+  code?: string;
+  error?: string;
+  startedAt: number;
 }
 
 /** Which `hardkas` the server runs and whether it is the version this IDE was tested with. */
@@ -230,11 +321,78 @@ export class IdeApiError extends Error {
   }
 }
 
+const TAB_ID_KEY = "hardkas.tabId";
+const TAB_ROOT_KEY = "hardkas.tabRoot";
+
+/** Returns a stable per-browser-tab identifier (persists across reloads, isolated between tabs/windows; detached Tauri/popup windows inherit `detachTab`). */
+export function getTabId(): string | null {
+  try {
+    if (typeof window === "undefined" || typeof window.sessionStorage === "undefined") return null;
+    const urlTab = typeof window.location?.search === "string"
+      ? new URLSearchParams(window.location.search).get("detachTab")?.trim()
+      : undefined;
+    let id = urlTab || window.sessionStorage.getItem(TAB_ID_KEY)?.trim();
+    if (!id) {
+      id = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    }
+    window.sessionStorage.setItem(TAB_ID_KEY, id);
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+export function getSavedTabWorkspace(): string | null {
+  try {
+    if (typeof window === "undefined" || typeof window.sessionStorage === "undefined") return null;
+    return window.sessionStorage.getItem(TAB_ROOT_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function setSavedTabWorkspace(root: string | null): void {
+  try {
+    if (typeof window === "undefined" || typeof window.sessionStorage === "undefined") return;
+    if (root) window.sessionStorage.setItem(TAB_ROOT_KEY, root);
+    else window.sessionStorage.removeItem(TAB_ROOT_KEY);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function tabHeaders(): Record<string, string> {
+  const id = getTabId();
+  return id ? { "x-hardkas-tab": id } : {};
+}
+
+export function withTabQuery(path: string): string {
+  const id = getTabId();
+  if (!id) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}tab=${encodeURIComponent(id)}`;
+}
+
+/** fetch failed before any HTTP answer: the IDE server is not running (or restarting). */
+export const SERVER_UNREACHABLE = "SERVER_UNREACHABLE";
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) }
-  });
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...init,
+      headers: { "content-type": "application/json", ...tabHeaders(), ...(init?.headers ?? {}) }
+    });
+  } catch (e) {
+    if ((e instanceof DOMException && e.name === "AbortError") || init?.signal?.aborted) throw e;
+    throw new IdeApiError(
+      SERVER_UNREACHABLE,
+      "The HardKas IDE server is not answering. If you started it from a terminal (pnpm dev:server), start it again; in the desktop app, reopen the app. Then reload this page.",
+      0
+    );
+  }
   const text = await response.text();
   let body: unknown = null;
   try {
@@ -250,6 +408,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  tabId: () => getTabId(),
   workspace: {
     get: () => request<{ workspace: WorkspaceInfo }>("/api/workspace").then((r) => r.workspace),
     recents: () => request<{ recents: RecentEntry[]; home: string }>("/api/workspace/recents"),
@@ -261,10 +420,12 @@ export const api = {
   },
   fs: {
     tree: () => request<{ root: string; tree: TreeNode[] }>("/api/fs/tree"),
+    /** One level of a folder (sub-folders without children): how the Explorer opens node_modules, dist… */
+    dir: (path: string) => request<{ nodes: TreeNode[]; truncated: boolean }>(`/api/fs/dir?path=${encodeURIComponent(path)}`),
     read: (path: string) => request<{ content: string }>(`/api/fs/file?path=${encodeURIComponent(path)}`).then((r) => r.content),
-    /** Files under `dir` whose name ends with `suffix`, newest first. */
-    find: (dir: string, suffix: string) =>
-      request<{ files: string[] }>(`/api/fs/find?dir=${encodeURIComponent(dir)}&suffix=${encodeURIComponent(suffix)}`).then((r) => r.files),
+    /** Files under `dir` whose name ends with `suffix`, newest first; at most `limit` (the server's default is 20). */
+    find: (dir: string, suffix: string, limit?: number) =>
+      request<{ files: string[] }>(`/api/fs/find?dir=${encodeURIComponent(dir)}&suffix=${encodeURIComponent(suffix)}${limit ? `&limit=${limit}` : ""}`).then((r) => r.files),
     write: (path: string, content: string) => request<{ ok: true }>("/api/fs/file", { method: "PUT", body: JSON.stringify({ path, content }) }),
     mkdir: (path: string) => request<{ ok: true }>("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ path }) }),
     rename: (from: string, to: string) => request<{ ok: true }>("/api/fs/rename", { method: "POST", body: JSON.stringify({ from, to }) }),
@@ -272,7 +433,9 @@ export const api = {
     search: (body: WorkspaceSearchOptions) =>
       request<WorkspaceSearchResponse>("/api/fs/search", { method: "POST", body: JSON.stringify(body) }),
     replace: (body: WorkspaceSearchOptions & { replacement: string; targetFiles?: string[] }) =>
-      request<{ replacedFiles: number; replacedMatches: number }>("/api/fs/replace", { method: "POST", body: JSON.stringify(body) })
+      request<{ replacedFiles: number; replacedMatches: number }>("/api/fs/replace", { method: "POST", body: JSON.stringify(body) }),
+    intellisense: () =>
+      request<{ sourceFiles: Array<{ path: string; content: string }>; typeDefs: Array<{ path: string; content: string }>; truncated: boolean }>("/api/fs/intellisense")
   },
   devkeys: {
     /** Aliases with a keystore in .hardkas/dev-accounts (alice…erin). */
@@ -292,13 +455,48 @@ export const api = {
       request<{ job: JobSummary }>("/api/run", { method: "POST", body: JSON.stringify({ args, ...options }) }).then((r) => r.job),
     get: (id: string) => request<{ job: JobDetail }>(`/api/jobs/${id}`).then((r) => r.job),
     list: () => request<{ jobs: JobSummary[] }>("/api/jobs").then((r) => r.jobs),
+    /** Stops a running job (its process is killed); `killed` is false when it had already ended. */
+    kill: (id: string, options?: { keepalive?: boolean }) =>
+      request<{ killed: boolean; job: JobSummary }>(`/api/jobs/${id}`, { method: "DELETE", keepalive: options?.keepalive }),
+    /**
+     * Opens a job's SSE stream and hands every stdout/stderr chunk to `onEvent` as it arrives (for a long-lived
+     * command such as `hardkas watch`). `done` settles when the job ends; `close()` just stops listening.
+     */
+    open: (
+      id: string,
+      onEvent: (type: "stdout" | "stderr" | "error", data: string) => void
+    ): { done: Promise<{ status: JobSummary["status"]; exitCode: number | null; result: unknown }>; close(): void } => {
+      const source = new EventSource(withTabQuery(`/api/jobs/${id}/stream`));
+      let closed = false;
+      const done = new Promise<{ status: JobSummary["status"]; exitCode: number | null; result: unknown }>((resolve, reject) => {
+        for (const type of ["stdout", "stderr", "error"] as const) {
+          source.addEventListener(type, (e) => onEvent(type, (e as MessageEvent).data as string));
+        }
+        source.addEventListener("done", (e) => {
+          source.close();
+          resolve(JSON.parse((e as MessageEvent).data as string));
+        });
+        source.onerror = () => {
+          source.close();
+          if (!closed) reject(new Error("job stream closed unexpectedly"));
+        };
+      });
+      done.catch(() => {});
+      return {
+        done,
+        close: () => {
+          closed = true;
+          source.close();
+        }
+      };
+    },
     /** Follows a job over SSE. Resolves with the final status/result when it ends. */
     follow: (
       id: string,
       onEvent: (type: "stdout" | "stderr" | "error", data: string) => void
     ): Promise<{ status: JobSummary["status"]; exitCode: number | null; result: unknown }> =>
       new Promise((resolve, reject) => {
-        const source = new EventSource(`/api/jobs/${id}/stream`);
+        const source = new EventSource(withTabQuery(`/api/jobs/${id}/stream`));
         for (const type of ["stdout", "stderr", "error"] as const) {
           source.addEventListener(type, (e) => onEvent(type, (e as MessageEvent).data as string));
         }
@@ -342,6 +540,7 @@ export const api = {
           path?: string;
           integrityStatus?: string;
           summary?: import("@/utils/artifactSummary").ArtifactSummary;
+          keys?: string[];
           parentArtifactId?: string;
           flowId?: string;
         }>;
@@ -381,18 +580,50 @@ export const api = {
       }>(`/api/plugins/search?q=${encodeURIComponent(q)}`)
   },
   assistant: {
-    config: () => request<{ config: AssistantConfigView; defaults: Record<"opencode" | "anthropic" | "openai", { baseUrl: string; model: string }> }>("/api/assistant/config"),
+    config: () =>
+      request<{
+        config: AssistantConfigView;
+        defaults: Record<"opencode" | "anthropic" | "openai", { baseUrl: string; model: string }>;
+        keyCommands?: AssistantKeyCommands;
+        keyStates?: Record<"anthropic" | "openai", AssistantKeyState>;
+      }>("/api/assistant/config"),
     saveConfig: (patch: Partial<AssistantConfigView> & { apiKey?: string; clearKey?: boolean }) =>
-      request<{ config: AssistantConfigView }>("/api/assistant/config", { method: "PUT", body: JSON.stringify(patch) }).then((r) => r.config),
+      request<{
+        config: AssistantConfigView;
+        keyCommands?: AssistantKeyCommands;
+        keyStates?: Record<"anthropic" | "openai", AssistantKeyState>;
+      }>("/api/assistant/config", { method: "PUT", body: JSON.stringify(patch) }).then((r) => r.config),
     docs: (mode: "off" | "core" | "full") =>
       request<{ mode: string; chars: number; approxTokens: number; fetchedAt: number | null; stale: boolean; source: string }>(`/api/assistant/docs?mode=${mode}`),
+    authStatus: (refresh = false) =>
+      request<{ ok: true } & AssistantAuthStatus>(`/api/assistant/auth${refresh ? "?refresh=1" : ""}`),
+    startAuthLogin: (target: "opencode" | "openai", method?: "device" | "chatgpt-browser" | "chatgpt-headless") =>
+      request<{ ok: true; session: AssistantAuthSession }>("/api/assistant/auth/login", { method: "POST", body: JSON.stringify({ target, method }) }).then((r) => r.session),
+    pollAuthLogin: (id: string) =>
+      request<{ ok: true; session: AssistantAuthSession }>(`/api/assistant/auth/login/${encodeURIComponent(id)}`).then((r) => r.session),
+    cancelAuthLogin: (id: string) =>
+      request<{ ok: true }>(`/api/assistant/auth/login/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    logoutAuth: (target: "opencode" | "openai") =>
+      request<{ ok: true } & AssistantAuthStatus>("/api/assistant/auth/logout", { method: "POST", body: JSON.stringify({ target }) }),
+    clearCooldowns: (model?: string) =>
+      request<{ ok: true; cooldowns: ModelCooldownInfo[] }>("/api/assistant/cooldowns/clear", {
+        method: "POST",
+        body: JSON.stringify(model ? { model } : {})
+      }),
+    testConnection: (body: { provider: "anthropic" | "openai"; baseUrl?: string; apiKey?: string }) =>
+      request<{ ok: boolean; message: string; models?: string[] }>("/api/assistant/test", { method: "POST", body: JSON.stringify(body) }),
     /** Streams a chat answer; resolves when it ends. Events: meta, delta, error, done. */
     chat: async (
       body: { messages: Array<{ role: "user" | "assistant"; content: string }>; context?: unknown },
       signal: AbortSignal,
       onEvent: (event: string, data: Record<string, unknown>) => void
     ): Promise<void> => {
-      const res = await fetch("/api/assistant/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
+      const res = await fetch("/api/assistant/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...tabHeaders() },
+        body: JSON.stringify(body),
+        signal
+      });
       if (!res.ok || !res.body) throw new IdeApiError("HTTP_ERROR", `Assistant request failed (${res.status})`, res.status);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -425,11 +656,16 @@ export const api = {
       request<{ ok: true }>("/api/assistant/agent/confirm", { method: "POST", body: JSON.stringify({ id, approved, allForRun }) }),
     /** Streams an autonomous agent run; resolves when it ends. Events: step, thought, confirm, done, error. */
     agent: async (
-      body: { goal: string; context?: unknown },
+      body: { goal: string; history?: Array<{ role: "user" | "assistant"; content: string }>; context?: unknown },
       signal: AbortSignal,
       onEvent: (event: string, data: Record<string, unknown>) => void
     ): Promise<void> => {
-      const res = await fetch("/api/assistant/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
+      const res = await fetch("/api/assistant/agent", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...tabHeaders() },
+        body: JSON.stringify(body),
+        signal
+      });
       if (!res.ok || !res.body) throw new IdeApiError("HTTP_ERROR", `Agent request failed (${res.status})`, res.status);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -517,5 +753,9 @@ export const api = {
           raw?: unknown;
         };
       }>("/api/silver/check", { method: "POST", body: JSON.stringify(body) }).then((r) => r.check)
+  },
+  scripts: () => request<{ root: string; packages: WorkspacePackageScripts[] }>("/api/scripts"),
+  terminal: {
+    stop: (id: string) => request<{ stopped: boolean }>(`/api/terminal/${encodeURIComponent(id)}/stop`, { method: "POST" })
   }
 };

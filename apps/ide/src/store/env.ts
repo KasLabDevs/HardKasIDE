@@ -87,6 +87,9 @@ interface EnvState {
   /** A miner start/stop/burst in flight. */
   minerBusy: "start" | "stop" | "burst" | null;
   setMinerBusy(b: EnvState["minerBusy"]): void;
+  /** Mine a burst by itself whenever something is sent to the local node and waits for a block. On by default. */
+  autoMine: boolean;
+  setAutoMine(on: boolean): void;
   nodeBusy: string | null;
   nodeOp: NodeOp | null;
   setNodeOp(op: NodeOp | null): void;
@@ -105,6 +108,16 @@ interface EnvState {
   touch(): void;
 }
 
+const AUTO_MINE_KEY = "hardkas-ide.auto-mine";
+
+function loadAutoMine(): boolean {
+  try {
+    return localStorage.getItem(AUTO_MINE_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
 export const useEnv = create<EnvState>((set) => ({
   node: null,
   docker: null,
@@ -113,6 +126,15 @@ export const useEnv = create<EnvState>((set) => ({
   setCli: (cli) => set({ cli }),
   minerBusy: null,
   setMinerBusy: (minerBusy) => set({ minerBusy }),
+  autoMine: loadAutoMine(),
+  setAutoMine: (autoMine) => {
+    try {
+      localStorage.setItem(AUTO_MINE_KEY, autoMine ? "1" : "0");
+    } catch {
+      // not remembered: fine
+    }
+    set({ autoMine });
+  },
   nodeBusy: null,
   accounts: [],
   accountsBusy: false,

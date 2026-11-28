@@ -1,4 +1,4 @@
-import { api } from "@/api/client";
+import { api, type TreeNode } from "@/api/client";
 import { Plugin } from "@/engine/engine";
 import { languageForPath, useIde } from "@/store/ide";
 
@@ -17,8 +17,9 @@ export class FileManagerPlugin extends Plugin {
     });
   }
 
-  async onActivation(): Promise<void> {
-    await this.refresh();
+  onActivation(): void {
+    // Load the workspace tree asynchronously so plugins activate and render immediately on first paint.
+    void this.refresh();
   }
 
   async refresh(): Promise<void> {
@@ -27,7 +28,13 @@ export class FileManagerPlugin extends Plugin {
       state.setTree([]);
       return;
     }
-    const { tree } = await api.fs.tree();
+    let tree: TreeNode[];
+    try {
+      ({ tree } = await api.fs.tree());
+    } catch (e) {
+      useIde.setState({ treeLoaded: true }); // stop the Explorer's "Reading the project…": the error is reported by the caller
+      throw e;
+    }
     state.setTree(tree);
     this.emit("treeChanged", tree);
   }

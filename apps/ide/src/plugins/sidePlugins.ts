@@ -10,7 +10,7 @@ export { RunPlugin } from "./run";
 export class FilesPlugin extends Plugin {
   view = FilesPanel;
   constructor() {
-    super({ name: "files", displayName: "Explorer", location: "sidePanel", icon: Files, order: 10 });
+    super({ name: "files", displayName: "Explorer", location: "sidePanel", icon: Files, order: 10, group: "workspace" });
   }
 }
 

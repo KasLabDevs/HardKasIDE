@@ -9,6 +9,11 @@ const pkg = JSON.parse(readFileSync(path.resolve(__dirname, "package.json"), "ut
 
 // Port 5173 is fixed: the HardKas dev-server only allows CORS from :7420 and :5173.
 // The IDE never calls the dev-server directly anyway; everything goes through ide-server (:7421).
+// A second checkout (a git worktree) can run next to the first one with HARDKAS_IDE_UI_PORT and HARDKAS_IDE_PORT
+// (the ide-server then needs HARDKAS_IDE_PORT too, and the UI origin in HARDKAS_IDE_EXTRA_ORIGINS).
+const uiPort = Number(process.env.HARDKAS_IDE_UI_PORT ?? 5173);
+const serverPort = Number(process.env.HARDKAS_IDE_PORT ?? 7421);
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
@@ -16,10 +21,10 @@ export default defineConfig({
     alias: { "@": path.resolve(__dirname, "src") }
   },
   server: {
-    port: 5173,
+    port: uiPort,
     strictPort: true,
     proxy: {
-      "/api": { target: "http://127.0.0.1:7421", changeOrigin: false, ws: true }
+      "/api": { target: `http://127.0.0.1:${serverPort}`, changeOrigin: false, ws: true }
     }
   },
   build: {

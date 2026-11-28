@@ -5,9 +5,13 @@ import {
   ChevronRight,
   Copy,
   ExternalLink,
+  Eye,
+  EyeOff,
   FilePlus2,
   FolderPlus,
   Hammer,
+  Loader2,
+  Lock,
   PackageOpen,
   Pencil,
   Play,
@@ -20,15 +24,27 @@ import {
   Trash2
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { TreeNode } from "@/api/client";
+import { api, type TreeNode } from "@/api/client";
 import { FileIcon } from "@/components/FileIcon";
 import { useEngine } from "@/engine/context";
 import type { CompilerPlugin } from "@/plugins/compiler";
 import type { SilverPlugin } from "@/plugins/silver";
 import { EclipseTypeBadge, openNewArtifactWizard } from "@/shell/NewArtifactDialog";
+import { folderDiagCounts, normalizeDiagPath, useDiagnostics } from "@/store/diagnostics";
 import { useIde } from "@/store/ide";
 import { copyText } from "@/utils/clipboard";
 import { confirmDialog, promptDialog } from "@/utils/dialog";
+import { hardkasNote, hiddenNote } from "@/utils/hardkasNotes";
+
+const SHOW_HIDDEN_KEY = "hardkas-ide.explorer-show-hidden";
+
+function loadShowHidden(): boolean {
+  try {
+    return localStorage.getItem(SHOW_HIDDEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 interface MenuState {
   x: number;
@@ -40,9 +56,21 @@ export function FilesPanel() {
   const engine = useEngine();
   const tree = useIde((s) => s.tree);
   const workspace = useIde((s) => s.workspace);
+  const treeLoaded = useIde((s) => s.treeLoaded);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [collapseSeq, setCollapseSeq] = useState(0);
+  // node_modules, dist, coverage, .turbo: listed by the server but kept out of sight until asked for.
+  const [showHidden, setShowHidden] = useState(loadShowHidden);
+  const toggleHidden = () => {
+    const next = !showHidden;
+    setShowHidden(next);
+    try {
+      localStorage.setItem(SHOW_HIDDEN_KEY, next ? "1" : "0");
+    } catch {
+      // not remembered: fine
+    }
+  };
 
   const refresh = async () => {
     setRefreshing(true);
@@ -119,8 +147,19 @@ export function FilesPanel() {
         >
           <CollapseFoldersIcon size={14} />
         </button>
+        <button
+          type="button"
+          title={showHidden ? "Hide node_modules, dist and other build folders" : "Show hidden folders (node_modules, dist, coverage…), read one level at a time"}
+          aria-label={showHidden ? "Hide hidden folders" : "Show hidden folders"}
+          aria-pressed={showHidden}
+          onClick={toggleHidden}
+          className={clsx("p-1 rounded hover:text-fg hover:bg-bg-hover cursor-pointer", showHidden && "text-accent")}
+        >
+          {showHidden ? <Eye size={14} /> : <EyeOff size={14} />}
+        </button>
       </div>
       <div
+        key={workspace?.root ?? "no-workspace"}
         role="tree"
         aria-label="Workspace files"
         className="py-1 flex-1"
@@ -128,7 +167,12 @@ export function FilesPanel() {
           if (e.target === e.currentTarget) openRootContextMenu(e);
         }}
       >
-        {tree.length === 0 && (
+        {tree.length === 0 && !treeLoaded && workspace?.root && (
+          <div className="px-3 py-4 flex items-center justify-center gap-1.5 text-fg-muted" role="status">
+            <Loader2 size={13} className="animate-spin" /> Reading the project…
+          </div>
+        )}
+        {tree.length === 0 && (treeLoaded || !workspace?.root) && (
           <div className="px-3 py-4 text-center space-y-2 text-fg-muted">
             <div>Empty workspace.</div>
             <button type="button" className="btn-ghost w-full justify-center" onClick={() => openNewArtifactWizard()}>
@@ -137,8 +181,8 @@ export function FilesPanel() {
           </div>
         )}
         {/* The project's own files first; dot-folders such as .hardkas (HardKas runtime state) go last, collapsed. */}
-        {sortProjectFirst(tree).map((node) => (
-          <Node key={node.path} node={node} depth={0} collapseSeq={collapseSeq} onMenu={(x, y, n) => setMenu({ x, y, node: n })} />
+        {sortProjectFirst(tree, showHidden).map((node) => (
+          <Node key={node.path} node={node} depth={0} collapseSeq={collapseSeq} showHidden={showHidden} onMenu={(x, y, n) => setMenu({ x, y, node: n })} />
         ))}
       </div>
       {menu && <ContextMenu menu={menu} onClose={() => setMenu(null)} />}
@@ -167,10 +211,11 @@ function CollapseFoldersIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-const isInternal = (n: TreeNode) => n.name.startsWith(".");
+const isInternal = (n: TreeNode) => n.name.startsWith(".") || n.hidden === true;
 
-function sortProjectFirst(nodes: TreeNode[]): TreeNode[] {
-  return [...nodes].sort((a, b) => {
+/** The project's own files first, dot-folders and hidden folders last; hidden folders only when asked for. */
+function sortProjectFirst(nodes: TreeNode[], showHidden = true): TreeNode[] {
+  return nodes.filter((n) => showHidden || !n.hidden).sort((a, b) => {
     const ia = isInternal(a) ? 1 : 0;
     const ib = isInternal(b) ? 1 : 0;
     if (ia !== ib) return ia - ib;
@@ -183,35 +228,68 @@ function Node({
   node,
   depth,
   collapseSeq,
+  showHidden,
   onMenu,
 }: {
   node: TreeNode;
   depth: number;
   collapseSeq: number;
+  showHidden: boolean;
   onMenu: (x: number, y: number, n: TreeNode) => void;
 }) {
   const engine = useEngine();
   const activeFile = useIde((s) => s.activeFile);
+  const countsByFile = useDiagnostics((s) => s.countsByFile);
   const internal = isInternal(node);
-  const [open, setOpen] = useState(depth < 1 && !internal);
+  const locked = node.locked === true;
+  const [open, setOpen] = useState(false);
   const isDir = node.type === "dir";
   const isActive = node.path === activeFile;
+  const diag = isDir ? folderDiagCounts(countsByFile, node.path) : countsByFile[normalizeDiagPath(node.path)];
+  const note = hardkasNote(node.path, locked);
+  // A folder the tree did not read (node_modules and what is under it): its children are fetched when it opens.
+  const lazy = isDir && !locked && node.children === undefined;
+  const [loaded, setLoaded] = useState<{ nodes: TreeNode[]; truncated: boolean } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (collapseSeq > 0) setOpen(false);
   }, [collapseSeq]);
 
+  useEffect(() => {
+    if (!open || !lazy || loaded || loading) return;
+    setLoading(true);
+    setLoadError(null);
+    api.fs
+      .dir(node.path)
+      .then(setLoaded)
+      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  }, [open, lazy, loaded, loading, node.path]);
+
   const onActivate = () => {
-    if (isDir) setOpen((o) => !o);
+    // A key store is listed so you know it exists; the server never opens it, so neither does a click.
+    if (locked) useIde.getState().setStatus(`${node.path}: ${note?.detail ?? "holds private keys; never opened here."}`);
+    else if (isDir) setOpen((o) => !o);
     else void engine.call("fileManager", "open", node.path);
   };
+  const children = lazy ? (loaded?.nodes ?? []) : (node.children ?? []);
+  const tooltip = locked
+    ? `${node.path}: ${note?.detail ?? ""}`
+    : node.hidden
+      ? `${node.path}: ${hiddenNote(node.name)}`
+      : note
+        ? `${node.path}: ${note.detail}`
+        : node.path;
 
   return (
     <div role="none">
       <div
         role="treeitem"
         tabIndex={0}
-        aria-expanded={isDir ? open : undefined}
+        aria-expanded={isDir && !locked ? open : undefined}
+        aria-disabled={locked || undefined}
         aria-selected={isActive}
         onClick={onActivate}
         onKeyDown={(e) => {
@@ -238,30 +316,60 @@ function Node({
         className={clsx(
           "group flex items-center gap-1.5 pr-2 py-0.5 cursor-pointer hover:bg-bg-hover outline-none",
           isActive && "bg-bg-hover text-fg font-medium",
-          internal && "opacity-60"
+          (internal || locked) && "opacity-60",
+          locked && "cursor-default"
         )}
         style={{ paddingLeft: 8 + depth * 12 }}
-        title={internal && depth === 0 ? `${node.path} (HardKas runtime state: artifacts, accounts, node data)` : node.path}
+        title={tooltip}
       >
-        {isDir ? (
+        {locked ? (
+          <span className="w-4 flex items-center justify-center text-warn shrink-0">
+            <Lock size={12} />
+          </span>
+        ) : isDir ? (
           <span className="w-4 flex items-center justify-center text-fg-muted shrink-0">
-            {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            {loading ? <Loader2 size={12} className="animate-spin" /> : open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           </span>
         ) : (
           <FileIcon name={node.name} size={15} />
         )}
-        <span className="truncate flex-1">{node.name}</span>
-        {internal && depth === 0 && isDir && <span className="text-[12px] text-fg-muted shrink-0">state</span>}
+        <span className={clsx("truncate flex-1", diag && diag.errors > 0 ? "text-error" : diag && diag.warnings > 0 ? "text-warn" : undefined)}>{node.name}</span>
+        {diag && (diag.errors > 0 || diag.warnings > 0) && (
+          <span
+            className={clsx(
+              "text-[10px] font-mono tabular-nums px-1 rounded shrink-0",
+              diag.errors > 0 ? "bg-error/15 text-error" : "bg-warn/15 text-warn"
+            )}
+            title={`${diag.errors} error(s), ${diag.warnings} warning(s)`}
+          >
+            {diag.errors > 0 ? `×${diag.errors}` : `!${diag.warnings}`}
+          </span>
+        )}
+        {note ? (
+          <span className={clsx("text-[11px] shrink-0 truncate max-w-[45%]", locked ? "text-warn" : "text-fg-muted")}>{note.label}</span>
+        ) : (
+          node.hidden && depth === 0 && <span className="text-[11px] text-fg-muted shrink-0">hidden</span>
+        )}
       </div>
-      {isDir && open && (
+      {isDir && !locked && open && (
         <div role="group" className="relative">
           <div
             className="absolute top-0 bottom-0 w-px bg-border/80 pointer-events-none"
             style={{ left: 15 + depth * 12 }}
           />
-          {sortProjectFirst(node.children ?? []).map((child) => (
-            <Node key={child.path} node={child} depth={depth + 1} collapseSeq={collapseSeq} onMenu={onMenu} />
+          {sortProjectFirst(children, showHidden || node.hidden === true || lazy).map((child) => (
+            <Node key={child.path} node={child} depth={depth + 1} collapseSeq={collapseSeq} showHidden={showHidden} onMenu={onMenu} />
           ))}
+          {loadError && (
+            <div className="text-error text-[11px] break-words" style={{ paddingLeft: 24 + depth * 12 }}>
+              {loadError}
+            </div>
+          )}
+          {loaded?.truncated && (
+            <div className="text-fg-muted text-[11px]" style={{ paddingLeft: 24 + depth * 12 }}>
+              Only the first {loaded.nodes.length} entries are listed.
+            </div>
+          )}
         </div>
       )}
     </div>

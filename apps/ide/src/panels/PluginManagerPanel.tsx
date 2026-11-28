@@ -43,7 +43,6 @@ export function PluginManagerPanel() {
   const tabs: Tab[] = thirdParty ? ["installed", "vscode", "install"] : ["installed", "install"];
 
   const plugins = engine.list().sort((a, b) => (a.profile.order ?? 100) - (b.profile.order ?? 100));
-  const builtins = plugins.filter((p) => p.profile.kind !== "external");
   const externals = plugins.filter((p) => p.profile.kind === "external");
 
   const run = async (label: string, fn: () => Promise<unknown>) => {
@@ -106,13 +105,6 @@ export function PluginManagerPanel() {
               <PluginRow key={p.profile.name} plugin={p} manifest={installed.find((m) => m.name === p.profile.name)} onToggle={() => void run(`${p.profile.displayName} ${engine.isActive(p.profile.name) ? "deactivated" : "activated"}`, () => manager.toggle(p.profile.name))} onUninstall={async () => (await confirmDialog(`Uninstall ${p.profile.displayName}?`, { title: "Uninstall plugin", confirmLabel: "Uninstall", danger: true })) && void run("uninstalled", () => manager.uninstall(p.profile.name))} />
             ))}
           </div>
-          {/* The IDE's own views: nobody installs them, so they stay folded away. They can still be switched off here. */}
-          <details>
-            <summary className="label tabular-nums cursor-pointer hover:text-fg">Built-in views · {builtins.length}</summary>
-            {builtins.map((p) => (
-              <PluginRow key={p.profile.name} plugin={p} onToggle={() => void run(`${p.profile.displayName} ${engine.isActive(p.profile.name) ? "deactivated" : "activated"}`, () => manager.toggle(p.profile.name))} />
-            ))}
-          </details>
         </div>
       )}
 

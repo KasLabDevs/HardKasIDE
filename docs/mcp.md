@@ -4,7 +4,12 @@
 
 ## Run it
 
-The IDE server must be running with a project open (`pnpm dev:server -- --workspace <folder>`, or open one from the IDE). Nothing of the project runs (CLI, tests) until you have trusted the folder in the IDE.
+The IDE server must be running (`pnpm dev:server`, or `pnpm dev:server -- --workspace <folder>`). Nothing of the project runs (CLI, tests) until you have trusted the folder in the IDE.
+
+### Which workspace external MCP clients use
+
+- Each IDE browser tab or desktop window tracks its own active workspace (`x-hardkas-tab`). Inside the IDE's hosted OpenCode agent, the IDE passes `HARDKAS_IDE_TAB` automatically so MCP calls stay scoped to that tab's project.
+- **External MCP clients** (Claude Desktop, Claude Code, Cursor, etc.) do not send `x-hardkas-tab`, so they operate on the **most recently opened project across any IDE tab** (or the folder pinned with `--workspace` / `HARDKAS_IDE_WORKSPACE`). If you have multiple dApps open in separate IDE tabs, call `open_workspace` explicitly in the external client to target the exact project you want.
 
 ```bash
 pnpm install

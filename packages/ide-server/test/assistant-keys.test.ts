@@ -218,3 +218,28 @@ test("moving a key out of assistant.json never overwrites a key already in the s
   await a.loadConfig();
   assert.equal(storedKey("anthropic-api-key"), FAKE_ANT);
 });
+
+test("parseRegQueryValue and fallback env reader detect setx keys without process restart", async () => {
+  const sample = [
+    "",
+    "HKEY_CURRENT_USER\\Environment",
+    "    ANTHROPIC_API_KEY    REG_SZ    sk-ant-setx-live-4321",
+    ""
+  ].join("\r\n");
+  assert.equal(secrets.parseRegQueryValue(sample, "ANTHROPIC_API_KEY"), "sk-ant-setx-live-4321");
+  assert.equal(secrets.parseRegQueryValue(sample, "OPENAI_API_KEY"), undefined);
+
+  secrets.setEnvFallbackReader(async (name) => (name === "ANTHROPIC_API_KEY" ? "sk-ant-setx-live-4321" : undefined));
+  try {
+    await a.saveConfig({ provider: "anthropic" });
+    const cfg = await a.loadConfig();
+    assert.equal(cfg.apiKey, "sk-ant-setx-live-4321");
+    assert.equal(cfg.keySource, "env");
+    const states = await a.providerKeyStates(cfg);
+    assert.equal(states.anthropic.hasKey, true);
+    assert.equal(states.anthropic.keySource, "env");
+    assert.equal(states.anthropic.keyHint, "…4321");
+  } finally {
+    secrets.setEnvFallbackReader(null);
+  }
+});

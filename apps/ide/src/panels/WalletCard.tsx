@@ -1,5 +1,6 @@
 import { Check, Copy, Link2, Wallet } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { InfoTip } from "@/components/InfoTip";
 import { copyText } from "@/utils/clipboard";
 import { useEnv } from "@/store/env";
 import { useIde } from "@/store/ide";
@@ -95,15 +96,28 @@ export function WalletCard() {
 
   return (
     <section className="border-b border-border">
-      <div className="flex items-center justify-between px-3 py-1.5">
-        <span className="label mb-0 flex items-center gap-2">
-          <Wallet size={12} /> Wallet (KasWare)
+      <div className="flex items-center justify-between px-3 py-1.5 gap-2">
+        <span className="label mb-0 flex items-center gap-1.5 min-w-0">
+          <Wallet size={12} className="shrink-0" />
+          <span className="truncate">Wallet (KasWare)</span>
         </span>
-        <span className={provider ? "text-ok text-[12px]" : "text-fg-muted text-[12px]"}>{provider ? "extension detected" : "not detected"}</span>
+        <div className="flex items-center gap-1 shrink-0">
+          <span className={provider ? "text-ok text-[11px]" : "text-fg-muted text-[11px]"}>{provider ? "detected" : "not detected"}</span>
+          <InfoTip label="KasWare setup & RPC details">
+            <div>Import this node in KasWare &rarr; Settings &rarr; Network &rarr; Custom RPC using the ports below.</div>
+            <div>
+              Ports bind to <code>127.0.0.1</code> only. Fund an imported address with <code>hardkas localnet fund &lt;account&gt;</code> or send from alice in Deploy &amp; Run.
+            </div>
+            {!provider && (
+              <div>
+                No <code>window.kasware</code> detected here; open this IDE in Chrome with KasWare installed to connect.
+              </div>
+            )}
+          </InfoTip>
+        </div>
       </div>
       <div className="px-3 pb-3 space-y-2">
         <div className="rounded border border-border bg-bg-elev p-2 space-y-1">
-          <div className="text-fg-muted">Import this node in KasWare → Settings → Network → Custom RPC:</div>
           {rows.map((r) => (
             <div key={r.k} className="flex items-center gap-2 min-w-0">
               <span className="w-24 shrink-0 text-fg-muted">{r.k}</span>
@@ -121,9 +135,6 @@ export function WalletCard() {
               </button>
             </div>
           ))}
-          <div className="text-[12px] text-fg-muted pt-1">
-            The node publishes its ports on 127.0.0.1 only, so the wallet must run on this machine. Fund a wallet address with <code>hardkas localnet fund &lt;account&gt;</code> after importing its key as an account, or send to it from alice in Deploy &amp; Run.
-          </div>
         </div>
         <div className="flex gap-2">
           <button type="button" className="btn-primary flex-1 justify-center" disabled={!provider} onClick={() => void connect()} title={provider ? "kasware.requestAccounts()" : "Open the IDE in Chrome with the KasWare extension to connect"}>
@@ -139,7 +150,6 @@ export function WalletCard() {
             {network && <span className="text-fg-muted"> · {network}</span>}
           </div>
         )}
-        {!provider && <div className="text-[12px] text-fg-muted">No <code>window.kasware</code> here. Open http://localhost:5173 in Chrome with KasWare installed; the IDE will detect it and let you authorise this site.</div>}
         {msg && <div role="status" aria-live="polite" className="text-[12px] text-accent">{msg}</div>}
       </div>
     </section>

@@ -4,7 +4,7 @@ import cssWorker from "monaco-editor/esm/vs/language/css/css.worker?worker";
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import htmlWorker from "monaco-editor/esm/vs/language/html/html.worker?worker";
 import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
-import tsWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
+import tsWorker from "./ts.worker?worker";
 
 /**
  * Monaco ships with the app instead of being fetched from a CDN, so the editor also works offline
